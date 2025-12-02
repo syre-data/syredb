@@ -4,30 +4,41 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
-
 	"github.com/BurntSushi/toml"
+	"github.com/jackc/pgx/v5"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const APP_NAME = "syredb"
 const CONFIG_FILE_NAME = "config.toml"
+
+type Ok struct{}
 
 // App struct
 type App struct {
 	ctx     context.Context
 	app_dir string
 	config  AppConfigState
+	db_conn DbConnectionState
 }
 
 type AppConfig struct {
-	DbUrl string
+	DbUrl      string
+	DbUsername string
+	DbPassword string
 }
 
 type AppConfigState struct {
 	ok  AppConfig
+	err error
+}
+
+type DbConnectionState struct {
+	ok  pgx.Conn
 	err error
 }
 
@@ -76,11 +87,14 @@ func (app *App) startup(ctx context.Context) {
 	}
 }
 
+func (app *App) shutdown(ctx context.Context) {
+	// TODO: Might break if not set, check err?
+	app.db_conn.ok.Close(context.Background())
+}
+
 func (app *App) GetConfig() (AppConfig, error) {
 	return app.config.ok, app.config.err
 }
-
-type Ok struct{}
 
 func (app *App) SaveConfig(config AppConfig) (Ok, error) {
 	config_toml := new(bytes.Buffer)
@@ -97,7 +111,32 @@ func (app *App) SaveConfig(config AppConfig) (Ok, error) {
 		return Ok{}, err
 	}
 	defer f.Close()
-	f.Write(config_toml.Bytes())
+	_, err = f.Write(config_toml.Bytes())
+	if err != nil {
+		app.config.err = err
+		runtime.LogErrorf(app.ctx, "%v", err)
+		return Ok{}, err
+	}
 
+	app.config.err = nil
+	app.config.ok = config
+
+	return Ok{}, nil
+}
+
+func (app *App) ConnectToDatabase() (Ok, error) {
+	runtime.LogDebug(app.ctx, "connect")
+	if app.config.err != nil {
+		return Ok{}, app.config.err
+	}
+
+	// postgresql://[user[:password]@][host[:port]]/[dbname]
+	connectionString := fmt.Sprintf("postgresql://%s:%s@%s", app.config.ok.DbUsername, app.config.ok.DbPassword, app.config.ok.DbUrl)
+	conn, err := pgx.Connect(context.Background(), connectionString)
+	if err != nil {
+		runtime.LogErrorf(app.ctx, "Unable to connect to database: %v\n", err)
+		return Ok{}, err
+	}
+	app.db_conn = DbConnectionState{ok: *conn, err: err}
 	return Ok{}, nil
 }

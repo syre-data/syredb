@@ -2,6 +2,8 @@ export namespace main {
 	
 	export class AppConfig {
 	    DbUrl: string;
+	    DbUsername: string;
+	    DbPassword: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
@@ -10,6 +12,8 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.DbUrl = source["DbUrl"];
+	        this.DbUsername = source["DbUsername"];
+	        this.DbPassword = source["DbPassword"];
 	    }
 	}
 	export class Ok {
