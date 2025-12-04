@@ -15,7 +15,7 @@ import * as app from "../wailsjs/go/main/App";
 import * as models from "../wailsjs/go/models";
 import { ErrorBoundary } from "react-error-boundary";
 import * as appStateCtx from "./AppStateContext";
-import Dashboard from "./Dashboard";
+import Dashboard from "./home/Dashboard";
 import AppConfig from "./AppConfig";
 
 export default function App() {
@@ -108,6 +108,7 @@ function ConnectToDatabase({ children }: ChildrenProps) {
         const urlData = data.get("url");
         const usernameData = data.get("username");
         const passwordData = data.get("password");
+        const dbNameData = data.get("db-name");
         if (urlData === null) {
             setConfigError("invalid url");
             return;
@@ -135,11 +136,21 @@ function ConnectToDatabase({ children }: ChildrenProps) {
             setConfigError("invalid password");
             return;
         }
+        if (dbNameData === null) {
+            setConfigError("invalid database name");
+            return;
+        }
+        const dbName = dbNameData.toString();
+        if (!dbName.length) {
+            setConfigError("invalid database name");
+            return;
+        }
 
         let update = appState.config;
         update.DbUrl = url;
         update.DbUsername = username;
         update.DbPassword = password;
+        update.DbName = dbName;
         app.SaveConfig(update)
             .then(() => {
                 appStateDispatch({ type: "set_config", payload: update });
@@ -211,6 +222,7 @@ function DatabaseConnectionError({
         const urlData = data.get("url");
         const usernameData = data.get("username");
         const passwordData = data.get("password");
+        const dbNameData = data.get("db-name");
         if (urlData === null) {
             setConfigError("invalid url");
             return;
@@ -238,11 +250,21 @@ function DatabaseConnectionError({
             setConfigError("invalid password");
             return;
         }
+        if (dbNameData === null) {
+            setConfigError("invalid database name");
+            return;
+        }
+        const dbName = dbNameData.toString();
+        if (!dbName.length) {
+            setConfigError("invalid database name");
+            return;
+        }
 
         let update = appState.config;
         update.DbUrl = url;
         update.DbUsername = username;
         update.DbPassword = password;
+        update.DbName = dbName;
         app.SaveConfig(update)
             .then(() => {
                 appStateDispatch({ type: "set_config", payload: update });

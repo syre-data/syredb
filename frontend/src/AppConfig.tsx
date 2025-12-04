@@ -23,6 +23,20 @@ export default function AppConfig({ onsubmit }: AppConfigProps) {
                                 className="block ring rounded-xs px-1 py-0.5"
                                 minLength={1}
                             />
+                            {/* TODO: Include instructions that URL should take the form of host[:port] */}
+                        </label>
+                    </div>
+                    <div>
+                        <label className="inline-flex gap-2 items-center">
+                            <span className="hidden">Database name</span>
+                            <input
+                                type="text"
+                                name="db-name"
+                                defaultValue={appState.config.DbName}
+                                placeholder="Database name"
+                                className="block ring rounded-xs px-1 py-0.5"
+                                minLength={1}
+                            />
                         </label>
                     </div>
                     <div>

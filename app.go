@@ -30,6 +30,7 @@ type AppConfig struct {
 	DbUrl      string
 	DbUsername string
 	DbPassword string
+	DbName     string
 }
 
 type AppConfigState struct {
@@ -130,8 +131,19 @@ func (app *App) ConnectToDatabase() (Ok, error) {
 		return Ok{}, app.config.err
 	}
 
+	config := app.config.ok
+	if len(config.DbUsername) == 0 {
+		return Ok{}, errors.New("invalid user name")
+	}
+	if len(config.DbUrl) == 0 {
+		return Ok{}, errors.New("invalid url")
+	}
+	if len(config.DbName) == 0 {
+		return Ok{}, errors.New("invalid database name")
+	}
+
 	// postgresql://[user[:password]@][host[:port]]/[dbname]
-	connectionString := fmt.Sprintf("postgresql://%s:%s@%s", app.config.ok.DbUsername, app.config.ok.DbPassword, app.config.ok.DbUrl)
+	connectionString := fmt.Sprintf("postgresql://%s:%s@%s/%s", config.DbUsername, config.DbPassword, config.DbUrl, config.DbName)
 	conn, err := pgx.Connect(context.Background(), connectionString)
 	if err != nil {
 		runtime.LogErrorf(app.ctx, "Unable to connect to database: %v\n", err)

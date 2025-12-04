@@ -4,6 +4,7 @@ export namespace main {
 	    DbUrl: string;
 	    DbUsername: string;
 	    DbPassword: string;
+	    DbName: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
@@ -14,6 +15,7 @@ export namespace main {
 	        this.DbUrl = source["DbUrl"];
 	        this.DbUsername = source["DbUsername"];
 	        this.DbPassword = source["DbPassword"];
+	        this.DbName = source["DbName"];
 	    }
 	}
 	export class Ok {
