@@ -13,18 +13,23 @@ import "./App.css";
 import * as runtime from "../wailsjs/runtime/runtime";
 import * as app from "../wailsjs/go/main/App";
 import * as models from "../wailsjs/go/models";
-import { ErrorBoundary } from "react-error-boundary";
+import * as uuid from "uuid";
+import {
+    ErrorBoundary,
+    FallbackProps as ErrorBoundaryProps,
+} from "react-error-boundary";
 import * as appStateCtx from "./AppStateContext";
-import Dashboard from "./home/Dashboard";
+import Home from "./home/Home";
 import AppConfig from "./AppConfig";
+import isEmail from "validator/es/lib/isEmail";
 
 export default function App() {
-    runtime.EventsOn("config_err", (e) => console.debug("err", e));
-
     return (
         <LoadAppState>
             <ConnectToDatabase>
-                <Dashboard />
+                <LoadUser>
+                    <Home />
+                </LoadUser>
             </ConnectToDatabase>
         </LoadAppState>
     );
@@ -73,11 +78,7 @@ function Loading() {
     );
 }
 
-interface ConfigErrorProps {
-    error: any;
-    resetErrorBoundary: any;
-}
-function ConfigError({ error, resetErrorBoundary }: ConfigErrorProps) {
+function ConfigError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
     return (
         <div className="pt-4 text-center dark:text-white">
             <h2 className="py-2">Could not load app config.</h2>
@@ -104,22 +105,14 @@ function ConnectToDatabase({ children }: ChildrenProps) {
             setConfigError("form error");
             return;
         }
-        const data = new FormData(target as HTMLFormElement);
-        const urlData = data.get("url");
-        const usernameData = data.get("username");
-        const passwordData = data.get("password");
-        const dbNameData = data.get("db-name");
-        if (urlData === null) {
-            setConfigError("invalid url");
-            return;
-        }
+        const data = new FormData(target);
+        const urlData = data.get("url")!;
+        const usernameData = data.get("username")!;
+        const passwordData = data.get("password")!;
+        const dbNameData = data.get("db-name")!;
         const url = urlData.toString();
         if (!url.length) {
             setConfigError("invalid url");
-            return;
-        }
-        if (usernameData === null) {
-            setConfigError("invalid username");
             return;
         }
         const username = usernameData.toString();
@@ -127,17 +120,9 @@ function ConnectToDatabase({ children }: ChildrenProps) {
             setConfigError("invalid username");
             return;
         }
-        if (passwordData === null) {
-            setConfigError("invalid password");
-            return;
-        }
         const password = passwordData.toString();
         if (!password.length) {
             setConfigError("invalid password");
-            return;
-        }
-        if (dbNameData === null) {
-            setConfigError("invalid database name");
             return;
         }
         const dbName = dbNameData.toString();
@@ -197,14 +182,10 @@ function ConnectingToDatabase() {
     return <div className="py-4 text-center">Connecting to database</div>;
 }
 
-interface DatabaseConnectionErrorProps {
-    error: string;
-    resetErrorBoundary: any;
-}
 function DatabaseConnectionError({
     error,
     resetErrorBoundary,
-}: DatabaseConnectionErrorProps) {
+}: ErrorBoundaryProps) {
     const appState = useContext(appStateCtx.Context);
     const appStateDispatch = useContext(appStateCtx.Dispatch);
     const [configError, setConfigError] = useState("");
@@ -284,6 +265,159 @@ function DatabaseConnectionError({
                 <AppConfig onsubmit={onSubmitAppConfig} />
                 <div>{configError}</div>
             </div>
+        </div>
+    );
+}
+
+interface LoadUserProps {
+    children: any;
+}
+function LoadUser({ children }: LoadUserProps) {
+    const appState = useContext(appStateCtx.Context);
+    console.debug("load user");
+
+    if (appState.user.Id.toString() === uuid.NIL) {
+        return (
+            <ErrorBoundary FallbackComponent={LoadUserError}>
+                <Suspense fallback={<LoadUserLoading />}>
+                    <LoadUserInner loadUserPromise={app.LoadUser()}>
+                        {children}
+                    </LoadUserInner>
+                </Suspense>
+            </ErrorBoundary>
+        );
+    } else {
+        return children;
+    }
+}
+
+function LoadUserError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
+    console.error("could not load user:", error);
+    return <Login />;
+}
+
+function LoadUserLoading() {
+    return <div>Loading user</div>;
+}
+
+interface LoadUserInnerProps {
+    loadUserPromise: Promise<models.main.User>;
+    children: any;
+}
+function LoadUserInner({ loadUserPromise, children }: LoadUserInnerProps) {
+    console.log("load user inner");
+    // const appStateDispatch = useContext(appStateCtx.Dispatch);
+    // const user = use(loadUserPromise);
+    // console.debug(user);
+
+    // if (user.Id.toString() === uuid.NIL) {
+    //     return <Login />;
+    // } else {
+    // appStateDispatch({ type: "set_user", payload: user });
+    //     console.debug("user");
+    //     return children;
+    // }
+    return <div>help</div>;
+}
+
+function Login() {
+    const appStateDispatch = useContext(appStateCtx.Dispatch);
+    const [error, setError] = useState("");
+
+    function onsubmit(e: FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        setError("");
+
+        const target = e.currentTarget;
+        if (target === null) {
+            console.error("could not get form");
+            setError("form error");
+            return;
+        }
+        const data = new FormData(target);
+        const emailData = data.get("email")!;
+        const passwordData = data.get("password")!;
+        const email = emailData.toString();
+        const password = passwordData.toString();
+        const remember = data.get("remember") !== null;
+
+        if (!isEmail(email)) {
+            const input = document.getElementById("email")! as HTMLInputElement;
+            input.setCustomValidity("invalid email");
+            return;
+        }
+        if (password.length < 1) {
+            const input = document.getElementById(
+                "password"
+            )! as HTMLInputElement;
+            input.setCustomValidity("invalid password");
+            return;
+        }
+
+        const credentials = new models.main.UserCredentials({
+            Email: email,
+            Password: password,
+        });
+        app.AuthenticateAndGetUser(credentials, remember)
+            .then((user) => {
+                if (user.Id.toString() === uuid.NIL) {
+                    setError("invalid user credentials");
+                } else {
+                    appStateDispatch({ type: "set_user", payload: user });
+                }
+            })
+            .catch((err) => setError(err));
+    }
+
+    return (
+        <div>
+            <h2 className="text-center pt-4">Log in</h2>
+            <form onSubmit={onsubmit}>
+                <div>
+                    <div>
+                        <label>
+                            Email
+                            <input
+                                id="email"
+                                name="email"
+                                type="email"
+                                required
+                                autoComplete="email"
+                                className="input-basic user-invalid:ring-red-600"
+                            />
+                        </label>
+                    </div>
+                    <div>
+                        <label>
+                            Password
+                            <input
+                                id="password"
+                                name="password"
+                                type="password"
+                                required
+                                autoComplete="current-password"
+                                className="input-basic user-invalid:ring-red-600"
+                            />
+                        </label>
+                    </div>
+                    <div>
+                        <label>
+                            Remember me
+                            <input
+                                id="remember"
+                                name="remember"
+                                type="checkbox"
+                            />
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <button type="submit" className="btn-submit">
+                        Login
+                    </button>
+                </div>
+            </form>
+            <div>{error}</div>
         </div>
     );
 }

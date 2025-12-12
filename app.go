@@ -3,18 +3,33 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"crypto/rand"
+	"crypto/subtle"
+
+	"golang.org/x/crypto/argon2"
 )
 
 const APP_NAME = "syredb"
 const CONFIG_FILE_NAME = "config.toml"
+const USER_AUTH_FILE_NAME = "user_auth.toml"
+
+type Result[T any] struct {
+	ok  T
+	err error
+}
 
 type Ok struct{}
 
@@ -26,21 +41,14 @@ type App struct {
 	db_conn DbConnectionState
 }
 
+type AppConfigState = Result[AppConfig]
+type DbConnectionState = Result[pgx.Conn]
+
 type AppConfig struct {
 	DbUrl      string
 	DbUsername string
 	DbPassword string
 	DbName     string
-}
-
-type AppConfigState struct {
-	ok  AppConfig
-	err error
-}
-
-type DbConnectionState struct {
-	ok  pgx.Conn
-	err error
 }
 
 // NewApp creates a new App application struct
@@ -57,31 +65,24 @@ func (app *App) startup(ctx context.Context) {
 	app_dir_err := os.MkdirAll(app.app_dir, PERMISSIONS_WRR)
 	if app_dir_err != nil {
 		runtime.LogErrorf(app.ctx, "%v", app_dir_err)
-		runtime.EventsEmit(app.ctx, "config_err", app_dir_err)
 
 		app.config.err = app_dir_err
 	}
 
 	if app_dir_err == nil {
 		config_file_path := filepath.Join(app.app_dir, CONFIG_FILE_NAME)
-		app.config = AppConfigState{}
+		app.config = Result[AppConfig]{}
 		_, err := toml.DecodeFile(config_file_path, &app.config.ok)
 		if err != nil {
 			var parse_err toml.ParseError
 			if errors.Is(err, os.ErrNotExist) {
 				runtime.LogErrorf(app.ctx, "%v", err)
-				runtime.EventsEmit(app.ctx, "config_err", err)
-
 				app.config.err = err
 			} else if errors.As(err, &parse_err) {
 				runtime.LogErrorf(app.ctx, "%v", err)
-				runtime.EventsEmit(app.ctx, "config_err", err)
-
 				app.config.err = err
 			} else {
 				runtime.LogErrorf(app.ctx, "%v", err)
-				runtime.EventsEmit(app.ctx, "config_err", err)
-
 				app.config.err = err
 			}
 		}
@@ -126,7 +127,9 @@ func (app *App) SaveConfig(config AppConfig) (Ok, error) {
 }
 
 func (app *App) ConnectToDatabase() (Ok, error) {
-	runtime.LogDebug(app.ctx, "connect")
+	if app.db_conn.ok.PgConn() != nil {
+		return Ok{}, nil
+	}
 	if app.config.err != nil {
 		return Ok{}, app.config.err
 	}
@@ -149,6 +152,390 @@ func (app *App) ConnectToDatabase() (Ok, error) {
 		runtime.LogErrorf(app.ctx, "Unable to connect to database: %v\n", err)
 		return Ok{}, err
 	}
-	app.db_conn = DbConnectionState{ok: *conn, err: err}
+	app.db_conn = Result[pgx.Conn]{ok: *conn, err: err}
+	return Ok{}, nil
+}
+
+type User struct {
+	Id              uuid.UUID
+	Email           string
+	Name            string
+	PermissionRoles []string `db:"permission_roles"`
+}
+
+type UserAuth struct {
+	UserId    string
+	AuthToken string
+}
+
+func (app *App) LoadUser() (User, error) {
+	if app.db_conn.err != nil {
+		return User{}, app.db_conn.err
+	}
+
+	var user_auth UserAuth
+	auth_file_path := filepath.Join(app.app_dir, USER_AUTH_FILE_NAME)
+	_, err := toml.DecodeFile(auth_file_path, &user_auth)
+	if err != nil {
+		var parse_err toml.ParseError
+		if errors.Is(err, os.ErrNotExist) {
+			runtime.LogErrorf(app.ctx, "%v", err)
+			return User{}, nil
+		} else if errors.As(err, &parse_err) {
+			runtime.LogErrorf(app.ctx, "%v", err)
+			return User{}, err
+		} else {
+			runtime.LogErrorf(app.ctx, "%v", err)
+			return User{}, err
+		}
+	}
+
+	runtime.LogErrorf(app.ctx, "%v", user_auth)
+	// auth_rows, _ := app.db_conn.ok.Query(context.Background(), "SELECT tokens FROM user_auth_ WHERE _id=$1", user_auth.UserId)
+	auth_rows, _ := app.db_conn.ok.Query(context.Background(), "SELECT tokens FROM user_auth_ WHERE _id='019b0b68-23fb-7660-8f1a-3a006a63d1e3'")
+	defer auth_rows.Close()
+	var db_auth_tokens []string
+	for auth_rows.Next() {
+		runtime.LogError(app.ctx, "db_auth_tokens")
+		err = auth_rows.Scan(&db_auth_tokens)
+		runtime.LogErrorf(app.ctx, "inner %v", db_auth_tokens)
+		if err != nil {
+			runtime.LogErrorf(app.ctx, "%v", err)
+			return User{}, err
+		}
+	}
+
+	runtime.LogErrorf(app.ctx, "%v", db_auth_tokens)
+	if !slices.Contains(db_auth_tokens, user_auth.AuthToken) {
+		runtime.LogError(app.ctx, "no match")
+		return User{}, nil
+	}
+
+	user_rows, _ := app.db_conn.ok.Query(context.Background(), "SELECT _id, email, name, permission_roles FROM user_ WHERE _id=$1", user_auth.UserId)
+	defer user_rows.Close()
+	var user User
+	for user_rows.Next() {
+		err = user_rows.Scan(&user.Id, &user.Email, &user.Name, &user.PermissionRoles)
+		runtime.LogErrorf(app.ctx, "%v", user)
+		if err != nil {
+			runtime.LogErrorf(app.ctx, "%v", err)
+			return User{}, err
+		}
+	}
+	runtime.LogErrorf(app.ctx, "%v", user)
+	return user, nil
+}
+
+type UserCredentials struct {
+	Email    string
+	Password string
+}
+
+func (app *App) AuthenticateAndGetUser(credentials UserCredentials, remember bool) (User, error) {
+	if app.db_conn.err != nil {
+		return User{}, app.db_conn.err
+	}
+
+	user_rows, _ := app.db_conn.ok.Query(context.Background(), "SELECT _id, email, name, permission_roles FROM user_ WHERE email=$1", credentials.Email)
+	defer user_rows.Close()
+	var user_id uuid.UUID
+	var email string
+	var name string
+	var permission_roles []string
+	for user_rows.Next() {
+		err := user_rows.Scan(&user_id, &email, &name, &permission_roles)
+		if err != nil {
+			runtime.LogErrorf(app.ctx, "%v", err)
+			return User{}, err
+		}
+	}
+
+	auth_rows, _ := app.db_conn.ok.Query(context.Background(), "SELECT auth FROM user_auth_ WHERE _id=$1", user_id.String())
+	defer auth_rows.Close()
+	var auth_hash string
+	for auth_rows.Next() {
+		err := auth_rows.Scan(&auth_hash)
+		if err != nil {
+			runtime.LogErrorf(app.ctx, "%v", err)
+			return User{}, err
+		}
+	}
+
+	authorized, err := comparePasswordAndHash(credentials.Password, auth_hash)
+	if err != nil {
+		runtime.LogErrorf(app.ctx, "could not compare password to hash: %v", err)
+		return User{}, errors.New("server error: invalid password comparison")
+	}
+
+	if !authorized {
+		return User{}, nil
+	}
+
+	user := User{
+		Id:              user_id,
+		Email:           email,
+		Name:            name,
+		PermissionRoles: permission_roles,
+	}
+
+	if remember {
+		func() {
+			auth_token_b := make([]byte, PASSWORD_HASH_SALT_LENGTH_BYTES)
+			rand.Read(auth_token_b)
+			auth_token := base64.RawStdEncoding.EncodeToString(auth_token_b)
+
+			append_token_query := "UPDATE user_auth_ SET tokens=ARRAY_APPEND(tokens, $1) WHERE _id=$2"
+			_, err := app.db_conn.ok.Exec(context.Background(), append_token_query, auth_token, user_id)
+			if err != nil {
+				runtime.LogErrorf(app.ctx, "could not insert user auth token: %v", err)
+				return
+			}
+
+			user_auth := UserAuth{UserId: user_id.String(), AuthToken: auth_token}
+			user_auth_toml := new(bytes.Buffer)
+			err = toml.NewEncoder(user_auth_toml).Encode(user_auth)
+			if err != nil {
+				runtime.LogErrorf(app.ctx, "could not save user auth token: %v", err)
+				return
+			}
+
+			user_auth_file_path := filepath.Join(app.app_dir, USER_AUTH_FILE_NAME)
+			f, err := os.OpenFile(user_auth_file_path, os.O_CREATE|os.O_WRONLY, PERMISSIONS_WRR)
+			if err != nil {
+				runtime.LogErrorf(app.ctx, "could not save user auth token: %v", err)
+				return
+			}
+			defer f.Close()
+			_, err = f.Write(user_auth_toml.Bytes())
+			if err != nil {
+				runtime.LogErrorf(app.ctx, "could not save user auth token: %v", err)
+				return
+			}
+		}()
+	}
+
+	return user, nil
+}
+
+const PASSWORD_HASH_ALGO_ID = "argon2id"
+const PASSWORD_HASH_HASH_LENGTH_BYTES = 512
+const PASSWORD_HASH_SALT_LENGTH_BYTES = 64
+const PASSWORD_HASH_ITERATIONS = 2
+const PASSWORD_HASH_MEMORY = 64 * 1024
+const PASSWORD_HASH_PARALLELISM = 4
+
+func encodePassword(password string) string {
+	salt := make([]byte, PASSWORD_HASH_SALT_LENGTH_BYTES)
+	rand.Read(salt)
+	hash := argon2.IDKey(
+		[]byte(password),
+		salt,
+		PASSWORD_HASH_ITERATIONS,
+		PASSWORD_HASH_MEMORY,
+		PASSWORD_HASH_PARALLELISM,
+		PASSWORD_HASH_HASH_LENGTH_BYTES,
+	)
+
+	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
+	b64Hash := base64.RawStdEncoding.EncodeToString(hash)
+
+	return fmt.Sprintf(
+		"$%s$v=%d$m=%d,t=%d,p=%d$%s$%s",
+		PASSWORD_HASH_ALGO_ID,
+		argon2.Version,
+		PASSWORD_HASH_MEMORY,
+		PASSWORD_HASH_ITERATIONS,
+		PASSWORD_HASH_PARALLELISM,
+		b64Salt,
+		b64Hash,
+	)
+}
+
+type passwordHashParameters struct {
+	memory      uint32
+	iterations  uint32
+	parallelism uint8
+	saltLength  uint32
+	keyLength   uint32
+}
+
+func decodePasswordHash(encoded_hash string) (p *passwordHashParameters, salt, hash []byte, err error) {
+	vals := strings.Split(encoded_hash, "$")
+	if len(vals) != 6 {
+		return nil, nil, nil, fmt.Errorf("invalid hash format")
+	}
+
+	if vals[1] != PASSWORD_HASH_ALGO_ID {
+		return nil, nil, nil, errors.New("incompatible hash alogrithm")
+	}
+
+	var version int
+	_, err = fmt.Sscanf(vals[2], "v=%d", &version)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if version != argon2.Version {
+		return nil, nil, nil, errors.New("incompatible version of argon2")
+	}
+
+	p = &passwordHashParameters{}
+	_, err = fmt.Sscanf(vals[3], "m=%d,t=%d,p=%d", &p.memory, &p.iterations, &p.parallelism)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	salt, err = base64.RawStdEncoding.Strict().DecodeString(vals[4])
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	p.saltLength = uint32(len(salt))
+
+	hash, err = base64.RawStdEncoding.Strict().DecodeString(vals[5])
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	p.keyLength = uint32(len(hash))
+
+	return p, salt, hash, nil
+}
+
+func comparePasswordAndHash(clear_text_password string, encoded_hash string) (match bool, err error) {
+	p, salt, stored_hash, err := decodePasswordHash(encoded_hash)
+	if err != nil {
+		return false, err
+	}
+
+	password_hash := argon2.IDKey(
+		[]byte(clear_text_password),
+		salt,
+		p.iterations,
+		p.memory,
+		p.parallelism,
+		p.keyLength,
+	)
+
+	// SAFETY: `subtle.ConstantTimeCompare()` preventS timing attacks.
+	if subtle.ConstantTimeCompare(stored_hash, password_hash) == 1 {
+		return true, nil
+	}
+	return false, nil
+}
+
+type UserCreate struct {
+	Email           string
+	Name            string
+	Password        string
+	PermissionRoles []string
+}
+
+func (app *App) CreateUser(user UserCreate) (uuid.UUID, error) {
+
+	if app.db_conn.err != nil {
+		return uuid.Nil, app.db_conn.err
+	}
+
+	tx, err := app.db_conn.ok.Begin(context.Background())
+	if err != nil {
+		runtime.LogErrorf(app.ctx, "Unable to begin transaction: %v\n", err)
+		return uuid.Nil, err
+	}
+	defer tx.Rollback(context.Background())
+
+	var user_id uuid.UUID
+	insert_user_query := "INSERT INTO user_ (email, name) VALUES ($1, $2, $3) RETURNING _id"
+	err = tx.QueryRow(context.Background(), insert_user_query, user.Email, user.Name).Scan(&user_id)
+	if err != nil {
+		runtime.LogErrorf(app.ctx, "Error inserting user: %v\n", err)
+		return uuid.Nil, err
+	}
+
+	insert_user_auth_query := "INSERT INTO user_auth_ (_id, auth) VALUES ($1, $2)"
+	_, err = tx.Exec(context.Background(), insert_user_auth_query, user_id, encodePassword(user.Password))
+	if err != nil {
+		runtime.LogErrorf(app.ctx, "Error inserting user authentication data: %v\n", err)
+		return uuid.Nil, err
+	}
+
+	err = tx.Commit(context.Background())
+	if err != nil {
+		runtime.LogErrorf(app.ctx, "Error committing create user transaction: %v\n", err)
+		return uuid.Nil, err
+	}
+
+	return user_id, nil
+}
+
+type Sample struct {
+	Id    uuid.UUID
+	Owner uuid.UUID
+	Label string
+}
+
+type SampleGroup struct {
+	Id          uuid.UUID
+	Owner       uuid.UUID
+	Label       string
+	Description string
+}
+
+type SampleGroupsWithSamples = []Sample
+
+func (app *App) GetRecentSampleGroupsWithSamples() (SampleGroupsWithSamples, error) {
+	if app.db_conn.err != nil {
+		runtime.LogDebugf(app.ctx, "%#v", app.db_conn.err)
+		return SampleGroupsWithSamples{}, app.db_conn.err
+	}
+
+	rows, err := app.db_conn.ok.Query(context.Background(), "SELECT * from sample_")
+	if err != nil {
+		runtime.LogDebugf(app.ctx, "%#v", err)
+		return SampleGroupsWithSamples{}, err
+	}
+	runtime.LogDebugf(app.ctx, "%#v", rows)
+	// sample_groups, err := pgx.CollectRows(rows, pgx.RowTo[Sample])
+	sample_groups, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Sample, error) {
+		var id uuid.UUID
+		var owner uuid.UUID
+		var label string
+		err := row.Scan(&id, &owner, &label)
+		return Sample{id, owner, label}, err
+	})
+	if err != nil {
+		runtime.LogDebugf(app.ctx, "%#v", err)
+		return SampleGroupsWithSamples{}, err
+	}
+
+	return sample_groups, nil
+}
+
+type SampleCreate struct {
+	Label string
+}
+type SampleGroupCreate struct {
+	Label       string
+	Description string
+	Parents     []uuid.UUID
+	Samples     []SampleCreate
+}
+
+func (app *App) CreateSampleGroup(group SampleGroupCreate) (Ok, error) {
+	if app.db_conn.err != nil {
+		runtime.LogDebugf(app.ctx, "%#v", app.db_conn.err)
+		return Ok{}, app.db_conn.err
+	}
+
+	// TODO
+	// sample_group_query := "INSERT INTO sample_group (_owner, label, description) VALUES ($1, $2, $3)"
+	// batch.Queue(sample_group_query, group.Label, group.Description).QueryRow(func(row pgx.Row) error {
+	// 	err := row.Scan()
+	// 	return err
+	// })
+
+	// sample_group_result, err := app.db_conn.ok.Query(context.Background(), sample_group_query)
+	// if err != nil {
+	// 	runtime.LogDebugf(app.ctx, "%#v", app.db_conn.err)
+	// 	return Ok{}, err
+	// }
+
 	return Ok{}, nil
 }

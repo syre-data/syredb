@@ -1,1 +1,14 @@
 @import "tailwindcss";
+
+
+@utility input-basic {
+    @apply rounded-xs ring
+}
+
+@utility btn-cmd {
+  @apply p-[0.5] aspect-square rounded-xs cursor-pointer;
+}
+
+@utility btn-submit {
+  @apply cursor-pointer px-1 py-0.5 rounded-xs border
+}
