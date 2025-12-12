@@ -22,16 +22,31 @@ import * as appStateCtx from "./AppStateContext";
 import Home from "./home/Home";
 import AppConfig from "./AppConfig";
 import isEmail from "validator/es/lib/isEmail";
+import {
+    useSuspenseQuery,
+    QueryClient,
+    QueryClientProvider,
+} from "@tanstack/react-query";
+
+const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            retry: 0,
+        },
+    },
+});
 
 export default function App() {
     return (
-        <LoadAppState>
-            <ConnectToDatabase>
-                <LoadUser>
-                    <Home />
-                </LoadUser>
-            </ConnectToDatabase>
-        </LoadAppState>
+        <QueryClientProvider client={queryClient}>
+            <LoadAppState>
+                <ConnectToDatabase>
+                    <LoadUser>
+                        <Home />
+                    </LoadUser>
+                </ConnectToDatabase>
+            </LoadAppState>
+        </QueryClientProvider>
     );
 }
 
@@ -42,9 +57,7 @@ function LoadAppState({ children }: ChildrenProps) {
     return (
         <ErrorBoundary FallbackComponent={ConfigError}>
             <Suspense fallback={<Loading />}>
-                <LoadAppStateInner configPromise={app.GetConfig()}>
-                    {children}
-                </LoadAppStateInner>
+                <LoadAppStateInner>{children}</LoadAppStateInner>
             </Suspense>
         </ErrorBoundary>
     );
@@ -52,10 +65,12 @@ function LoadAppState({ children }: ChildrenProps) {
 
 interface LoadAppStateProps {
     children: any;
-    configPromise: Promise<models.main.AppConfig>;
 }
-function LoadAppStateInner({ children, configPromise }: LoadAppStateProps) {
-    let config = use(configPromise);
+function LoadAppStateInner({ children }: LoadAppStateProps) {
+    const { data: config } = useSuspenseQuery({
+        queryKey: ["_init_load_app_config"],
+        queryFn: app.GetConfig,
+    });
     let [state, dispatch] = useReducer(
         appStateCtx.Reducer,
         new appStateCtx.State(config)
@@ -147,11 +162,7 @@ function ConnectToDatabase({ children }: ChildrenProps) {
         return (
             <ErrorBoundary FallbackComponent={DatabaseConnectionError}>
                 <Suspense fallback={<ConnectingToDatabase />}>
-                    <ConnectToDatabaseInner
-                        connectPromise={app.ConnectToDatabase()}
-                    >
-                        {children}
-                    </ConnectToDatabaseInner>
+                    <ConnectToDatabaseInner>{children}</ConnectToDatabaseInner>
                 </Suspense>
             </ErrorBoundary>
         );
@@ -168,13 +179,13 @@ function ConnectToDatabase({ children }: ChildrenProps) {
 
 interface ConnectToDatabaseInnerProps {
     children: any;
-    connectPromise: Promise<models.main.Ok>;
 }
-function ConnectToDatabaseInner({
-    children,
-    connectPromise,
-}: ConnectToDatabaseInnerProps) {
-    use(connectPromise);
+function ConnectToDatabaseInner({ children }: ConnectToDatabaseInnerProps) {
+    useSuspenseQuery({
+        queryKey: ["_init_connect_to_db"],
+        queryFn: app.ConnectToDatabase,
+    });
+
     return children;
 }
 
@@ -274,15 +285,11 @@ interface LoadUserProps {
 }
 function LoadUser({ children }: LoadUserProps) {
     const appState = useContext(appStateCtx.Context);
-    console.debug("load user");
-
     if (appState.user.Id.toString() === uuid.NIL) {
         return (
             <ErrorBoundary FallbackComponent={LoadUserError}>
                 <Suspense fallback={<LoadUserLoading />}>
-                    <LoadUserInner loadUserPromise={app.LoadUser()}>
-                        {children}
-                    </LoadUserInner>
+                    <LoadUserInner>{children}</LoadUserInner>
                 </Suspense>
             </ErrorBoundary>
         );
@@ -301,23 +308,23 @@ function LoadUserLoading() {
 }
 
 interface LoadUserInnerProps {
-    loadUserPromise: Promise<models.main.User>;
     children: any;
 }
-function LoadUserInner({ loadUserPromise, children }: LoadUserInnerProps) {
-    console.log("load user inner");
-    // const appStateDispatch = useContext(appStateCtx.Dispatch);
-    // const user = use(loadUserPromise);
-    // console.debug(user);
+function LoadUserInner({ children }: LoadUserInnerProps) {
+    const appStateDispatch = useContext(appStateCtx.Dispatch);
+    const { data: user } = useSuspenseQuery({
+        queryKey: ["_init_load_user"],
+        queryFn: app.LoadUser,
+    });
+    console.debug(user);
 
-    // if (user.Id.toString() === uuid.NIL) {
-    //     return <Login />;
-    // } else {
-    // appStateDispatch({ type: "set_user", payload: user });
-    //     console.debug("user");
-    //     return children;
-    // }
-    return <div>help</div>;
+    if (user.Id.toString() === uuid.NIL) {
+        return <Login />;
+    } else {
+        appStateDispatch({ type: "set_user", payload: user });
+        console.debug("user");
+        return children;
+    }
 }
 
 function Login() {
