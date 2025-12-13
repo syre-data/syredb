@@ -18,12 +18,16 @@ export function CreateUser(arg1) {
   return window['go']['main']['App']['CreateUser'](arg1);
 }
 
-export function GetConfig() {
-  return window['go']['main']['App']['GetConfig']();
+export function GetAppConfig() {
+  return window['go']['main']['App']['GetAppConfig']();
 }
 
 export function GetRecentSampleGroupsWithSamples() {
   return window['go']['main']['App']['GetRecentSampleGroupsWithSamples']();
+}
+
+export function LoadAppConfig() {
+  return window['go']['main']['App']['LoadAppConfig']();
 }
 
 export function LoadUser() {

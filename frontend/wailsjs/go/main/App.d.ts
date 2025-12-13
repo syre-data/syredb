@@ -11,9 +11,11 @@ export function CreateSampleGroup(arg1:main.SampleGroupCreate):Promise<main.Ok>;
 
 export function CreateUser(arg1:main.UserCreate):Promise<uuid.UUID>;
 
-export function GetConfig():Promise<main.AppConfig>;
+export function GetAppConfig():Promise<main.AppConfig>;
 
 export function GetRecentSampleGroupsWithSamples():Promise<Array<main.Sample>>;
+
+export function LoadAppConfig():Promise<main.Ok>;
 
 export function LoadUser():Promise<main.User>;
 

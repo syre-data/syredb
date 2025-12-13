@@ -11,13 +11,14 @@ import (
 	"slices"
 	"strings"
 
+	"crypto/rand"
+	"crypto/subtle"
+
 	"github.com/BurntSushi/toml"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
-
-	"crypto/rand"
-	"crypto/subtle"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -38,11 +39,11 @@ type App struct {
 	ctx     context.Context
 	app_dir string
 	config  AppConfigState
-	db_conn DbConnectionState
+	db_pool DbConnectionState
 }
 
 type AppConfigState = Result[AppConfig]
-type DbConnectionState = Result[pgx.Conn]
+type DbConnectionState = Result[*pgxpool.Pool]
 
 type AppConfig struct {
 	DbUrl      string
@@ -70,32 +71,42 @@ func (app *App) startup(ctx context.Context) {
 	}
 
 	if app_dir_err == nil {
-		config_file_path := filepath.Join(app.app_dir, CONFIG_FILE_NAME)
-		app.config = Result[AppConfig]{}
-		_, err := toml.DecodeFile(config_file_path, &app.config.ok)
-		if err != nil {
-			var parse_err toml.ParseError
-			if errors.Is(err, os.ErrNotExist) {
-				runtime.LogErrorf(app.ctx, "%v", err)
-				app.config.err = err
-			} else if errors.As(err, &parse_err) {
-				runtime.LogErrorf(app.ctx, "%v", err)
-				app.config.err = err
-			} else {
-				runtime.LogErrorf(app.ctx, "%v", err)
-				app.config.err = err
-			}
-		}
+		app.LoadAppConfig()
 	}
 }
 
 func (app *App) shutdown(ctx context.Context) {
 	// TODO: Might break if not set, check err?
-	app.db_conn.ok.Close(context.Background())
+	app.db_pool.ok.Close()
 }
 
-func (app *App) GetConfig() (AppConfig, error) {
-	return app.config.ok, app.config.err
+func (app *App) LoadAppConfig() (Ok, error) {
+	app.config = AppConfigState{}
+	config_file_path := filepath.Join(app.app_dir, CONFIG_FILE_NAME)
+	_, err := toml.DecodeFile(config_file_path, &app.config.ok)
+	if err != nil {
+		var parse_err toml.ParseError
+		if errors.Is(err, os.ErrNotExist) {
+			runtime.LogErrorf(app.ctx, "app config file not found: %v", err)
+			app.config.err = err
+		} else if errors.As(err, &parse_err) {
+			runtime.LogErrorf(app.ctx, "app config file invalid format: %v", err)
+			app.config.err = err
+		} else {
+			runtime.LogErrorf(app.ctx, "app config file invalid: %v", err)
+			app.config.err = err
+		}
+	}
+
+	return Ok{}, app.config.err
+}
+
+func (app *App) GetAppConfig() (AppConfig, error) {
+	err := app.config.err
+	if errors.Is(err, os.ErrNotExist) {
+		err = errors.New("FILE_NOT_FOUND")
+	}
+	return app.config.ok, err
 }
 
 func (app *App) SaveConfig(config AppConfig) (Ok, error) {
@@ -113,6 +124,14 @@ func (app *App) SaveConfig(config AppConfig) (Ok, error) {
 		return Ok{}, err
 	}
 	defer f.Close()
+
+	err = f.Truncate(0)
+	if err != nil {
+		app.config.err = err
+		runtime.LogErrorf(app.ctx, "%v", err)
+		return Ok{}, err
+	}
+
 	_, err = f.Write(config_toml.Bytes())
 	if err != nil {
 		app.config.err = err
@@ -127,16 +146,21 @@ func (app *App) SaveConfig(config AppConfig) (Ok, error) {
 }
 
 func (app *App) ConnectToDatabase() (Ok, error) {
-	if app.db_conn.ok.PgConn() != nil {
+	if app.db_pool.ok != nil {
 		return Ok{}, nil
 	}
 	if app.config.err != nil {
-		return Ok{}, app.config.err
+		err := app.config.err
+		if errors.Is(err, os.ErrNotExist) {
+			err = errors.New("FILE_NOT_FOUND")
+		}
+
+		return Ok{}, err
 	}
 
 	config := app.config.ok
 	if len(config.DbUsername) == 0 {
-		return Ok{}, errors.New("invalid user name")
+		return Ok{}, errors.New("invalid username")
 	}
 	if len(config.DbUrl) == 0 {
 		return Ok{}, errors.New("invalid url")
@@ -147,13 +171,20 @@ func (app *App) ConnectToDatabase() (Ok, error) {
 
 	// postgresql://[user[:password]@][host[:port]]/[dbname]
 	connectionString := fmt.Sprintf("postgresql://%s:%s@%s/%s", config.DbUsername, config.DbPassword, config.DbUrl, config.DbName)
-	conn, err := pgx.Connect(context.Background(), connectionString)
+	dbpool, err := pgxpool.New(context.Background(), connectionString)
 	if err != nil {
 		runtime.LogErrorf(app.ctx, "Unable to connect to database: %v\n", err)
 		return Ok{}, err
 	}
-	app.db_conn = Result[pgx.Conn]{ok: *conn, err: err}
+
+	err = dbpool.Ping(context.Background())
+	if err != nil {
+		return Ok{}, err
+	}
+
+	app.db_pool = Result[*pgxpool.Pool]{ok: dbpool, err: nil}
 	return Ok{}, nil
+
 }
 
 type User struct {
@@ -169,8 +200,8 @@ type UserAuth struct {
 }
 
 func (app *App) LoadUser() (User, error) {
-	if app.db_conn.err != nil {
-		return User{}, app.db_conn.err
+	if app.db_pool.err != nil {
+		return User{}, app.db_pool.err
 	}
 
 	var user_auth UserAuth
@@ -179,50 +210,42 @@ func (app *App) LoadUser() (User, error) {
 	if err != nil {
 		var parse_err toml.ParseError
 		if errors.Is(err, os.ErrNotExist) {
-			runtime.LogErrorf(app.ctx, "%v", err)
+			runtime.LogErrorf(app.ctx, "user auth file not found: %v", err)
 			return User{}, nil
 		} else if errors.As(err, &parse_err) {
-			runtime.LogErrorf(app.ctx, "%v", err)
+			runtime.LogErrorf(app.ctx, "user auth file invalid format: %v", err)
 			return User{}, err
 		} else {
-			runtime.LogErrorf(app.ctx, "%v", err)
+			runtime.LogErrorf(app.ctx, "user auth file invalid: %v", err)
 			return User{}, err
 		}
 	}
 
-	runtime.LogErrorf(app.ctx, "%v", user_auth)
-	// auth_rows, _ := app.db_conn.ok.Query(context.Background(), "SELECT tokens FROM user_auth_ WHERE _id=$1", user_auth.UserId)
-	auth_rows, _ := app.db_conn.ok.Query(context.Background(), "SELECT tokens FROM user_auth_ WHERE _id='019b0b68-23fb-7660-8f1a-3a006a63d1e3'")
+	auth_rows, _ := app.db_pool.ok.Query(context.Background(), "SELECT tokens FROM user_auth_ WHERE _id=$1", user_auth.UserId)
 	defer auth_rows.Close()
 	var db_auth_tokens []string
 	for auth_rows.Next() {
-		runtime.LogError(app.ctx, "db_auth_tokens")
 		err = auth_rows.Scan(&db_auth_tokens)
-		runtime.LogErrorf(app.ctx, "inner %v", db_auth_tokens)
 		if err != nil {
 			runtime.LogErrorf(app.ctx, "%v", err)
 			return User{}, err
 		}
 	}
 
-	runtime.LogErrorf(app.ctx, "%v", db_auth_tokens)
 	if !slices.Contains(db_auth_tokens, user_auth.AuthToken) {
-		runtime.LogError(app.ctx, "no match")
 		return User{}, nil
 	}
 
-	user_rows, _ := app.db_conn.ok.Query(context.Background(), "SELECT _id, email, name, permission_roles FROM user_ WHERE _id=$1", user_auth.UserId)
+	user_rows, _ := app.db_pool.ok.Query(context.Background(), "SELECT _id, email, name, permission_roles FROM user_ WHERE _id=$1", user_auth.UserId)
 	defer user_rows.Close()
 	var user User
 	for user_rows.Next() {
 		err = user_rows.Scan(&user.Id, &user.Email, &user.Name, &user.PermissionRoles)
-		runtime.LogErrorf(app.ctx, "%v", user)
 		if err != nil {
 			runtime.LogErrorf(app.ctx, "%v", err)
 			return User{}, err
 		}
 	}
-	runtime.LogErrorf(app.ctx, "%v", user)
 	return user, nil
 }
 
@@ -232,11 +255,11 @@ type UserCredentials struct {
 }
 
 func (app *App) AuthenticateAndGetUser(credentials UserCredentials, remember bool) (User, error) {
-	if app.db_conn.err != nil {
-		return User{}, app.db_conn.err
+	if app.db_pool.err != nil {
+		return User{}, app.db_pool.err
 	}
 
-	user_rows, _ := app.db_conn.ok.Query(context.Background(), "SELECT _id, email, name, permission_roles FROM user_ WHERE email=$1", credentials.Email)
+	user_rows, _ := app.db_pool.ok.Query(context.Background(), "SELECT _id, email, name, permission_roles FROM user_ WHERE email=$1", credentials.Email)
 	defer user_rows.Close()
 	var user_id uuid.UUID
 	var email string
@@ -250,7 +273,7 @@ func (app *App) AuthenticateAndGetUser(credentials UserCredentials, remember boo
 		}
 	}
 
-	auth_rows, _ := app.db_conn.ok.Query(context.Background(), "SELECT auth FROM user_auth_ WHERE _id=$1", user_id.String())
+	auth_rows, _ := app.db_pool.ok.Query(context.Background(), "SELECT auth FROM user_auth_ WHERE _id=$1", user_id.String())
 	defer auth_rows.Close()
 	var auth_hash string
 	for auth_rows.Next() {
@@ -285,7 +308,7 @@ func (app *App) AuthenticateAndGetUser(credentials UserCredentials, remember boo
 			auth_token := base64.RawStdEncoding.EncodeToString(auth_token_b)
 
 			append_token_query := "UPDATE user_auth_ SET tokens=ARRAY_APPEND(tokens, $1) WHERE _id=$2"
-			_, err := app.db_conn.ok.Exec(context.Background(), append_token_query, auth_token, user_id)
+			_, err := app.db_pool.ok.Exec(context.Background(), append_token_query, auth_token, user_id)
 			if err != nil {
 				runtime.LogErrorf(app.ctx, "could not insert user auth token: %v", err)
 				return
@@ -312,6 +335,12 @@ func (app *App) AuthenticateAndGetUser(credentials UserCredentials, remember boo
 				return
 			}
 		}()
+	} else {
+		user_auth_file_path := filepath.Join(app.app_dir, USER_AUTH_FILE_NAME)
+		err = os.Remove(user_auth_file_path)
+		if err != nil {
+			runtime.LogErrorf(app.ctx, "could not remove user auth file: %v", err)
+		}
 	}
 
 	return user, nil
@@ -414,7 +443,7 @@ func comparePasswordAndHash(clear_text_password string, encoded_hash string) (ma
 		p.keyLength,
 	)
 
-	// SAFETY: `subtle.ConstantTimeCompare()` preventS timing attacks.
+	// SAFETY: `subtle.ConstantTimeCompare()` prevents timing attacks.
 	if subtle.ConstantTimeCompare(stored_hash, password_hash) == 1 {
 		return true, nil
 	}
@@ -430,11 +459,11 @@ type UserCreate struct {
 
 func (app *App) CreateUser(user UserCreate) (uuid.UUID, error) {
 
-	if app.db_conn.err != nil {
-		return uuid.Nil, app.db_conn.err
+	if app.db_pool.err != nil {
+		return uuid.Nil, app.db_pool.err
 	}
 
-	tx, err := app.db_conn.ok.Begin(context.Background())
+	tx, err := app.db_pool.ok.Begin(context.Background())
 	if err != nil {
 		runtime.LogErrorf(app.ctx, "Unable to begin transaction: %v\n", err)
 		return uuid.Nil, err
@@ -481,12 +510,12 @@ type SampleGroup struct {
 type SampleGroupsWithSamples = []Sample
 
 func (app *App) GetRecentSampleGroupsWithSamples() (SampleGroupsWithSamples, error) {
-	if app.db_conn.err != nil {
-		runtime.LogDebugf(app.ctx, "%#v", app.db_conn.err)
-		return SampleGroupsWithSamples{}, app.db_conn.err
+	if app.db_pool.err != nil {
+		runtime.LogDebugf(app.ctx, "%#v", app.db_pool.err)
+		return SampleGroupsWithSamples{}, app.db_pool.err
 	}
 
-	rows, err := app.db_conn.ok.Query(context.Background(), "SELECT * from sample_")
+	rows, err := app.db_pool.ok.Query(context.Background(), "SELECT * from sample_")
 	if err != nil {
 		runtime.LogDebugf(app.ctx, "%#v", err)
 		return SampleGroupsWithSamples{}, err
@@ -519,9 +548,9 @@ type SampleGroupCreate struct {
 }
 
 func (app *App) CreateSampleGroup(group SampleGroupCreate) (Ok, error) {
-	if app.db_conn.err != nil {
-		runtime.LogDebugf(app.ctx, "%#v", app.db_conn.err)
-		return Ok{}, app.db_conn.err
+	if app.db_pool.err != nil {
+		runtime.LogDebugf(app.ctx, "%#v", app.db_pool.err)
+		return Ok{}, app.db_pool.err
 	}
 
 	// TODO
