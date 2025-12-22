@@ -11,13 +11,10 @@ import {
 import logo from "./assets/images/logo-universal.png";
 import "./App.css";
 import * as runtime from "../wailsjs/runtime/runtime";
-import * as app from "../wailsjs/go/main/App";
+import * as app from "../wailsjs/go/app/App";
 import * as models from "../wailsjs/go/models";
 import * as uuid from "uuid";
-import {
-    ErrorBoundary,
-    FallbackProps as ErrorBoundaryProps,
-} from "react-error-boundary";
+import { ErrorBoundary, FallbackProps } from "react-error-boundary";
 import * as appStateCtx from "./AppStateContext";
 import Home from "./home/Home";
 import AppConfig from "./AppConfig";
@@ -41,9 +38,9 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
             <ProvideAppState>
                 <ConnectToDatabase>
-                    <LoadUser>
+                    <LoadUserFromAuthFile>
                         <Home />
-                    </LoadUser>
+                    </LoadUserFromAuthFile>
                 </ConnectToDatabase>
             </ProvideAppState>
         </QueryClientProvider>
@@ -95,10 +92,7 @@ function ConnectingToDatabase() {
     return <div className="py-4 text-center">Connecting to database</div>;
 }
 
-function DatabaseConnectionError({
-    error,
-    resetErrorBoundary,
-}: ErrorBoundaryProps) {
+function DatabaseConnectionError({ error, resetErrorBoundary }: FallbackProps) {
     if (error === "FILE_NOT_FOUND") {
         return (
             <div className="text-center pt-4">
@@ -125,13 +119,15 @@ function DatabaseConnectionError({
 interface LoadUserProps {
     children: any;
 }
-function LoadUser({ children }: LoadUserProps) {
+function LoadUserFromAuthFile({ children }: LoadUserProps) {
     const appState = useContext(appStateCtx.Context);
     if (appState.user.Id.toString() === uuid.NIL) {
         return (
-            <ErrorBoundary FallbackComponent={LoadUserError}>
-                <Suspense fallback={<LoadUserLoading />}>
-                    <LoadUserInner>{children}</LoadUserInner>
+            <ErrorBoundary FallbackComponent={LoadUserFromAuthFileError}>
+                <Suspense fallback={<LoadUserFromAuthFileLoading />}>
+                    <LoadUserFromAuthFileInner>
+                        {children}
+                    </LoadUserFromAuthFileInner>
                 </Suspense>
             </ErrorBoundary>
         );
@@ -140,22 +136,27 @@ function LoadUser({ children }: LoadUserProps) {
     }
 }
 
-function LoadUserError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
+function LoadUserFromAuthFileError({
+    error,
+    resetErrorBoundary,
+}: FallbackProps) {
     console.error("could not load user:", error);
     return <Login onsuccess={resetErrorBoundary} />;
 }
 
-function LoadUserLoading() {
+function LoadUserFromAuthFileLoading() {
     return <div>Loading user</div>;
 }
 
-interface LoadUserInnerProps {
+interface LoadUserFromAuthFileInnerProps {
     children: any;
 }
-function LoadUserInner({ children }: LoadUserInnerProps) {
+function LoadUserFromAuthFileInner({
+    children,
+}: LoadUserFromAuthFileInnerProps) {
     const { data: user } = useSuspenseQuery({
         queryKey: ["_init_load_user"],
-        queryFn: app.LoadUser,
+        queryFn: app.LoadUserFromAuthFile,
         gcTime: 0,
     });
 
@@ -167,7 +168,7 @@ function LoadUserInner({ children }: LoadUserInnerProps) {
 }
 
 interface SetUserProps {
-    user: models.main.User;
+    user: models.app.User;
     children: any;
 }
 function SetUser({ user, children }: SetUserProps) {
@@ -188,34 +189,25 @@ function Login({ onsuccess = () => {} }: LoginProps) {
     function onsubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         setError("");
+        const btn_submit = document.getElementById(
+            "submit"
+        )! as HTMLButtonElement;
+        btn_submit.disabled = true;
 
-        const target = e.currentTarget;
-        if (target === null) {
-            console.error("could not get form");
-            setError("form error");
-            return;
-        }
-        const data = new FormData(target);
-        const emailData = data.get("email")!;
-        const passwordData = data.get("password")!;
-        const email = emailData.toString();
-        const password = passwordData.toString();
+        const data = new FormData(e.target as HTMLFormElement);
+        const email = data.get("email")!.toString();
+        const password = data.get("password")!.toString();
         const remember = data.get("remember") !== null;
 
         if (!isEmail(email)) {
+            console.debug(email);
             const input = document.getElementById("email")! as HTMLInputElement;
             input.setCustomValidity("invalid email");
-            return;
-        }
-        if (password.length < 1) {
-            const input = document.getElementById(
-                "password"
-            )! as HTMLInputElement;
-            input.setCustomValidity("invalid password");
+            btn_submit.disabled = false;
             return;
         }
 
-        const credentials = new models.main.UserCredentials({
+        const credentials = new models.app.UserCredentials({
             Email: email,
             Password: password,
         });
@@ -225,61 +217,70 @@ function Login({ onsuccess = () => {} }: LoginProps) {
                     setError("invalid user credentials");
                 } else {
                     appStateDispatch({ type: "set_user", payload: user });
+                    btn_submit.disabled = false;
                     onsuccess();
                 }
             })
-            .catch((err) => setError(err));
+            .catch((err) => {
+                setError(err);
+                btn_submit.disabled = false;
+            });
     }
 
     return (
-        <div>
-            <h2 className="text-center pt-4">Log in</h2>
-            <form onSubmit={onsubmit}>
-                <div>
+        <div className="flex flex-col gap-2 items-center pt-4">
+            <h2>Log in</h2>
+            <div className="text-red-600">{error}</div>
+            <form
+                onSubmit={onsubmit}
+                className="flex flex-col gap-2 items-center"
+            >
+                <div className="flex flex-col gap-2 items-center">
                     <div>
                         <label>
-                            Email
+                            <span className="hidden">Email</span>
                             <input
                                 id="email"
                                 name="email"
                                 type="email"
-                                required
                                 autoComplete="email"
+                                placeholder="Email"
                                 className="input-basic user-invalid:ring-red-600"
+                                required
                             />
                         </label>
                     </div>
                     <div>
                         <label>
-                            Password
+                            <span className="hidden">Password</span>
                             <input
                                 id="password"
                                 name="password"
                                 type="password"
-                                required
                                 autoComplete="current-password"
+                                placeholder="Password"
                                 className="input-basic user-invalid:ring-red-600"
+                                required
                             />
                         </label>
                     </div>
                     <div>
                         <label>
-                            Remember me
                             <input
                                 id="remember"
                                 name="remember"
                                 type="checkbox"
                             />
+                            <span className="pl-2">Remember me</span>
                         </label>
                     </div>
                 </div>
                 <div>
-                    <button type="submit" className="btn-submit">
+                    <button type="submit" id="submit" className="btn-submit">
                         Login
                     </button>
                 </div>
             </form>
-            <div>{error}</div>
         </div>
     );
 }

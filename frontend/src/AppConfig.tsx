@@ -2,7 +2,7 @@ import { useContext, FormEvent, useState, Suspense } from "react";
 import * as models from "../wailsjs/go/models";
 import * as appStateCtx from "./AppStateContext";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import * as app from "../wailsjs/go/main/App";
+import * as app from "../wailsjs/go/app/App";
 
 interface AppConfigProps {
     onsuccess?: () => void;
@@ -25,17 +25,17 @@ function AppConfigInner({ onsuccess = () => {} }: AppConfigProps) {
     const { data: config } = useSuspenseQuery({
         queryKey: ["app_config"],
         queryFn: () =>
-            app.GetAppConfig().catch(() => new models.main.AppConfig()),
+            app.GetAppConfig().catch(() => new models.app.AppConfig()),
     });
 
     function onsubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        const target = e.currentTarget;
-        if (target === null) {
-            console.error("could not get form");
-            return;
-        }
-        const data = new FormData(target as HTMLFormElement);
+        const btn_submit = document.getElementById(
+            "submit"
+        )! as HTMLButtonElement;
+        btn_submit.disabled = true;
+
+        const data = new FormData(e.target as HTMLFormElement);
         const urlData = data.get("url")!;
         const usernameData = data.get("username")!;
         const passwordData = data.get("password")!;
@@ -45,7 +45,7 @@ function AppConfigInner({ onsuccess = () => {} }: AppConfigProps) {
         const password = passwordData.toString();
         const dbName = dbNameData.toString();
 
-        const config = new models.main.AppConfig({
+        const config = new models.app.AppConfig({
             DbUrl: url,
             DbUsername: username,
             DbPassword: password,
@@ -55,12 +55,17 @@ function AppConfigInner({ onsuccess = () => {} }: AppConfigProps) {
             .then(async () => {
                 try {
                     await app.LoadAppConfig();
+                    btn_submit.disabled = true;
                     onsuccess();
                 } catch (err) {
                     setError(JSON.stringify(err));
+                    btn_submit.disabled = true;
                 }
             })
-            .catch((err) => setError(err));
+            .catch((err) => {
+                setError(err);
+                btn_submit.disabled = false;
+            });
     }
 
     return (
@@ -129,6 +134,7 @@ function AppConfigInner({ onsuccess = () => {} }: AppConfigProps) {
                 <div>
                     <button
                         type="submit"
+                        id="submit"
                         className="cursor-pointer border rounded-sm px-1 py-0.5"
                     >
                         Save & Connect

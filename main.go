@@ -2,12 +2,10 @@ package main
 
 import (
 	"embed"
-	"errors"
 	"log"
 	"os"
 	"path/filepath"
-
-	"go.linka.cloud/go-appdir"
+	"syredb/app"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/logger"
@@ -16,19 +14,18 @@ import (
 )
 
 const LOG_FILE = "syredb.log"
-const PERMISSIONS_WRR = 0644
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
-	conf_dir_path := getConfigDir()
-	if !pathExists(conf_dir_path) {
-		os.MkdirAll(conf_dir_path, PERMISSIONS_WRR)
+	conf_dir_path := app.GetConfigDir()
+	if !app.PathExists(conf_dir_path) {
+		os.MkdirAll(conf_dir_path, app.FILE_PERMISSIONS_WRR)
 	}
 
 	log_file_path := filepath.Join(conf_dir_path, LOG_FILE)
-	app := NewApp()
+	app := app.NewApp()
 	err := wails.Run(&options.App{
 		Title:  "syredb",
 		Width:  1024,
@@ -37,8 +34,8 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 1},
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
+		OnStartup:        app.Startup,
+		OnShutdown:       app.Shutdown,
 		Bind: []interface{}{
 			app,
 		},
@@ -51,15 +48,4 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-// Get app config directory path.
-func getConfigDir() string {
-	dirs := appdir.New(APP_NAME)
-	return dirs.UserConfig()
-}
-
-func pathExists(path string) bool {
-	_, err := os.Stat(path)
-	return !errors.Is(err, os.ErrNotExist)
 }

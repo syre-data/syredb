@@ -2,7 +2,7 @@
 
 
 @utility input-basic {
-    @apply rounded-xs ring
+    @apply rounded-xs ring py-0.5 px-1
 }
 
 @utility btn-cmd {
