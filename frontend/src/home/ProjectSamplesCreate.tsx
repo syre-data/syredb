@@ -9,9 +9,11 @@ import {
     ActionDispatch,
     ChangeEvent,
     createContext,
+    Dispatch,
     FormEvent,
     InputEvent,
     MouseEvent,
+    SetStateAction,
     Suspense,
     useContext,
     useEffect,
@@ -22,6 +24,7 @@ import {
 } from "react";
 import { immerable } from "immer";
 import icon from "../icon";
+import classNames from "classnames";
 
 export default function () {
     const { id: project_id } = useParams();
@@ -57,6 +60,10 @@ function ProjectSamplesCreateError({
     );
 }
 
+const DEFAULT_COLUMN_WIDTH = 200;
+const DEFAULT_COLUMN_WIDTH_SM = 50;
+const DEFAULT_ROW_HEIGHT = 24;
+
 interface SampleData {
     id: number;
     label: string;
@@ -67,13 +74,140 @@ interface PropertyData {
     type: common.PropertyType;
 }
 
+interface ColumnState {
+    key: string;
+    width: number;
+}
+
+class ColumnsState {
+    [immerable] = true;
+    listMarker: number;
+    sampleLabel: number;
+    columns: ColumnState[];
+    sampleRemove: number;
+
+    constructor() {
+        this.listMarker = DEFAULT_COLUMN_WIDTH_SM;
+        this.sampleLabel = DEFAULT_COLUMN_WIDTH;
+        this.columns = [{ key: "sample.tags", width: DEFAULT_COLUMN_WIDTH }];
+        this.sampleRemove = DEFAULT_COLUMN_WIDTH_SM;
+    }
+
+    asTemplate(): string {
+        const cols = this.columns.map((col) => `${col.width}px`).join(" ");
+        if (this.columns.length === 1) {
+            return `${this.listMarker}px ${this.sampleLabel}px ${cols} ${DEFAULT_COLUMN_WIDTH}px`;
+        } else {
+            return `${this.listMarker}px ${this.sampleLabel}px ${cols} ${this.sampleRemove}px`;
+        }
+    }
+
+    numColumns(): number {
+        return this.columns.length + 3;
+    }
+
+    addColumn(key: string, width: number = 200) {
+        this.columns.push({ key, width });
+    }
+
+    /**
+     * @param key Column key.
+     * @returns `false` if the key did not exist.
+     */
+    removeColumn(key: string): boolean {
+        const idx = this.columns.findIndex((col) => col.key === key);
+        if (idx < 0) {
+            return false;
+        }
+        this.columns.splice(idx, 1);
+        return true;
+    }
+
+    findColumnIndex(key: string): number {
+        const idx = this.columns.findIndex((col) => col.key === key);
+        if (idx < 0) {
+            return idx;
+        }
+
+        return idx + 2;
+    }
+}
+
+interface SampleRowState {
+    sample_id: number;
+    expanded: boolean;
+}
+class SampleRowsState {
+    [immerable] = true;
+    rows: SampleRowState[];
+
+    constructor(rows: SampleRowState[] = []) {
+        this.rows = rows;
+    }
+
+    asTemplate(): string {
+        const rows = this.rows.map((row) => {
+            let template = "auto";
+            if (row.expanded) {
+                template += " auto";
+            } else {
+                template += " 0px";
+            }
+
+            return template;
+        });
+
+        return rows.join(" ");
+    }
+
+    addRow(sample_id: number) {
+        this.rows.push({ sample_id, expanded: false });
+    }
+
+    /**
+     * @param sample_id Sample id.
+     * @returns `false` if the row did not exist.
+     */
+    removeRow(sample_id: number): boolean {
+        const idx = this.findIndex(sample_id);
+        if (idx < 0) {
+            return false;
+        }
+
+        this.rows.splice(idx, 1);
+        return true;
+    }
+
+    findIndex(sample_id: number): number {
+        return this.rows.findIndex((row) => row.sample_id === sample_id);
+    }
+
+    setExpanded(sample_id: number, expanded: boolean): boolean {
+        const idx = this.findIndex(sample_id);
+        if (idx < 0) {
+            return false;
+        }
+
+        this.rows[idx].expanded = expanded;
+        return true;
+    }
+}
+
+interface DisplayState {
+    columns: ColumnsState;
+    rows: SampleRowsState;
+}
+
 class State {
     [immerable] = true;
     _next_sample_id: number;
+    _project_sample_labels: string[];
     samples: SampleData[];
     properties: PropertyData[];
+    display: DisplayState;
 
-    constructor() {
+    constructor(project_sample_labels: string[]) {
+        this._project_sample_labels = project_sample_labels;
         this.samples = [
             {
                 id: 0,
@@ -82,6 +216,10 @@ class State {
         ];
         this._next_sample_id = 1;
         this.properties = [];
+        this.display = {
+            columns: new ColumnsState(),
+            rows: new SampleRowsState([{ sample_id: 0, expanded: false }]),
+        };
     }
 }
 
@@ -89,14 +227,23 @@ type StateAction =
     | { type: "add_sample" }
     | { type: "remove_sample"; payload: { id: number } }
     | { type: "set_sample_label"; payload: { id: number; label: string } }
-    | { type: "add_property"; payload: PropertyData }
-    | { type: "remove_property"; payload: { key: string } };
+    | {
+          type: "add_property";
+          payload: { property: PropertyData; width?: number };
+      }
+    | { type: "remove_property"; payload: { key: string } }
+    | {
+          type: "expand_sample_row";
+          payload: { sample_id: number; expand: boolean };
+      }
+    | { type: "set_width"; payload: { column: number; width: number } };
 
 function stateReducer(draft: State, action: StateAction) {
     let sample: SampleData;
     let maybe_sample: SampleData | undefined;
     let property;
     let idx: number;
+    let key: string;
     switch (action.type) {
         case "add_sample":
             if (draft.samples.length < 1) {
@@ -107,6 +254,9 @@ function stateReducer(draft: State, action: StateAction) {
                 label: "",
             };
             draft.samples.push(sample);
+
+            draft.display.rows.addRow(draft._next_sample_id);
+
             draft._next_sample_id += 1;
             break;
         case "remove_sample":
@@ -131,13 +281,19 @@ function stateReducer(draft: State, action: StateAction) {
         case "add_property":
             if (
                 draft.properties.find(
-                    (property) => property.key === action.payload.key
+                    (property) => property.key === action.payload.property.key
                 )
             ) {
-                console.error(`property ${action.payload.key} already exists`);
+                console.error(
+                    `property ${action.payload.property.key} already exists`
+                );
                 return;
             }
-            draft.properties.push(action.payload);
+            draft.properties.push(action.payload.property);
+
+            const width = action.payload.width ?? DEFAULT_COLUMN_WIDTH;
+            key = `property.${action.payload.property.key}`;
+            draft.display.columns.addColumn(key, width);
             break;
         case "remove_property":
             idx = draft.properties.findIndex(
@@ -148,127 +304,33 @@ function stateReducer(draft: State, action: StateAction) {
                 return;
             }
             draft.properties.splice(idx, 1);
-            break;
-    }
-}
 
-const StateCtx = createContext(new State());
-const StateDispatchCtx = createContext<ActionDispatch<[StateAction]>>(() => {});
-
-interface ColumnState {
-    key: string;
-    width: number;
-}
-
-class ColumnsState {
-    [immerable] = true;
-    listMarker: number;
-    sampleLabel: number;
-    columns: ColumnState[];
-    sampleRemove: number;
-
-    constructor() {
-        this.listMarker = 50;
-        this.sampleLabel = 200;
-        this.columns = [{ key: "sample.tags", width: 200 }];
-        this.sampleRemove = 50;
-    }
-
-    asTemplate(): string {
-        const cols = this.columns.map((col) => `${col.width}px`).join(" ");
-        if (this.columns.length === 1) {
-            const DEFAULT_COL_WIDTH = 200;
-            return `${this.listMarker}px ${this.sampleLabel}px ${cols} ${DEFAULT_COL_WIDTH}px`;
-        } else {
-            return `${this.listMarker}px ${this.sampleLabel}px ${cols} ${this.sampleRemove}px`;
-        }
-    }
-
-    numColumns(): number {
-        return this.columns.length + 3;
-    }
-
-    addColumn(key: string, width: number = 200) {
-        this.columns.push({ key, width });
-    }
-
-    findIndex(key: string): number {
-        const idx = this.columns.findIndex((col) => col.key === key);
-        if (idx < 0) {
-            return idx;
-        }
-
-        return idx + 3;
-    }
-}
-
-interface RowState {
-    sample_id: number;
-    expanded: boolean;
-}
-class RowsState {
-    [immerable] = true;
-    rows: RowState[];
-
-    constructor() {
-        this.rows = [];
-    }
-}
-
-interface DisplayState {
-    columns: ColumnsState;
-    rows: RowsState;
-}
-
-type DisplayStateAction =
-    | { type: "add_property_column"; payload: { key: string; width?: number } }
-    | { type: "remove_property_column"; payload: { property_key: string } }
-    | {
-          type: "expand_sample_row";
-          payload: { sample_id: number; expand: boolean };
-      }
-    | { type: "set_width"; payload: { column: number; width: number } };
-
-function displayStateReducer(draft: DisplayState, action: DisplayStateAction) {
-    let key: string;
-    switch (action.type) {
-        case "add_property_column":
             key = `property.${action.payload.key}`;
-            draft.columns.addColumn(key, action.payload.width);
-            return;
-        case "remove_property_column":
-            key = `property.${action.payload.property_key}`;
-            const idx = draft.columns.columns.findIndex(
-                (col) => col.key === key
-            );
-            if (idx <= 0) {
-                console.debug(
-                    `property ${action.payload.property_key} not found`
-                );
-                return;
+            const removed = draft.display.columns.removeColumn(key);
+            if (!removed) {
+                console.debug(`property ${action.payload.key} not found`);
             }
-            draft.columns.columns.splice(idx, 1);
             return;
         case "expand_sample_row":
-            const sample_row_idx = draft.rows.rows.findIndex(
-                (row) => row.sample_id === action.payload.sample_id
-            )!;
-            draft.rows.rows[sample_row_idx].expanded = action.payload.expand;
+            const ok = draft.display.rows.setExpanded(
+                action.payload.sample_id,
+                action.payload.expand
+            );
+            if (!ok) {
+                console.error(
+                    `sample ${action.payload.sample_id} not found in display state rows`
+                );
+            }
             return;
         case "set_width":
-            draft.columns.columns[action.payload.column].width =
+            draft.display.columns.columns[action.payload.column].width =
                 action.payload.width;
             return;
     }
 }
 
-const DisplayStateCtx = createContext({
-    columns: new ColumnsState(),
-    rows: new RowsState(),
-});
-const DisplayStateDispatchCtx = createContext<
-    ActionDispatch<[DisplayStateAction]>
->(() => {});
+const StateCtx = createContext(new State([]));
+const StateDispatchCtx = createContext<ActionDispatch<[StateAction]>>(() => {});
 
 function project_sample_create_is_empty(
     sample: models.app.ProjectSampleCreate
@@ -277,8 +339,16 @@ function project_sample_create_is_empty(
     const tags_empty = !sample.Tags || sample.Tags.length === 0;
     const properties_empty =
         !sample.Properties || sample.Properties.length === 0;
+    const notes_empty = sample.Notes.length === 0;
 
-    return label_empty && tags_empty && properties_empty;
+    return label_empty && tags_empty && properties_empty && notes_empty;
+}
+
+interface SampleNoteCreate {
+    id: string;
+    sample_id: string;
+    timestamp?: Date;
+    content?: string;
 }
 
 interface ProjectSamplesCreateProps {
@@ -290,6 +360,11 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
         queryKey: ["project", project_id],
         queryFn: () => app.GetProjectWithUserPermission(project_id),
     });
+    const { data: project_resources } = useSuspenseQuery({
+        queryKey: ["project_resources", project_id],
+        queryFn: async () => app.GetProjectResources(project_id),
+    });
+
     const [error, setError] = useState("");
     const user_permission = common.user_permission_from_string(
         project.UserPermission
@@ -305,13 +380,12 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
         return;
     }
 
-    const [state, stateDispatch] = useImmerReducer(stateReducer, new State());
-    const [displayState, displayStateDispatch] = useImmerReducer(
-        displayStateReducer,
-        {
-            columns: new ColumnsState(),
-            rows: new RowsState(),
-        }
+    const project_sample_labels = project_resources.Samples.map(
+        (sample) => sample.Label
+    );
+    const [state, stateDispatch] = useImmerReducer(
+        stateReducer,
+        new State(project_sample_labels)
     );
 
     function cancel(e: MouseEvent<HTMLButtonElement>) {
@@ -333,7 +407,11 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
 
         const sample_form_key_pattern = /sample\[(\d+?)\]\[(\w+?)\]/;
         const sample_property_pattern = /sample\[\d+?\]\[property\]\[(\w+?)\]/;
+        const sample_note_pattern =
+            /sample\[\d+?\]\[note\]\[(\d+?)\]\[(\w+?)\]/;
+
         const sample_data = new Map<string, models.app.ProjectSampleCreate>();
+        const sample_notes = new Map<string, SampleNoteCreate>();
         const data = new FormData(e.target as HTMLFormElement);
         for (const [key, _] of data.entries()) {
             const input = document.getElementById(key) as HTMLInputElement;
@@ -355,6 +433,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                         Label: "",
                         Tags: "",
                         Properties: [],
+                        Notes: [],
                     })
                 );
             }
@@ -526,6 +605,11 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                             };
 
                             break;
+                        default:
+                            console.error(
+                                `invalid sample property type key: ${key}`
+                            );
+                            return;
                     }
 
                     const property = new models.app.Property({
@@ -535,10 +619,64 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                     });
                     sample.Properties.push(property);
                     break;
+                case "note":
+                    const note_matches = key.match(sample_note_pattern);
+                    if (note_matches === null) {
+                        console.error(`invalid sample note form key: ${key}`);
+                        return;
+                    }
+                    const note_id = note_matches[1];
+                    const note_key = note_matches[2];
+                    const map_key = `${sample_id}/${note_id}`;
+                    if (!sample_notes.has(map_key)) {
+                        sample_notes.set(map_key, {
+                            id: note_id,
+                            sample_id: sample_id,
+                            timestamp: undefined,
+                            content: undefined,
+                        });
+                    }
+                    const sample_note = sample_notes.get(map_key)!;
+                    switch (note_key) {
+                        case "timestamp":
+                            sample_note.timestamp = new Date(value.toString());
+                            break;
+                        case "content":
+                            sample_note.content = value.toString().trim();
+                            break;
+                        default:
+                            console.error(`invalid sample note key: ${key}`);
+                            return;
+                    }
+                    break;
                 default:
                     console.error(`invalid sample form property key: ${key}`);
                     return;
             }
+        }
+        const form = e.target as HTMLFormElement;
+
+        for (const note of sample_notes.values()) {
+            if (!note.content) {
+                continue;
+            }
+            if (!note.timestamp) {
+                const input = document.getElementById(
+                    `sample[${note.sample_id}][note][${note.id}][timestamp]`
+                )! as HTMLInputElement;
+                input.setCustomValidity("timestamp must be set");
+            }
+
+            const sample = sample_data.get(note.sample_id)!;
+            sample.Notes.push(
+                new models.app.ProjectSampleNoteCreate({
+                    Timestamp: note.timestamp!.toISOString(),
+                    Content: note.content,
+                })
+            );
+        }
+        if (!form.reportValidity()) {
+            return;
         }
 
         const sample_data_filtered = [
@@ -558,13 +696,11 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
             }
         }
 
-        const form = e.target as HTMLFormElement;
         if (!form.reportValidity()) {
             return;
         }
 
         const samples = [...sample_data_filtered.map(([_, sample]) => sample)];
-        console.debug(sample_data, sample_data_filtered, samples);
         await app
             .CreateProjectSamples(project_id, samples)
             .then(() => {
@@ -585,37 +721,33 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
             </div>
             <StateCtx value={state}>
                 <StateDispatchCtx value={stateDispatch}>
-                    <DisplayStateCtx value={displayState}>
-                        <DisplayStateDispatchCtx value={displayStateDispatch}>
-                            <ProjectSamplesFormHeader />
-                            <form
-                                onSubmit={create_samples}
-                                className="flex flex-col gap-2 pt-2"
-                            >
-                                <ProjectSamplesFormList />
-                                <div className="flex gap-2 justify-center px-4">
-                                    <div>
-                                        <button
-                                            type="submit"
-                                            id="btn-submit"
-                                            className="btn-submit"
-                                        >
-                                            Save
-                                        </button>
-                                    </div>
-                                    <div>
-                                        <button
-                                            type="button"
-                                            className="btn-submit"
-                                            onMouseDown={cancel}
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </div>
-                            </form>
-                        </DisplayStateDispatchCtx>
-                    </DisplayStateCtx>
+                    <ProjectSamplesFormHeader />
+                    <form
+                        onSubmit={create_samples}
+                        className="flex flex-col gap-2 pt-2"
+                    >
+                        <ProjectSamplesFormList />
+                        <div className="flex gap-2 justify-center px-4">
+                            <div>
+                                <button
+                                    type="submit"
+                                    id="btn-submit"
+                                    className="btn-submit"
+                                >
+                                    Save
+                                </button>
+                            </div>
+                            <div>
+                                <button
+                                    type="button"
+                                    className="btn-submit"
+                                    onMouseDown={cancel}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </form>
                 </StateDispatchCtx>
             </StateCtx>
             <div>{error}</div>
@@ -633,8 +765,6 @@ function ProjectSamplesFormHeader() {
     const NEW_PROPERTY_TYPE_DEFAULT_VALUE = "string";
     const state = useContext(StateCtx);
     const stateDispatch = useContext(StateDispatchCtx);
-    const displayState = useContext(DisplayStateCtx);
-    const displayStateDispatch = useContext(DisplayStateDispatchCtx);
     const gridWrapperNode = useRef<HTMLDivElement | null>(null);
     const newPropertyKeyNode = useRef<HTMLInputElement | null>(null);
     const newPropertyTypeNode = useRef<HTMLSelectElement | null>(null);
@@ -644,8 +774,8 @@ function ProjectSamplesFormHeader() {
             return;
         }
         gridWrapperNode.current.style.gridTemplateColumns =
-            displayState.columns.asTemplate();
-    }, [displayState, gridWrapperNode]);
+            state.display.columns.asTemplate();
+    }, [state.display, gridWrapperNode]);
 
     function on_change_property_key(e: ChangeEvent<HTMLInputElement>) {
         const keyInput = e.target;
@@ -700,11 +830,7 @@ function ProjectSamplesFormHeader() {
 
         stateDispatch({
             type: "add_property",
-            payload: { key, type },
-        });
-        displayStateDispatch({
-            type: "add_property_column",
-            payload: { key },
+            payload: { property: { key, type }, width: DEFAULT_COLUMN_WIDTH },
         });
 
         keyInput.value = "";
@@ -712,9 +838,9 @@ function ProjectSamplesFormHeader() {
     }
 
     return (
-        <div ref={gridWrapperNode} className="grid sticky top-0">
+        <div ref={gridWrapperNode} className="grid gap-2 sticky top-0">
             <div
-                className="row-1 -col-end-2 flex gap-2 sticky left-0"
+                className="row-1 -col-end-1 flex gap-2 sticky left-0"
                 style={{ gridColumnStart: PROPERTIES_START_COL }}
             >
                 <div>Properties</div>
@@ -810,17 +936,11 @@ function ProjectSamplesFormHeaderProperty({
 }: ProjectSamplesFormHeaderPropertyProps) {
     const state = useContext(StateCtx);
     const stateDispatch = useContext(StateDispatchCtx);
-    const displayState = useContext(DisplayStateCtx);
-    const displayStateDispatch = useContext(DisplayStateDispatchCtx);
 
     function remove(e: MouseEvent<HTMLButtonElement>) {
         stateDispatch({
             type: "remove_property",
             payload: { key: property.key },
-        });
-        displayStateDispatch({
-            type: "remove_property_column",
-            payload: { property_key: property.key },
         });
     }
 
@@ -841,6 +961,8 @@ function ProjectSamplesFormHeaderProperty({
 }
 
 function ProjectSamplesFormList() {
+    const SAMPLE_ROW_SPAN = 2;
+
     const state = useContext(StateCtx);
     const stateDispatch = useContext(StateDispatchCtx);
 
@@ -854,17 +976,27 @@ function ProjectSamplesFormList() {
     }
 
     return (
-        <ol className="grid gap-2">
+        <ol
+            className="grid gap-2"
+            style={{
+                gridTemplateColumns: state.display.columns.asTemplate(),
+                gridTemplateRows: state.display.rows.asTemplate() + " auto",
+            }}
+        >
             {state.samples.map((sample, idx) => (
-                <li key={sample.id.toString()} className="px-4">
+                <li
+                    key={sample.id.toString()}
+                    className="px-4 col-span-full grid grid-cols-subgrid grid-rows-subgrid"
+                    style={{
+                        gridRowStart: idx * SAMPLE_ROW_SPAN + 1,
+                        gridRowEnd: `span ${SAMPLE_ROW_SPAN}`,
+                    }}
+                >
                     <SamplesFormListItem sample={sample} index={idx} />
                 </li>
             ))}
-            <li className="px-4">
-                <div
-                    className="col-1"
-                    style={{ gridRow: state.samples.length + NUM_HEADER_ROWS }}
-                >
+            <li className="px-4 col-1 -row-2">
+                <div>
                     <button
                         type="button"
                         className="btn-cmd"
@@ -878,6 +1010,10 @@ function ProjectSamplesFormList() {
     );
 }
 
+interface SampleNoteData {
+    id: number;
+}
+
 interface SamplesFormListItemProps {
     sample: SampleData;
     index: number;
@@ -885,8 +1021,7 @@ interface SamplesFormListItemProps {
 function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
     const state = useContext(StateCtx);
     const stateDispatch = useContext(StateDispatchCtx);
-    const displayState = useContext(DisplayStateCtx);
-    const dispatchDisplayState = useContext(DisplayStateDispatchCtx);
+    const [notes, setNotes] = useState<SampleNoteData[]>([{ id: 0 }]);
 
     function update_label(e: ChangeEvent<HTMLInputElement>) {
         const input = e.target as HTMLInputElement;
@@ -909,7 +1044,14 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
             input.reportValidity();
             return;
         }
-        // TODO: Match label across whole project
+        if (state._project_sample_labels.includes(value)) {
+            input.setCustomValidity(
+                "A sample with this label already exists in this project"
+            );
+            input.reportValidity();
+            return;
+        }
+
         stateDispatch({
             type: "set_sample_label",
             payload: { id: sample.id, label: value },
@@ -931,37 +1073,58 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
         stateDispatch({ type: "remove_sample", payload: { id: sample.id } });
     }
 
+    const expanded = state.display.rows.rows.find(
+        (row) => row.sample_id === sample.id
+    )?.expanded;
+
     function toggle_expand(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
             return;
         }
 
-        const expanded = displayState.rows.rows.find(
-            (row) => row.sample_id === sample.id
-        )?.expanded;
-        dispatchDisplayState({
+        stateDispatch({
             type: "expand_sample_row",
             payload: { sample_id: sample.id, expand: !expanded },
         });
     }
 
-    const mainRowIdx = index * 2 + 1;
-    const notesRowIdx = mainRowIdx + 1;
+    function add_note(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        const id = notes.length === 0 ? 0 : notes[notes.length - 1].id + 1;
+        setNotes([...notes, { id }]);
+    }
+
+    function remove_note(id: number) {
+        setNotes(notes.filter((note) => note.id !== id));
+    }
+
+    const mainRowIdx = 1;
+    const notesRowIdx = 2;
     return (
-        <div className="group/sample-row inline-flex gap-2">
+        <div className="group/sample-row contents">
             <div style={{ gridColumn: LIST_MARKER_COL, gridRow: mainRowIdx }}>
                 <button
                     type="button"
                     className="cursor-pointer"
                     onMouseDown={toggle_expand}
                 >
-                    {index + 1}.
-                    <div className="invisible group-hover/sample-row:visible">
+                    <div
+                        className={classNames({
+                            "group-hover/sample-row:visible": true,
+                            invisible: !expanded,
+                            visible: expanded,
+                            "-rotate-90": !expanded,
+                        })}
+                    >
                         <icon.CaretDown />
                     </div>
                 </button>
+                {index + 1}.
             </div>
-            <div className="col-2" style={{ gridRow: index + 1 }}>
+            <div className="col-2" style={{ gridRow: mainRowIdx }}>
                 <label>
                     <span className="hidden">Label</span>
                     <input
@@ -1000,7 +1163,7 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
             <div
                 className="invisible group-hover/sample-row:visible flex gap-1 sticky right-0"
                 style={{
-                    gridColumn: displayState.columns.numColumns(),
+                    gridColumn: state.display.columns.numColumns(),
                     gridRow: mainRowIdx,
                 }}
             >
@@ -1017,8 +1180,35 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
                     </div>
                 )}
             </div>
-            <div className="col-span-full" style={{ gridRow: notesRowIdx }}>
-                Notes
+            <div
+                className="col-start-2 -col-end-1 overflow-hidden"
+                style={{ gridRow: notesRowIdx }}
+            >
+                <div className="flex gap-2">
+                    <h3>Notes</h3>
+                    <div>
+                        <button
+                            type="button"
+                            className="btn-cmd"
+                            onMouseDown={add_note}
+                        >
+                            <icon.Plus />
+                        </button>
+                    </div>
+                </div>
+                <ol className="grid grid-cols-[1.5rem_auto]">
+                    {notes.map((note, index) => (
+                        <li key={note.id} className="contents">
+                            <div className="col-1">{index + 1}.</div>
+                            <SampleNote
+                                id={note.id}
+                                sample={sample}
+                                onRemove={remove_note}
+                                className="col-2"
+                            />
+                        </li>
+                    ))}
+                </ol>
             </div>
         </div>
     );
@@ -1030,9 +1220,22 @@ interface SamplePropertyProps {
     property: PropertyData;
 }
 function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
-    const displayState = useContext(DisplayStateCtx);
+    const state = useContext(StateCtx);
+    const inputNode = useRef(null);
 
-    const colIdx = displayState.columns.findIndex(`property.${property.key}`);
+    useLayoutEffect(() => {
+        if (
+            inputNode.current !== null &&
+            property.type === common.PropertyType.Boolean
+        ) {
+            const input = inputNode.current as HTMLInputElement;
+            input.indeterminate = true;
+        }
+    }, [inputNode]);
+
+    const colIdx = state.display.columns.findColumnIndex(
+        `property.${property.key}`
+    );
     if (colIdx < 0) {
         console.error("invalid column index");
         return <></>;
@@ -1089,6 +1292,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
             return (
                 <div style={style}>
                     <input
+                        ref={inputNode}
                         type="checkbox"
                         id={`sample[${sample.id}][property][${property.key}]`}
                         name={`sample[${sample.id}][property][${property.key}]`}
@@ -1116,4 +1320,68 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
                 </div>
             );
     }
+}
+
+interface SampleNoteProps {
+    id: number;
+    sample: SampleData;
+    onRemove: (id: number) => void;
+    className?: string;
+}
+function SampleNote({ id, sample, onRemove, className }: SampleNoteProps) {
+    function remove(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        onRemove(id);
+    }
+
+    return (
+        <div className={`px-0.5 ${className}`}>
+            <div className="pb-2 flex gap-2">
+                <div>
+                    <label>
+                        <span className="hidden">Date for note {id}</span>
+                        <input
+                            type="datetime-local"
+                            id={`sample[${sample.id}][note][${id}][timestamp]`}
+                            name={`sample[${sample.id}][note][${id}][timestamp]`}
+                            defaultValue={nowLocalISOString()}
+                            className="input-basic pb-2"
+                        />
+                    </label>
+                </div>
+                <div>
+                    <button
+                        type="button"
+                        className="btn-cmd"
+                        title={`Remove note ${id}`}
+                        onMouseDown={remove}
+                    >
+                        <icon.Trash />
+                    </button>
+                </div>
+            </div>
+            <div>
+                <label>
+                    <span className="hidden">Content for note {id}</span>
+                    <textarea
+                        id={`sample[${sample.id}][note][${id}][content]`}
+                        name={`sample[${sample.id}][note][${id}][content]`}
+                        placeholder="Note"
+                        className="px-1 py-0.5 w-full min-h-4 input-basic"
+                    ></textarea>
+                </label>
+            </div>
+        </div>
+    );
+}
+
+function nowLocalISOString() {
+    let now = new Date();
+    now = new Date(Date.now() - now.getTimezoneOffset() * 60 * 1000);
+    now.setSeconds(0);
+    now.setMilliseconds(0);
+    return now.toISOString().slice(0, -1);
 }

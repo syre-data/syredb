@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS project_sample_note_ (
     _sample UUID REFERENCES sample_(_id) NOT NULL,
     _project UUID REFERENCES project_(_id) NOT NULL,
     timestamp TIMESTAMP(3) WITH TIME ZONE DEFAULT NOT() NOT NULL, 
-    note TEXT NOT NULL
+    content TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS project_sample_membership_ (

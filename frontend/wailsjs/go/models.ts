@@ -224,10 +224,25 @@ export namespace app {
 		}
 	}
 	
+	export class ProjectSampleNoteCreate {
+	    Timestamp: string;
+	    Content: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProjectSampleNoteCreate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Timestamp = source["Timestamp"];
+	        this.Content = source["Content"];
+	    }
+	}
 	export class ProjectSampleCreate {
 	    Label: string;
 	    Tags: string[];
 	    Properties: Property[];
+	    Notes: ProjectSampleNoteCreate[];
 	
 	    static createFrom(source: any = {}) {
 	        return new ProjectSampleCreate(source);
@@ -238,6 +253,7 @@ export namespace app {
 	        this.Label = source["Label"];
 	        this.Tags = source["Tags"];
 	        this.Properties = this.convertValues(source["Properties"], Property);
+	        this.Notes = this.convertValues(source["Notes"], ProjectSampleNoteCreate);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -258,6 +274,7 @@ export namespace app {
 		    return a;
 		}
 	}
+	
 	
 	export class ProjectWithUserPermission {
 	    Id: number[];

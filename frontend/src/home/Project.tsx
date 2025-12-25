@@ -225,5 +225,5 @@ interface ProjectSampleListItemProps {
     sample: models.app.ProjectSample;
 }
 function ProjectSampleListItem({ sample }: ProjectSampleListItemProps) {
-    return <div>{sample.Label}</div>;
+    return <div className="px-4">{sample.Label}</div>;
 }

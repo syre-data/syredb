@@ -16,6 +16,8 @@ const (
 	PROJECT_PRIVATE = ProjectVisibility("private")
 )
 
+type IsoTimestamp string
+
 type ProjectVisibility string
 
 const (
@@ -120,8 +122,11 @@ type Property struct {
 }
 
 type ProjectSampleNote struct {
-	Id   uuid.UUID
-	Note string
+	Id        uuid.UUID
+	Sample    uuid.UUID
+	Project   uuid.UUID
+	Timestamp time.Time
+	Content   string
 }
 
 type ProjectSample struct {
@@ -234,19 +239,19 @@ func (app *App) GetProjectResources(project_id uuid.UUID) (ProjectResources, err
 		project_resources.Samples = []ProjectSample{}
 	}
 
-	sample_tags_query := "SELECT _tag FROM sample_tag_ WHERE _sample=$1"
+	sample_tags_query := "SELECT _tag FROM project_sample_tag_ WHERE _project=$1 AND _sample=$2"
 	sample_properties_query := "SELECT _key, _type, value FROM sample_property_ WHERE _sample=$1"
 	sample_note_count_query := "SELECT COUNT(*) FROM project_sample_note_ WHERE _sample=$1"
 	for i := range project_resources.Samples {
 		sample_id := project_resources.Samples[i].Id
-		sample_tag_rows, _ := app.db_pool.ok.Query(app.ctx, sample_tags_query, sample_id)
+		sample_tag_rows, _ := app.db_pool.ok.Query(app.ctx, sample_tags_query, project_id, sample_id)
 		project_resources.Samples[i].Tags, err = pgx.CollectRows(sample_tag_rows, func(row pgx.CollectableRow) (string, error) {
 			var tag string
 			err := row.Scan(&tag)
 			return tag, err
 		})
 		if err != nil {
-			runtime.LogErrorf(app.ctx, "could not get sample tags of `%s`: %v", sample_id, err)
+			runtime.LogErrorf(app.ctx, "could not get project sample tags of `%s` in project `%s`: %v", sample_id, project_id, err)
 		}
 
 		sample_properties_rows, _ := app.db_pool.ok.Query(app.ctx, sample_properties_query, sample_id)
@@ -313,10 +318,16 @@ func (app *App) GetProjectWithUserPermission(project_id uuid.UUID) (ProjectWithU
 	return project, nil
 }
 
+type ProjectSampleNoteCreate struct {
+	Timestamp IsoTimestamp
+	Content   string
+}
+
 type ProjectSampleCreate struct {
 	Label      string
 	Tags       []string
 	Properties []Property
+	Notes      []ProjectSampleNoteCreate
 }
 
 func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleCreate) (Ok, error) {
@@ -413,80 +424,124 @@ func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleC
 	for _, sample := range samples {
 		num_tags += len(sample.Tags)
 	}
-	tags := make([]any, num_tags)
-	tidx := 0
-	var sample_tags_query strings.Builder
-	sample_tags_query.WriteString("INSERT INTO project_sample_tag_ (_sample, _project, _tag) VALUES ")
-	for idx, sample_id := range sample_ids {
-		for _, tag := range samples[idx].Tags {
-			if tidx > 0 {
-				fmt.Fprintf(&sample_tags_query, ", ")
+	if num_tags > 0 {
+		tags := make([]any, num_tags)
+		tidx := 0
+		var sample_tags_query strings.Builder
+		sample_tags_query.WriteString("INSERT INTO project_sample_tag_ (_sample, _project, _tag) VALUES ")
+		for idx, sample_id := range sample_ids {
+			for _, tag := range samples[idx].Tags {
+				if tidx > 0 {
+					fmt.Fprintf(&sample_tags_query, ", ")
+				}
+				fmt.Fprintf(
+					&sample_tags_query,
+					"('%s', '%s', $%d)",
+					sample_id,
+					project,
+					tidx+1,
+				)
+				tags[tidx] = tag
+				tidx += 1
 			}
-			fmt.Fprintf(
-				&sample_tags_query,
-				"('%s', '%s', $%d)",
-				sample_id,
-				project,
-				tidx+1,
-			)
-			tags[tidx] = tag
-			tidx += 1
+		}
+		_, err = tx.Exec(app.ctx, sample_tags_query.String(), tags...)
+		if err != nil {
+			runtime.LogErrorf(app.ctx, "could not create project sample tags: %v", err)
+			return Ok{}, err
 		}
 	}
-	_, err = tx.Exec(app.ctx, sample_tags_query.String(), tags...)
-	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not create project sample tags: %v", err)
-		return Ok{}, err
-	}
 
+	const NUM_PROPERTY_VALUES = 3
 	num_properties := 0
 	for _, sample := range samples {
 		num_properties += len(sample.Properties)
 	}
-	property_values := make([]any, num_properties*3)
-	pidx := 0
-	var sample_properties_query strings.Builder
-	sample_properties_query.WriteString("INSERT INTO sample_property_ (_sample, _key, _type, value) VALUES ")
-	for idx, sample_id := range sample_ids {
-		for _, property := range samples[idx].Properties {
-			if pidx > 0 {
-				fmt.Fprintf(&sample_properties_query, ", ")
-			}
+	if num_properties > 0 {
+		property_values := make([]any, num_properties*NUM_PROPERTY_VALUES)
+		pidx := 0
+		var sample_properties_query strings.Builder
+		sample_properties_query.WriteString("INSERT INTO sample_property_ (_sample, _key, _type, value) VALUES ")
+		for idx, sample_id := range sample_ids {
+			for _, property := range samples[idx].Properties {
+				if pidx > 0 {
+					fmt.Fprint(&sample_properties_query, ", ")
+				}
 
-			key_idx := pidx
-			type_idx := key_idx + 1
-			value_idx := type_idx + 1
-			fmt.Fprintf(
-				&sample_properties_query,
-				"('%s', $%d, $%d, $%d)",
-				sample_id,
-				key_idx+1,
-				type_idx+1,
-				value_idx+1,
-			)
-
-			property_value, err := json.Marshal(property.Value)
-			if err != nil {
-				runtime.LogErrorf(
-					app.ctx,
-					"could not serialize property %s with value %v: %v",
-					property.Key,
-					property.Value,
-					err,
+				key_idx := pidx
+				type_idx := key_idx + 1
+				value_idx := type_idx + 1
+				fmt.Fprintf(
+					&sample_properties_query,
+					"('%s', $%d, $%d, $%d)",
+					sample_id,
+					key_idx+1,
+					type_idx+1,
+					value_idx+1,
 				)
-				return Ok{}, err
-			}
 
-			property_values[key_idx] = property.Key
-			property_values[type_idx] = property.Type
-			property_values[value_idx] = property_value
-			pidx += 3
+				property_value, err := json.Marshal(property.Value)
+				if err != nil {
+					runtime.LogErrorf(
+						app.ctx,
+						"could not serialize property %s with value %v: %v",
+						property.Key,
+						property.Value,
+						err,
+					)
+					return Ok{}, err
+				}
+
+				property_values[key_idx] = property.Key
+				property_values[type_idx] = property.Type
+				property_values[value_idx] = property_value
+				pidx += NUM_PROPERTY_VALUES
+			}
+		}
+		_, err = tx.Exec(app.ctx, sample_properties_query.String(), property_values...)
+		if err != nil {
+			runtime.LogErrorf(app.ctx, "could not create sample properties: %v", err)
+			return Ok{}, err
 		}
 	}
-	_, err = tx.Exec(app.ctx, sample_properties_query.String(), property_values...)
-	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not create sample properties: %v", err)
-		return Ok{}, err
+
+	const NUM_NOTE_VALUES = 2
+	num_notes := 0
+	for _, sample := range samples {
+		num_notes += len(sample.Notes)
+	}
+	if num_notes > 0 {
+		note_values := make([]any, num_notes*NUM_NOTE_VALUES)
+		nidx := 0
+		var sample_notes_query strings.Builder
+		sample_notes_query.WriteString("INSERT INTO project_sample_note_ (_project, _sample, timestamp, content) VALUES ")
+		for sidx, sample := range samples {
+			for _, note := range sample.Notes {
+				if nidx > 0 {
+					fmt.Fprint(&sample_notes_query, ", ")
+				}
+
+				timestamp_idx := nidx
+				note_idx := timestamp_idx + 1
+				fmt.Fprintf(
+					&sample_notes_query,
+					"('%s', '%s', $%d, $%d)",
+					project,
+					sample_ids[sidx],
+					timestamp_idx+1,
+					note_idx+1,
+				)
+
+				note_values[timestamp_idx] = note.Timestamp
+				note_values[note_idx] = note.Content
+				nidx += NUM_NOTE_VALUES
+			}
+		}
+		_, err = tx.Exec(app.ctx, sample_notes_query.String(), note_values...)
+		if err != nil {
+			runtime.LogErrorf(app.ctx, "could not create sample notes: %v", err)
+			return Ok{}, err
+		}
 	}
 
 	err = tx.Commit(app.ctx)
