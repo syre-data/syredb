@@ -8,17 +8,17 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
-)
-
-const (
-	PROJECT_PUBLIC  = ProjectVisibility("public")
-	PROJECT_PRIVATE = ProjectVisibility("private")
 )
 
 type IsoTimestamp string
 
-type ProjectVisibility string
+const (
+	USER_ROLE_OWNER = UserRole("owner")
+	USER_ROLE_ADMIN = UserRole("admin")
+	USER_ROLE_USER  = UserRole("user")
+)
+
+type UserRole string
 
 const (
 	PROJECT_USER_PERMISSION_READ       = ProjectUserPermission("read")
@@ -29,6 +29,13 @@ const (
 
 type ProjectUserPermission string
 
+const (
+	PROJECT_PUBLIC  = ProjectVisibility("public")
+	PROJECT_PRIVATE = ProjectVisibility("private")
+)
+
+type ProjectVisibility string
+
 type Project struct {
 	Id          uuid.UUID
 	Creator     uuid.UUID
@@ -37,23 +44,23 @@ type Project struct {
 	Visibility  ProjectVisibility
 }
 
-func (app *App) GetUserProjects() ([]Project, error) {
-	if app.db_pool.err != nil {
-		return nil, app.db_pool.err
+func (s *AppService) GetUserProjects() ([]Project, error) {
+	if s.db_pool.err != nil {
+		return nil, s.db_pool.err
 	}
-	if app.state.user_id == uuid.Nil {
-		return nil, &UserNotAuthenticedError{}
+	if s.state.user_id == uuid.Nil {
+		return nil, &UserNotAuthenticatedError{}
 	}
 
 	user_project_query := "SELECT _id, _creator, label, description, visibility FROM project_ WHERE _creator=$1 ORDER BY _id"
-	rows, _ := app.db_pool.ok.Query(app.ctx, user_project_query, app.state.user_id)
+	rows, _ := s.db_pool.ok.Query(s.ctx, user_project_query, s.state.user_id)
 	user_projects, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Project, error) {
 		var project Project
 		err := row.Scan(&project.Id, &project.Creator, &project.Label, &project.Description, &project.Visibility)
 		return project, err
 	})
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not collect user projects: %v", err)
+		s.app.Logger.With("error", err).Error("could not collect user projects")
 		return nil, err
 	}
 
@@ -66,38 +73,38 @@ type ProjectCreate struct {
 	Visibility  ProjectVisibility
 }
 
-func (app *App) CreateProject(project ProjectCreate) (uuid.UUID, error) {
-	if app.db_pool.err != nil {
-		return uuid.Nil, app.db_pool.err
+func (s *AppService) CreateProject(project ProjectCreate) (uuid.UUID, error) {
+	if s.db_pool.err != nil {
+		return uuid.Nil, s.db_pool.err
 	}
-	if app.state.user_id == uuid.Nil {
-		return uuid.Nil, &UserNotAuthenticedError{}
+	if s.state.user_id == uuid.Nil {
+		return uuid.Nil, &UserNotAuthenticatedError{}
 	}
 
-	tx, err := app.db_pool.ok.Begin(app.ctx)
+	tx, err := s.db_pool.ok.Begin(s.ctx)
 	if err != nil {
 		return uuid.Nil, err
 	}
-	defer tx.Rollback(app.ctx)
+	defer tx.Rollback(s.ctx)
 
 	var project_id uuid.UUID
 	create_project_query := "INSERT INTO project_ (_creator, label, description, visibility) VALUES ($1, $2, $3, $4) RETURNING _id"
-	err = tx.QueryRow(app.ctx, create_project_query, app.state.user_id, project.Label, project.Description, project.Visibility).Scan(&project_id)
+	err = tx.QueryRow(s.ctx, create_project_query, s.state.user_id, project.Label, project.Description, project.Visibility).Scan(&project_id)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not create project: %v", err)
+		s.app.Logger.With("error", err).Error("could not create project")
 		return uuid.Nil, err
 	}
 
 	set_user_permission_query := "INSERT INTO project_user_permission_ (_project, _user, permission) VALUES ($1, $2, $3)"
-	_, err = tx.Exec(app.ctx, set_user_permission_query, project_id, app.state.user_id, PROJECT_USER_PERMISSION_OWNER)
+	_, err = tx.Exec(s.ctx, set_user_permission_query, project_id, s.state.user_id, PROJECT_USER_PERMISSION_OWNER)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not create user project permission: %v", err)
+		s.app.Logger.With("error", err).Error("could not create user project permission")
 		return uuid.Nil, err
 	}
 
-	err = tx.Commit(app.ctx)
+	err = tx.Commit(s.ctx)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not create project: %v", err)
+		s.app.Logger.With("error", err).Error("could not create project")
 		return uuid.Nil, err
 	}
 
@@ -107,12 +114,13 @@ func (app *App) CreateProject(project ProjectCreate) (uuid.UUID, error) {
 type PropertyType string
 
 const (
-	PROPERTY_TYPE_STRING   = PropertyType("string")
-	PROPERTY_TYPE_BOOL     = PropertyType("bool")
-	PROPERTY_TYPE_UINT     = PropertyType("uint")
-	PROPERTY_TYPE_INT      = PropertyType("int")
-	PROPERTY_TYPE_FLOAT    = PropertyType("float")
-	PROPERTY_TYPE_QUANTITY = PropertyType("quantity")
+	PROPERTY_TYPE_STRING    = PropertyType("string")
+	PROPERTY_TYPE_BOOL      = PropertyType("bool")
+	PROPERTY_TYPE_UINT      = PropertyType("uint")
+	PROPERTY_TYPE_INT       = PropertyType("int")
+	PROPERTY_TYPE_FLOAT     = PropertyType("float")
+	PROPERTY_TYPE_QUANTITY  = PropertyType("quantity")
+	PROPERTY_TYPE_TIMESTAMP = PropertyType("timestamp")
 )
 
 type Property struct {
@@ -164,18 +172,18 @@ type ProjectResources struct {
 	ProjectUserPermission ProjectUserPermission
 }
 
-func (app *App) GetProjectResources(project_id uuid.UUID) (ProjectResources, error) {
-	if app.db_pool.err != nil {
-		return ProjectResources{}, app.db_pool.err
+func (s *AppService) GetProjectResources(project_id uuid.UUID) (ProjectResources, error) {
+	if s.db_pool.err != nil {
+		return ProjectResources{}, s.db_pool.err
 	}
-	if app.state.user_id == uuid.Nil {
-		return ProjectResources{}, &UserNotAuthenticedError{}
+	if s.state.user_id == uuid.Nil {
+		return ProjectResources{}, &UserNotAuthenticatedError{}
 	}
 
 	var project_resources ProjectResources
 	project_query := "SELECT _id, _creator, label, description, visibility FROM project_ WHERE _id=$1"
-	err := app.db_pool.ok.QueryRow(
-		app.ctx,
+	err := s.db_pool.ok.QueryRow(
+		s.ctx,
 		project_query,
 		project_id,
 	).Scan(
@@ -186,32 +194,32 @@ func (app *App) GetProjectResources(project_id uuid.UUID) (ProjectResources, err
 		&project_resources.Project.Visibility,
 	)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not get project: %v", err)
+		s.app.Logger.With("error", err).Error("could not get project")
 		return ProjectResources{}, err
 	}
 
 	project_user_permission_query := "SELECT permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2"
-	err = app.db_pool.ok.QueryRow(app.ctx, project_user_permission_query, project_id, app.state.user_id).Scan(&project_resources.ProjectUserPermission)
+	err = s.db_pool.ok.QueryRow(s.ctx, project_user_permission_query, project_id, s.state.user_id).Scan(&project_resources.ProjectUserPermission)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not get project user permission: %v", err)
+		s.app.Logger.With("error", err).Error("could not get project user permission")
 		return ProjectResources{}, err
 	}
 
 	project_tags_query := "SELECT _tag FROM project_tag_ WHERE _project=$1"
-	project_tag_rows, _ := app.db_pool.ok.Query(app.ctx, project_tags_query, project_id)
+	project_tag_rows, _ := s.db_pool.ok.Query(s.ctx, project_tags_query, project_id)
 	project_resources.ProjectTags, err = pgx.CollectRows(project_tag_rows, func(row pgx.CollectableRow) (string, error) {
 		var tag string
 		err := row.Scan(&tag)
 		return tag, err
 	})
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not get project tags: %v", err)
+		s.app.Logger.With("error", err).Error("could not get project tags")
 	}
 
 	project_note_count_query := "SELECT COUNT(*) FROM project_note_ WHERE _project=$1"
-	err = app.db_pool.ok.QueryRow(app.ctx, project_note_count_query, project_id).Scan(&project_resources.ProjectNoteCount)
+	err = s.db_pool.ok.QueryRow(s.ctx, project_note_count_query, project_id).Scan(&project_resources.ProjectNoteCount)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not get project note count: %v", err)
+		s.app.Logger.With("error", err).Error("could not get project note count")
 	}
 
 	project_sample_membership_query := `
@@ -219,8 +227,8 @@ func (app *App) GetProjectResources(project_id uuid.UUID) (ProjectResources, err
 		FROM project_sample_membership_ 
 		WHERE _project=$1
 	`
-	project_sample_membership_rows, _ := app.db_pool.ok.Query(
-		app.ctx,
+	project_sample_membership_rows, _ := s.db_pool.ok.Query(
+		s.ctx,
 		project_sample_membership_query,
 		project_id,
 	)
@@ -235,7 +243,7 @@ func (app *App) GetProjectResources(project_id uuid.UUID) (ProjectResources, err
 		return sample, err
 	})
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not get project sample memberships: %v", err)
+		s.app.Logger.With("error", err).Error("could not get project sample memberships")
 		project_resources.Samples = []ProjectSample{}
 	}
 
@@ -244,29 +252,29 @@ func (app *App) GetProjectResources(project_id uuid.UUID) (ProjectResources, err
 	sample_note_count_query := "SELECT COUNT(*) FROM project_sample_note_ WHERE _sample=$1"
 	for i := range project_resources.Samples {
 		sample_id := project_resources.Samples[i].Id
-		sample_tag_rows, _ := app.db_pool.ok.Query(app.ctx, sample_tags_query, project_id, sample_id)
+		sample_tag_rows, _ := s.db_pool.ok.Query(s.ctx, sample_tags_query, project_id, sample_id)
 		project_resources.Samples[i].Tags, err = pgx.CollectRows(sample_tag_rows, func(row pgx.CollectableRow) (string, error) {
 			var tag string
 			err := row.Scan(&tag)
 			return tag, err
 		})
 		if err != nil {
-			runtime.LogErrorf(app.ctx, "could not get project sample tags of `%s` in project `%s`: %v", sample_id, project_id, err)
+			s.app.Logger.With("project", project_id, "sample", sample_id, "error", err).Error("could not get project sample tags in project")
 		}
 
-		sample_properties_rows, _ := app.db_pool.ok.Query(app.ctx, sample_properties_query, sample_id)
+		sample_properties_rows, _ := s.db_pool.ok.Query(s.ctx, sample_properties_query, sample_id)
 		project_resources.Samples[i].Properties, err = pgx.CollectRows(sample_properties_rows, func(row pgx.CollectableRow) (Property, error) {
 			var property Property
 			err := row.Scan(&property.Key, &property.Type, &property.Value)
 			return property, err
 		})
 		if err != nil {
-			runtime.LogErrorf(app.ctx, "could not get sample properties of `%s`: %v", sample_id, err)
+			s.app.Logger.With("sample", sample_id, "error", err).Error("could not get sample properties")
 		}
 
-		err = app.db_pool.ok.QueryRow(app.ctx, sample_note_count_query, sample_id).Scan(&project_resources.Samples[i].NoteCount)
+		err = s.db_pool.ok.QueryRow(s.ctx, sample_note_count_query, sample_id).Scan(&project_resources.Samples[i].NoteCount)
 		if err != nil {
-			runtime.LogErrorf(app.ctx, "could not get sample properties of `%s`: %v", sample_id, err)
+			s.app.Logger.With("sample", sample_id, "error", err).Error("could not get sample properties")
 		}
 	}
 
@@ -282,18 +290,18 @@ type ProjectWithUserPermission struct {
 	UserPermission ProjectUserPermission
 }
 
-func (app *App) GetProjectWithUserPermission(project_id uuid.UUID) (ProjectWithUserPermission, error) {
-	if app.db_pool.err != nil {
-		return ProjectWithUserPermission{}, app.db_pool.err
+func (s *AppService) GetProjectWithUserPermission(project_id uuid.UUID) (ProjectWithUserPermission, error) {
+	if s.db_pool.err != nil {
+		return ProjectWithUserPermission{}, s.db_pool.err
 	}
-	if app.state.user_id == uuid.Nil {
-		return ProjectWithUserPermission{}, &UserNotAuthenticedError{}
+	if s.state.user_id == uuid.Nil {
+		return ProjectWithUserPermission{}, &UserNotAuthenticatedError{}
 	}
 
 	var project ProjectWithUserPermission
 	project_query := "SELECT _id, _creator, label, description, visibility FROM project_ WHERE _id=$1"
-	err := app.db_pool.ok.QueryRow(
-		app.ctx,
+	err := s.db_pool.ok.QueryRow(
+		s.ctx,
 		project_query,
 		project_id,
 	).Scan(
@@ -304,14 +312,14 @@ func (app *App) GetProjectWithUserPermission(project_id uuid.UUID) (ProjectWithU
 		&project.Visibility,
 	)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not get project: %v", err)
+		s.app.Logger.With("error", err).Error("could not get project")
 		return ProjectWithUserPermission{}, err
 	}
 
 	project_user_permission_query := "SELECT permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2"
-	err = app.db_pool.ok.QueryRow(app.ctx, project_user_permission_query, project_id, app.state.user_id).Scan(&project.UserPermission)
+	err = s.db_pool.ok.QueryRow(s.ctx, project_user_permission_query, project_id, s.state.user_id).Scan(&project.UserPermission)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not get project user permission: %v", err)
+		s.app.Logger.With("error", err).Error("could not get project user permission")
 		return ProjectWithUserPermission{}, err
 	}
 
@@ -330,31 +338,28 @@ type ProjectSampleCreate struct {
 	Notes      []ProjectSampleNoteCreate
 }
 
-func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleCreate) (Ok, error) {
-	if app.db_pool.err != nil {
-		return Ok{}, app.db_pool.err
+func (s *AppService) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleCreate) (Ok, error) {
+	if s.db_pool.err != nil {
+		return Ok{}, s.db_pool.err
 	}
-	if app.state.user_id == uuid.Nil {
-		return Ok{}, &UserNotAuthenticedError{}
+	if s.state.user_id == uuid.Nil {
+		return Ok{}, &UserNotAuthenticatedError{}
 	}
 
 	user_permission_query := "SELECT permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2"
 	var user_permission ProjectUserPermission
-	err := app.db_pool.ok.QueryRow(
-		app.ctx,
+	err := s.db_pool.ok.QueryRow(
+		s.ctx,
 		user_permission_query,
 		project.String(),
-		app.state.user_id.String(),
+		s.state.user_id.String(),
 	).Scan(&user_permission)
 	if err != nil ||
 		(user_permission != PROJECT_USER_PERMISSION_OWNER &&
 			user_permission != PROJECT_USER_PERMISSION_ADMIN &&
 			user_permission != PROJECT_USER_PERMISSION_READ_WRITE) {
-		runtime.LogDebugf(
-			app.ctx,
-			"insufficient permissions to create samples for user %v on project %v",
-			project,
-			app.state.user_id,
+		s.app.Logger.With("project", project, "user", s.state.user_id).Debug(
+			"insufficient permissions to create samples for user in project",
 		)
 		return Ok{}, &InsufficientPermissionsError{}
 	}
@@ -363,12 +368,12 @@ func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleC
 		return Ok{}, nil
 	}
 
-	tx, err := app.db_pool.ok.Begin(app.ctx)
+	tx, err := s.db_pool.ok.Begin(s.ctx)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not begin transaction: %v", err)
+		s.app.Logger.With("error", err).Error("could not begin transaction")
 		return Ok{}, err
 	}
-	defer tx.Rollback(app.ctx)
+	defer tx.Rollback(s.ctx)
 
 	var sample_create_query strings.Builder
 	sample_create_query.WriteString("INSERT INTO sample_ (_creator) VALUES ")
@@ -377,12 +382,12 @@ func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleC
 			fmt.Fprintf(&sample_create_query, ", ")
 		}
 
-		fmt.Fprintf(&sample_create_query, "('%s')", app.state.user_id)
+		fmt.Fprintf(&sample_create_query, "('%s')", s.state.user_id)
 	}
 	sample_create_query.WriteString(" RETURNING _id")
-	create_rows, err := tx.Query(app.ctx, sample_create_query.String())
+	create_rows, err := tx.Query(s.ctx, sample_create_query.String())
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not create samples: %v", err)
+		s.app.Logger.With("error", err).Error("could not create samples")
 		return Ok{}, err
 	}
 
@@ -392,7 +397,7 @@ func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleC
 		return id, err
 	})
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not collect user projects: %v", err)
+		s.app.Logger.With("error", err).Error("could not collect user projects")
 		return Ok{}, err
 	}
 
@@ -409,14 +414,14 @@ func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleC
 			"('%s', '%s', '%s', $%d)",
 			project,
 			sample_id,
-			app.state.user_id,
+			s.state.user_id,
 			idx+1,
 		)
 		labels[idx] = samples[idx].Label
 	}
-	_, err = tx.Exec(app.ctx, project_membership_query.String(), labels...)
+	_, err = tx.Exec(s.ctx, project_membership_query.String(), labels...)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not create project sample memberships: %v", err)
+		s.app.Logger.With("error", err).Error("could not create project sample memberships")
 		return Ok{}, err
 	}
 
@@ -445,9 +450,9 @@ func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleC
 				tidx += 1
 			}
 		}
-		_, err = tx.Exec(app.ctx, sample_tags_query.String(), tags...)
+		_, err = tx.Exec(s.ctx, sample_tags_query.String(), tags...)
 		if err != nil {
-			runtime.LogErrorf(app.ctx, "could not create project sample tags: %v", err)
+			s.app.Logger.With("error", err).Error("could not create project sample tags")
 			return Ok{}, err
 		}
 	}
@@ -482,12 +487,8 @@ func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleC
 
 				property_value, err := json.Marshal(property.Value)
 				if err != nil {
-					runtime.LogErrorf(
-						app.ctx,
-						"could not serialize property %s with value %v: %v",
-						property.Key,
-						property.Value,
-						err,
+					s.app.Logger.With("error", err, "key", property.Key, "value", property.Value).Error(
+						"could not serialize property",
 					)
 					return Ok{}, err
 				}
@@ -498,9 +499,9 @@ func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleC
 				pidx += NUM_PROPERTY_VALUES
 			}
 		}
-		_, err = tx.Exec(app.ctx, sample_properties_query.String(), property_values...)
+		_, err = tx.Exec(s.ctx, sample_properties_query.String(), property_values...)
 		if err != nil {
-			runtime.LogErrorf(app.ctx, "could not create sample properties: %v", err)
+			s.app.Logger.With("error", err).Error("could not create sample properties")
 			return Ok{}, err
 		}
 	}
@@ -537,18 +538,127 @@ func (app *App) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleC
 				nidx += NUM_NOTE_VALUES
 			}
 		}
-		_, err = tx.Exec(app.ctx, sample_notes_query.String(), note_values...)
+		_, err = tx.Exec(s.ctx, sample_notes_query.String(), note_values...)
 		if err != nil {
-			runtime.LogErrorf(app.ctx, "could not create sample notes: %v", err)
+			s.app.Logger.With("error", err).Error("could not create sample notes")
 			return Ok{}, err
 		}
 	}
 
-	err = tx.Commit(app.ctx)
+	err = tx.Commit(s.ctx)
 	if err != nil {
 		return Ok{}, err
 	}
 
 	return Ok{}, nil
+}
 
+const (
+	DATA_TYPE_STRING    = DataType("string")
+	DATA_TYPE_INT       = DataType("int")
+	DATA_TYPE_UINT      = DataType("uint")
+	DATA_TYPE_FLOAT     = DataType("float")
+	DATA_TYPE_BOOLEAN   = DataType("boolean")
+	DATA_TYPE_TIMESTAMP = DataType("timestamp")
+)
+
+type DataType string
+
+type ColumnSchema struct {
+	Label string   `json:"label"`
+	DType DataType `json:"dtype"`
+}
+
+const (
+	STORAGE_INTERNAL = Storage("internal")
+	STORAGE_FILE     = Storage("file")
+)
+
+type Storage string
+
+type DataSchema struct {
+	Id          uuid.UUID
+	Creator     uuid.UUID
+	Schema      []ColumnSchema
+	Storage     Storage
+	Label       string
+	Description string
+}
+
+func (s *AppService) GetDataSchemas() ([]DataSchema, error) {
+	if s.db_pool.err != nil {
+		return []DataSchema{}, s.db_pool.err
+	}
+	if s.state.user_id == uuid.Nil {
+		return []DataSchema{}, &UserNotAuthenticatedError{}
+	}
+
+	data_schema_query := "SELECT (_id, _creator, _schema, _storage, label, description) FROM data_schema_ ORDER BY _id DESC"
+	rows, err := s.db_pool.ok.Query(s.ctx, data_schema_query)
+	if err != nil {
+		s.app.Logger.With("error", err).Error("could not get data schemas")
+		return []DataSchema{}, err
+	}
+
+	schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchema, error) {
+		s.app.Logger.Debug("v", "desc", row.FieldDescriptions())
+		var schema DataSchema
+		err := row.Scan(&schema)
+		return schema, err
+	})
+	if err != nil {
+		s.app.Logger.With("error", err).Error("could not collect data schemas")
+		return []DataSchema{}, err
+	}
+
+	return schemas, nil
+}
+
+type DataSchemaCreate struct {
+	Schema      []ColumnSchema
+	Storage     Storage
+	Label       string
+	Description string
+}
+
+func (s *AppService) DataSchemaCreate(data_schema DataSchemaCreate) (Ok, error) {
+	if s.db_pool.err != nil {
+		return Ok{}, s.db_pool.err
+	}
+	if s.state.user_id == uuid.Nil {
+		return Ok{}, &UserNotAuthenticatedError{}
+	}
+
+	var user_role UserRole
+	user_role_query := "SELECT role FROM user_ WHERE _id=$1"
+	err := s.db_pool.ok.QueryRow(
+		s.ctx,
+		user_role_query,
+		s.state.user_id,
+	).Scan(&user_role)
+	if err != nil ||
+		(user_role != USER_ROLE_OWNER &&
+			user_role != USER_ROLE_ADMIN) {
+		s.app.Logger.With("user", s.state.user_id).Debug(
+			"insufficient permissions to create data schema for user",
+		)
+		return Ok{}, &InsufficientPermissionsError{}
+	}
+
+	create_schema_query := "INSERT INTO data_schema_ (_creator, _schema, _storage, label, description) VALUES ($1, $2, $3, $4, $5)"
+	_, err = s.db_pool.ok.Exec(
+		s.ctx,
+		create_schema_query,
+		s.state.user_id,
+		data_schema.Schema,
+		data_schema.Storage,
+		data_schema.Label,
+		data_schema.Description,
+	)
+	if err != nil {
+		s.app.Logger.With("error", err).Error("could not create data schema")
+		return Ok{}, err
+	}
+
+	return Ok{}, nil
 }

@@ -10,9 +10,7 @@ import {
 } from "react";
 import logo from "./assets/images/logo-universal.png";
 import "./App.css";
-import * as runtime from "../wailsjs/runtime/runtime";
-import * as app from "../wailsjs/go/app/App";
-import * as models from "../wailsjs/go/models";
+import * as app from "../bindings/syredb/app";
 import * as uuid from "uuid";
 import { ErrorBoundary, FallbackProps } from "react-error-boundary";
 import * as appStateCtx from "./AppStateContext";
@@ -81,7 +79,7 @@ interface ConnectToDatabaseInnerProps {
 function ConnectToDatabaseInner({ children }: ConnectToDatabaseInnerProps) {
     useSuspenseQuery({
         queryKey: ["_init_connect_to_db"],
-        queryFn: app.ConnectToDatabase,
+        queryFn: app.AppService.ConnectToDatabase,
         gcTime: 0,
     });
 
@@ -156,7 +154,7 @@ function LoadUserFromAuthFileInner({
 }: LoadUserFromAuthFileInnerProps) {
     const { data: user } = useSuspenseQuery({
         queryKey: ["_init_load_user"],
-        queryFn: app.LoadUserFromAuthFile,
+        queryFn: app.AppService.LoadUserFromAuthFile,
         gcTime: 0,
     });
 
@@ -168,7 +166,7 @@ function LoadUserFromAuthFileInner({
 }
 
 interface SetUserProps {
-    user: models.app.User;
+    user: app.User;
     children: any;
 }
 function SetUser({ user, children }: SetUserProps) {
@@ -200,18 +198,18 @@ function Login({ onsuccess = () => {} }: LoginProps) {
         const remember = data.get("remember") !== null;
 
         if (!isEmail(email)) {
-            console.debug(email);
+            console.debug("invalid email", email);
             const input = document.getElementById("email")! as HTMLInputElement;
             input.setCustomValidity("invalid email");
             btn_submit.disabled = false;
             return;
         }
 
-        const credentials = new models.app.UserCredentials({
+        const credentials = new app.UserCredentials({
             Email: email,
             Password: password,
         });
-        app.AuthenticateAndGetUser(credentials, remember)
+        app.AppService.AuthenticateAndGetUser(credentials, remember)
             .then((user) => {
                 if (user.Id.toString() === uuid.NIL) {
                     setError("invalid user credentials");

@@ -1,7 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useParams, Link, useNavigate } from "react-router";
-import * as app from "../../wailsjs/go/app/App";
-import * as models from "../../wailsjs/go/models";
+import * as app from "../../bindings/syredb/app";
 import icon from "../icon";
 import { ErrorBoundary, FallbackProps } from "react-error-boundary";
 import {
@@ -39,18 +38,20 @@ function Loading() {
 function ProjectSettingsError({ error, resetErrorBoundary }: FallbackProps) {
     const navigate = useNavigate();
 
+    if (error === common.USER_NOT_AUTHENTICATED_ERROR) {
+        console.error(common.USER_NOT_AUTHENTICATED_ERROR);
+        navigate("/");
+        return <></>;
+    } else {
+        console.error(error);
+    }
+
     function reload(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
             return;
         }
 
         resetErrorBoundary();
-    }
-
-    if (error === common.USER_NOT_AUTHENTICATED_ERROR) {
-        console.error(common.USER_NOT_AUTHENTICATED_ERROR);
-        navigate("/");
-        return <></>;
     }
 
     return (

@@ -8,8 +8,7 @@ import {
 } from "react";
 import icons from "../icon";
 import { MouseButton } from "../common";
-import * as models from "../../wailsjs/go/models";
-import * as app from "../../wailsjs/go/app/App";
+import * as app from "../../bindings/syredb/app";
 import { useNavigate } from "react-router";
 
 export default function () {

@@ -1,10 +1,9 @@
 import { FormEvent, MouseEvent, useState } from "react";
 import { useNavigate } from "react-router";
 import { MouseButton } from "../common";
-import * as app from "../../wailsjs/go/app/App";
+import * as app from "../../bindings/syredb/app";
 import isEmail from "validator/lib/isEmail";
 import icon from "../icon";
-import * as models from "../../wailsjs/go/models";
 
 export default function UserCreate() {
     const PASSWORD_LENGTH = 10;
@@ -40,7 +39,7 @@ export default function UserCreate() {
             return;
         }
 
-        const user = new models.app.UserCreate({
+        const user = new app.UserCreate({
             Email: email,
             Name: name,
             Role: role,
@@ -48,8 +47,7 @@ export default function UserCreate() {
         });
 
         setPending(true);
-        await app
-            .CreateUser(user)
+        await app.AppService.CreateUser(user)
             .then(() => navigate(-1))
             .catch((err: string) => {
                 if (err.startsWith("WELCOME_EMAIL_NOT_SENT")) {

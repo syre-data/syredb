@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS _app_data_ (
 );
 
 CREATE TYPE visibility AS ENUM ('private', 'public');
-CREATE TYPE property_type AS ENUM ('string', 'int', 'uint', 'float', 'boolean', 'quantity');
+CREATE TYPE property_type AS ENUM ('string', 'int', 'uint', 'float', 'boolean', 'quantity', 'timestamp');
 
 CREATE TYPE user_account_status AS ENUM ('active', 'disabled');
 CREATE TYPE user_role AS ENUM ('owner', 'admin', 'user');
@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS sample_group_property_ (
     _key VARCHAR(512) NOT NULL,
     _type property_type NOT NULL,
     value JSONB NOT NULL,
-    sticky boolean DEFAULT FALSE NOT NULL
+    sticky boolean DEFAULT FALSE NOT NULL,
     PRIMARY KEY (_sample_group, _key)
 );
 
@@ -140,4 +140,63 @@ CREATE TABLE IF NOT EXISTS sample_group_sample_membership_ (
     _sample_group UUID REFERENCES sample_group_(_id) NOT NULL,
     _sample UUID REFERENCES sample_(_id) NOT NULL,
     PRIMARY KEY (_sample_group, _sample)
+);
+
+CREATE TYPE data_storage AS ENUM ('internal', 'file');
+CREATE TYPE data_type AS ENUM ('string', 'int', 'uint', 'float', 'boolean', 'timestamp');
+
+CREATE TABLE IF NOT EXISTS data_schema_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    _schema JSONB NOT NULL,
+    _storage data_storage NOT NULL,
+    label VARCHAR(128) UNIQUE NOT NULL,
+    description TEXT
+);
+
+CREATE OR REPLACE FUNCTION data_schmea_schema_is_valid(_schema jsonb)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT
+        jsonb_typeof(_schema) = 'array'
+        AND NOT EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(_schema) AS elem
+            WHERE
+                jsonb_typeof(elem) <> 'object'
+                OR NOT (elem ? 'label')
+                OR NOT (elem ? 'dtype')
+                OR jsonb_typeof(elem->'label') <> 'string'
+                OR jsonb_typeof(elem->'dtype') <> 'string'
+        );
+$$;
+
+ALTER TABLE data_schema_
+ADD CONSTRAINT schema_is_valid
+CHECK (data_schmea_schema_is_valid(_schema));
+
+CREATE TABLE IF NOT EXISTS sample_data_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _sample UUID REFERENCES sample_(_id) NOT NULL,
+    _schema UUID REFERENCES data_schema_(_id) NOT NULL,
+    _project UUID REFERENCES project_(_id) NOT NULL,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    timestamp TIMESTAMP(3) WITH TIME ZONE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sample_data_property_ (
+    _sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
+    _key VARCHAR(512) NOT NULL,
+    _type property_type NOT NULL,
+    value JSONB NOT NULL,
+    PRIMARY KEY (_sample_data, _key)
+);
+
+CREATE TABLE IF NOT EXISTS sample_data_note_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _data UUID REFERENCES sample_data_(_id) NOT NULL,
+    timestamp TIMESTAMP(3) WITH TIME ZONE DEFAULT NOW() NOT NULL, 
+    content TEXT NOT NULL
 );

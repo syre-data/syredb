@@ -1,8 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router";
-import * as app from "../../wailsjs/go/app/App";
+import * as app from "../../bindings/syredb/app";
 import * as common from "../common";
-import * as models from "../../wailsjs/go/models";
 import { ErrorBoundary, FallbackProps } from "react-error-boundary";
 import { useImmerReducer } from "use-immer";
 import {
@@ -71,7 +70,7 @@ interface SampleData {
 
 interface PropertyData {
     key: string;
-    type: common.PropertyType;
+    type: app.PropertyType;
 }
 
 interface ColumnState {
@@ -333,7 +332,7 @@ const StateCtx = createContext(new State([]));
 const StateDispatchCtx = createContext<ActionDispatch<[StateAction]>>(() => {});
 
 function project_sample_create_is_empty(
-    sample: models.app.ProjectSampleCreate
+    sample: app.ProjectSampleCreate
 ): boolean {
     const label_empty = !sample.Label || sample.Label.length === 0;
     const tags_empty = !sample.Tags || sample.Tags.length === 0;
@@ -358,18 +357,18 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
     const navigate = useNavigate();
     const { data: project } = useSuspenseQuery({
         queryKey: ["project", project_id],
-        queryFn: () => app.GetProjectWithUserPermission(project_id),
+        queryFn: () => app.AppService.GetProjectWithUserPermission(project_id),
     });
     const { data: project_resources } = useSuspenseQuery({
         queryKey: ["project_resources", project_id],
-        queryFn: async () => app.GetProjectResources(project_id),
+        queryFn: async () => app.AppService.GetProjectResources(project_id),
     });
 
     const [error, setError] = useState("");
-    const user_permission = common.user_permission_from_string(
+    const user_permission = common.project_user_permission_string_to_variant(
         project.UserPermission
     );
-    if (user_permission === null) {
+    if (user_permission === undefined) {
         console.error(`invalid user permission: ${project.UserPermission}`);
         navigate("/");
         return;
@@ -410,7 +409,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
         const sample_note_pattern =
             /sample\[\d+?\]\[note\]\[(\d+?)\]\[(\w+?)\]/;
 
-        const sample_data = new Map<string, models.app.ProjectSampleCreate>();
+        const sample_data = new Map<string, app.ProjectSampleCreate>();
         const sample_notes = new Map<string, SampleNoteCreate>();
         const data = new FormData(e.target as HTMLFormElement);
         for (const [key, _] of data.entries()) {
@@ -429,9 +428,9 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
             if (!sample_data.has(sample_id)) {
                 sample_data.set(
                     sample_id,
-                    new models.app.ProjectSampleCreate({
+                    new app.ProjectSampleCreate({
                         Label: "",
-                        Tags: "",
+                        Tags: [],
                         Properties: [],
                         Notes: [],
                     })
@@ -472,16 +471,16 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
 
                     let property_value;
                     switch (property_data.type) {
-                        case common.PropertyType.Boolean:
+                        case app.PropertyType.PROPERTY_TYPE_BOOL:
                             property_value = value.toString() === "true";
                             break;
-                        case common.PropertyType.String:
+                        case app.PropertyType.PROPERTY_TYPE_STRING:
                             property_value = value.toString().trim();
                             if (property_value.length === 0) {
                                 continue;
                             }
                             break;
-                        case common.PropertyType.Int:
+                        case app.PropertyType.PROPERTY_TYPE_INT:
                             property_value = value.toString().trim();
                             if (property_value.length === 0) {
                                 continue;
@@ -496,7 +495,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                                 continue;
                             }
                             break;
-                        case common.PropertyType.UInt:
+                        case app.PropertyType.PROPERTY_TYPE_UINT:
                             property_value = value.toString().trim();
                             if (property_value.length === 0) {
                                 continue;
@@ -513,7 +512,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                                 continue;
                             }
                             break;
-                        case common.PropertyType.Float:
+                        case app.PropertyType.PROPERTY_TYPE_FLOAT:
                             property_value = value.toString().trim();
                             if (property_value.length === 0) {
                                 continue;
@@ -530,7 +529,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                                 continue;
                             }
                             break;
-                        case common.PropertyType.Quantity:
+                        case app.PropertyType.PROPERTY_TYPE_QUANTITY:
                             const magnitude_key = `sample[${sample_id}][property][${property_key}][magnitude]`;
                             const unit_key = `sample[${sample_id}][property][${property_key}][unit]`;
                             if (key === unit_key) {
@@ -605,6 +604,9 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                             };
 
                             break;
+                        case app.PropertyType.PROPERTY_TYPE_TIMESTAMP:
+                            console.error("TODO");
+                            return;
                         default:
                             console.error(
                                 `invalid sample property type key: ${key}`
@@ -612,7 +614,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                             return;
                     }
 
-                    const property = new models.app.Property({
+                    const property = new app.Property({
                         Key: property_key,
                         Type: property_data.type,
                         Value: property_value,
@@ -669,7 +671,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
 
             const sample = sample_data.get(note.sample_id)!;
             sample.Notes.push(
-                new models.app.ProjectSampleNoteCreate({
+                new app.ProjectSampleNoteCreate({
                     Timestamp: note.timestamp!.toISOString(),
                     Content: note.content,
                 })
@@ -701,8 +703,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
         }
 
         const samples = [...sample_data_filtered.map(([_, sample]) => sample)];
-        await app
-            .CreateProjectSamples(project_id, samples)
+        await app.AppService.CreateProjectSamples(project_id, samples)
             .then(() => {
                 navigate(-1);
             })
@@ -823,7 +824,7 @@ function ProjectSamplesFormHeader() {
         const type = common.property_type_string_to_variant(
             newPropertyTypeNode.current.value
         );
-        if (type === null) {
+        if (type === undefined) {
             console.error(`invalid property type ${type}`);
             return;
         }
@@ -1226,7 +1227,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
     useLayoutEffect(() => {
         if (
             inputNode.current !== null &&
-            property.type === common.PropertyType.Boolean
+            property.type === app.PropertyType.PROPERTY_TYPE_BOOL
         ) {
             const input = inputNode.current as HTMLInputElement;
             input.indeterminate = true;
@@ -1243,7 +1244,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
 
     const style = { gridRow, gridColumn: colIdx + 1 };
     switch (property.type) {
-        case common.PropertyType.String:
+        case app.PropertyType.PROPERTY_TYPE_STRING:
             return (
                 <div style={style}>
                     <input
@@ -1254,7 +1255,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
                     />
                 </div>
             );
-        case common.PropertyType.Int:
+        case app.PropertyType.PROPERTY_TYPE_INT:
             return (
                 <div style={style}>
                     <input
@@ -1265,7 +1266,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
                     />
                 </div>
             );
-        case common.PropertyType.UInt:
+        case app.PropertyType.PROPERTY_TYPE_UINT:
             return (
                 <div style={style}>
                     <input
@@ -1277,7 +1278,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
                     />
                 </div>
             );
-        case common.PropertyType.Float:
+        case app.PropertyType.PROPERTY_TYPE_FLOAT:
             return (
                 <div style={style}>
                     <input
@@ -1288,7 +1289,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
                     />
                 </div>
             );
-        case common.PropertyType.Boolean:
+        case app.PropertyType.PROPERTY_TYPE_BOOL:
             return (
                 <div style={style}>
                     <input
@@ -1300,7 +1301,19 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
                     />
                 </div>
             );
-        case common.PropertyType.Quantity:
+        case app.PropertyType.PROPERTY_TYPE_TIMESTAMP:
+            return (
+                <div style={style}>
+                    <input
+                        ref={inputNode}
+                        type="datetime-local"
+                        id={`sample[${sample.id}][property][${property.key}]`}
+                        name={`sample[${sample.id}][property][${property.key}]`}
+                        className="input-basic"
+                    />
+                </div>
+            );
+        case app.PropertyType.PROPERTY_TYPE_QUANTITY:
             return (
                 <div className="flex gap-1" style={style}>
                     <input

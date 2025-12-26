@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wneessen/go-mail"
 )
 
@@ -34,9 +34,9 @@ type Result[T any] struct {
 
 type Ok struct{}
 
-type UserNotAuthenticedError struct{}
+type UserNotAuthenticatedError struct{}
 
-func (e *UserNotAuthenticedError) Error() string {
+func (e *UserNotAuthenticatedError) Error() string {
 	return "USER_NOT_AUTHENTICATED"
 }
 
@@ -44,15 +44,6 @@ type InsufficientPermissionsError struct{}
 
 func (e *InsufficientPermissionsError) Error() string {
 	return "INSUFFICEINT_PERMISSIONS"
-}
-
-// App struct
-type App struct {
-	ctx     context.Context
-	app_dir string
-	config  AppConfigState
-	db_pool DbConnectionState
-	state   AppState
 }
 
 type AppConfigState = Result[AppConfig]
@@ -69,42 +60,49 @@ type AppState struct {
 	user_id uuid.UUID
 }
 
-// NewApp creates a new App application struct
-func NewApp() *App {
-	return &App{}
+// func (app *App) Shutdown(ctx context.Context) {
+// 	// TODO: Might break if not set, check err?
+// 	app.db_pool.ok.Close()
+// }
+
+type AppService struct {
+	app     *application.App
+	ctx     context.Context
+	app_dir string
+	config  AppConfigState
+	db_pool DbConnectionState
+	state   AppState
 }
 
-// startup is called when the app starts. The context is saved
-// so we can call the runtime methods
-func (app *App) Startup(ctx context.Context) {
-	app.ctx = ctx
-	app.app_dir = GetConfigDir()
+func NewAppService(app *application.App) *AppService {
+	return &AppService{app: app}
+}
 
-	app_dir_err := os.MkdirAll(app.app_dir, FILE_PERMISSIONS_WRR)
-	if app_dir_err != nil {
-		runtime.LogErrorf(app.ctx, "%v", app_dir_err)
+func (s *AppService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	s.ctx = ctx
+	s.app_dir = GetConfigDir()
 
-		app.config.err = app_dir_err
+	err := os.MkdirAll(s.app_dir, FILE_PERMISSIONS_WRR)
+	if err != nil {
+		s.app.Logger.With("error", err).Error("could not create config dir")
+		s.config.err = err
 	}
 
-	if app_dir_err == nil {
-		app.LoadAppConfig()
+	if err == nil {
+		s.LoadAppConfig()
 	}
+
+	return nil
 }
 
-func (app *App) Shutdown(ctx context.Context) {
-	// TODO: Might break if not set, check err?
-	app.db_pool.ok.Close()
-}
-
-func (app *App) Logout() (Ok, error) {
-	user_auth_file_path := filepath.Join(app.app_dir, USER_AUTH_FILE_NAME)
+func (s *AppService) Logout() (Ok, error) {
+	user_auth_file_path := filepath.Join(s.app_dir, USER_AUTH_FILE_NAME)
 	err := os.Remove(user_auth_file_path)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not remove user auth file: %v", err)
+		s.app.Logger.With("error", err).Error("could not remove user auth file")
 	}
 
-	app.state.user_id = uuid.Nil
+	s.state.user_id = uuid.Nil
 	return Ok{}, err
 }
 
@@ -119,7 +117,7 @@ func PathExists(path string) bool {
 	return !errors.Is(err, os.ErrNotExist)
 }
 
-func (app *App) send_mail(to string, subject string, body string) error {
+func (s *AppService) send_mail(to string, subject string, body string) error {
 	app_email_query := fmt.Sprintf(
 		"SELECT key, value FROM _app_data_ WHERE key in ('%s', '%s', '%s', '%s')",
 		APP_EMAIL_URL_KEY,
@@ -127,7 +125,7 @@ func (app *App) send_mail(to string, subject string, body string) error {
 		APP_EMAIL_PASSWORD_KEY,
 		APP_EMAIL_FROM_KEY,
 	)
-	email_rows, _ := app.db_pool.ok.Query(context.Background(), app_email_query)
+	email_rows, _ := s.db_pool.ok.Query(s.ctx, app_email_query)
 	defer email_rows.Close()
 
 	var app_email_url string
@@ -139,7 +137,7 @@ func (app *App) send_mail(to string, subject string, body string) error {
 	for email_rows.Next() {
 		err := email_rows.Scan(&key, &value)
 		if err != nil {
-			runtime.LogErrorf(app.ctx, "%v", err)
+			s.app.Logger.With("error", err).Error("could not get email value")
 			return err
 		}
 
@@ -153,24 +151,24 @@ func (app *App) send_mail(to string, subject string, body string) error {
 		case APP_EMAIL_FROM_KEY:
 			app_email_from = value
 		default:
-			runtime.LogErrorf(app.ctx, "invalid key %s", key)
+			s.app.Logger.With("key", key).Error("invalid key")
 			os.Exit(1)
 		}
 	}
 	if app_email_url == "" {
-		runtime.LogErrorf(app.ctx, "required app data not found: %s", APP_EMAIL_URL_KEY)
+		s.app.Logger.With("key", APP_EMAIL_URL_KEY).Error("required app data not found")
 		return errors.New("invalid app email url")
 	}
 	if app_email_username == "" {
-		runtime.LogErrorf(app.ctx, "required app data not found: %s", APP_EMAIL_USERNAME_KEY)
+		s.app.Logger.With("key", APP_EMAIL_USERNAME_KEY).Error("required app data not found")
 		return errors.New("invalid app email username")
 	}
 	if app_email_password == "" {
-		runtime.LogErrorf(app.ctx, "required app data not found: %s", APP_EMAIL_PASSWORD_KEY)
+		s.app.Logger.With("key", APP_EMAIL_PASSWORD_KEY).Error("required app data not found")
 		return errors.New("invalid app email password")
 	}
 	if app_email_from == "" {
-		runtime.LogErrorf(app.ctx, "required app data not found: %s", APP_EMAIL_FROM_KEY)
+		s.app.Logger.With("key", APP_EMAIL_FROM_KEY).Error("required app data not found")
 		return errors.New("invalid app email from address")
 
 	}
@@ -178,12 +176,12 @@ func (app *App) send_mail(to string, subject string, body string) error {
 	message := mail.NewMsg()
 	err := message.From(app_email_from)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "invalid app email from address: %v", err)
+		s.app.Logger.With("error", err).Error("invalid app email from address")
 		return err
 	}
 	err = message.To(to)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "invalid email to address: %v", err)
+		s.app.Logger.With("error", err).Error("invalid email to address")
 		return err
 	}
 
@@ -193,26 +191,26 @@ func (app *App) send_mail(to string, subject string, body string) error {
 	client, err := mail.NewClient(app_email_url, mail.WithSMTPAuth(mail.SMTPAuthPlain),
 		mail.WithUsername(app_email_username), mail.WithPassword(app_email_password))
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not connect to email client: %v", err)
+		s.app.Logger.With("error", err).Error("could not connect to email client")
 		return err
 	}
 
 	err = client.DialAndSend(message)
 	if err != nil {
-		runtime.LogErrorf(app.ctx, "could not send email: %v", err)
+		s.app.Logger.With("error", err).Error("could not send email")
 		return err
 	}
 
 	return nil
 }
 
-func (app *App) user_has_role(role string) (bool, error) {
-	if app.db_pool.err != nil {
-		return false, app.db_pool.err
+func (s *AppService) user_has_role(role string) (bool, error) {
+	if s.db_pool.err != nil {
+		return false, s.db_pool.err
 	}
 
 	user_role_query := "SELECT 1 FROM user_ WHERE _id=$1 AND role=$2"
-	user_row := app.db_pool.ok.QueryRow(context.Background(), user_role_query, app.state.user_id, role)
+	user_row := s.db_pool.ok.QueryRow(context.Background(), user_role_query, s.state.user_id, role)
 	err := user_row.Scan()
 	granted := err != nil
 	return granted, nil

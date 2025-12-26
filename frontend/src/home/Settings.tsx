@@ -2,7 +2,7 @@ import { MouseEvent, useContext } from "react";
 import icon from "../icon";
 import { MouseButton } from "../common";
 import * as appStateCtx from "../AppStateContext";
-import * as app from "../../wailsjs/go/app/App";
+import * as app from "../../bindings/syredb/app";
 import { useNavigate } from "react-router";
 
 export default function Settings() {
@@ -33,8 +33,7 @@ function Nav() {
             return;
         }
 
-        await app
-            .Logout()
+        await app.AppService.Logout()
             .then(() => {
                 appStateDispatch({ type: "signout" });
             })

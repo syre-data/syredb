@@ -1,7 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useParams, Link, useNavigate } from "react-router";
-import * as app from "../../wailsjs/go/app/App";
-import * as models from "../../wailsjs/go/models";
+import * as app from "../../bindings/syredb/app";
 import icon from "../icon";
 import { ErrorBoundary, FallbackProps } from "react-error-boundary";
 import {
@@ -19,12 +18,12 @@ import * as common from "../common";
 
 interface CommonProjectData {
     project_id: string;
-    user_permission: common.UserPermission;
+    user_permission: app.ProjectUserPermission;
 }
 
 const CommonProjectDataCtx = createContext<CommonProjectData>({
     project_id: "",
-    user_permission: common.UserPermission.Read,
+    user_permission: app.ProjectUserPermission.$zero,
 });
 
 export default function () {
@@ -51,18 +50,20 @@ function Loading() {
 function ProjectError({ error, resetErrorBoundary }: FallbackProps) {
     const navigate = useNavigate();
 
+    if (error === common.USER_NOT_AUTHENTICATED_ERROR) {
+        console.error(common.USER_NOT_AUTHENTICATED_ERROR);
+        navigate("/");
+        return <></>;
+    } else {
+        console.error(error);
+    }
+
     function reload(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
             return;
         }
 
         resetErrorBoundary();
-    }
-
-    if (error === common.USER_NOT_AUTHENTICATED_ERROR) {
-        console.error(common.USER_NOT_AUTHENTICATED_ERROR);
-        navigate("/");
-        return <></>;
     }
 
     return (
@@ -98,33 +99,16 @@ function Project({ id }: ProjectProps) {
     const navigate = useNavigate();
     const { data: project_resources } = useSuspenseQuery({
         queryKey: ["project_resources", id],
-        queryFn: async () => app.GetProjectResources(id),
+        queryFn: async () => app.AppService.GetProjectResources(id),
     });
 
-    let user_permission;
-    switch (project_resources.ProjectUserPermission) {
-        case common.UserPermission.Owner:
-            user_permission = common.UserPermission.Owner;
-            break;
-        case common.UserPermission.Admin:
-            user_permission = common.UserPermission.Admin;
-            break;
-        case common.UserPermission.ReadWrite:
-            user_permission = common.UserPermission.ReadWrite;
-            break;
-        case common.UserPermission.Read:
-            user_permission = common.UserPermission.Read;
-            break;
-        default:
-            console.error(
-                `invalid user permission: ${project_resources.ProjectUserPermission}`
-            );
-            navigate("/");
-            return;
-    }
-
     return (
-        <CommonProjectDataCtx value={{ project_id: id, user_permission }}>
+        <CommonProjectDataCtx
+            value={{
+                project_id: id,
+                user_permission: project_resources.ProjectUserPermission,
+            }}
+        >
             <div>
                 <ProjectHeader project={project_resources.Project} />
                 <ProjectSampleList
@@ -137,7 +121,7 @@ function Project({ id }: ProjectProps) {
 }
 
 interface ProjectHeaderProps {
-    project: models.app.Project;
+    project: app.Project;
 }
 function ProjectHeader({ project }: ProjectHeaderProps) {
     return (
@@ -168,7 +152,7 @@ function ProjectHeader({ project }: ProjectHeaderProps) {
 }
 
 interface ProjectSampleListProps {
-    samples: models.app.ProjectSample[];
+    samples: app.ProjectSample[];
     className: string;
 }
 function ProjectSampleList({ samples, className }: ProjectSampleListProps) {
@@ -222,7 +206,7 @@ function ProjectSampleListEmpty() {
 }
 
 interface ProjectSampleListItemProps {
-    sample: models.app.ProjectSample;
+    sample: app.ProjectSample;
 }
 function ProjectSampleListItem({ sample }: ProjectSampleListItemProps) {
     return <div className="px-4">{sample.Label}</div>;

@@ -1,8 +1,7 @@
 import { useContext, FormEvent, useState, Suspense } from "react";
-import * as models from "../wailsjs/go/models";
 import * as appStateCtx from "./AppStateContext";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import * as app from "../wailsjs/go/app/App";
+import * as app from "../bindings/syredb/app";
 
 interface AppConfigProps {
     onsuccess?: () => void;
@@ -25,7 +24,7 @@ function AppConfigInner({ onsuccess = () => {} }: AppConfigProps) {
     const { data: config } = useSuspenseQuery({
         queryKey: ["app_config"],
         queryFn: () =>
-            app.GetAppConfig().catch(() => new models.app.AppConfig()),
+            app.AppService.GetAppConfig().catch(() => new app.AppConfig()),
     });
 
     function onsubmit(e: FormEvent<HTMLFormElement>) {
@@ -45,16 +44,16 @@ function AppConfigInner({ onsuccess = () => {} }: AppConfigProps) {
         const password = passwordData.toString();
         const dbName = dbNameData.toString();
 
-        const config = new models.app.AppConfig({
+        const config = new app.AppConfig({
             DbUrl: url,
             DbUsername: username,
             DbPassword: password,
             DbName: dbName,
         });
-        app.SaveConfig(config)
+        app.AppService.SaveConfig(config)
             .then(async () => {
                 try {
-                    await app.LoadAppConfig();
+                    await app.AppService.LoadAppConfig();
                     btn_submit.disabled = true;
                     onsuccess();
                 } catch (err) {

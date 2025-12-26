@@ -2,50 +2,65 @@ package main
 
 import (
 	"embed"
-	"log"
+	"fmt"
+	"io"
+	"log/slog"
 	"os"
-	"path/filepath"
-	"syredb/app"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/logger"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"path/filepath"
+
+	sdb "syredb/app"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 const LOG_FILE = "syredb.log"
 
-//go:embed all:frontend/dist
+//go:embed frontend/dist
 var assets embed.FS
 
 func main() {
-	conf_dir_path := app.GetConfigDir()
-	if !app.PathExists(conf_dir_path) {
-		os.MkdirAll(conf_dir_path, app.FILE_PERMISSIONS_WRR)
+	conf_dir_path := sdb.GetConfigDir()
+	if !sdb.PathExists(conf_dir_path) {
+		os.MkdirAll(conf_dir_path, sdb.FILE_PERMISSIONS_WRR)
 	}
 
 	log_file_path := filepath.Join(conf_dir_path, LOG_FILE)
-	app := app.NewApp()
-	err := wails.Run(&options.App{
-		Title:  "syredb",
-		Width:  1024,
-		Height: 768,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
+	log_file, err := os.OpenFile(log_file_path, os.O_CREATE|os.O_WRONLY, sdb.FILE_PERMISSIONS_WRR)
+	if err != nil {
+		panic(fmt.Sprintf("could not open log file: %v", err))
+	}
+	defer log_file.Close()
+
+	logger_writer := io.MultiWriter(os.Stdout, log_file)
+	logger_opts := slog.HandlerOptions{AddSource: true, Level: slog.LevelError}
+	logger := slog.New(slog.NewJSONHandler(logger_writer, &logger_opts))
+
+	app := application.New(application.Options{
+		Name:     "SyreDB",
+		Logger:   logger,
+		Services: []application.Service{},
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
 		},
-		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 1},
-		OnStartup:        app.Startup,
-		OnShutdown:       app.Shutdown,
-		Bind: []interface{}{
-			app,
+		OnShutdown: func() {
+			//TODO
+			// app.db_pool.ok.Close()
 		},
-		Logger:             logger.NewFileLogger(log_file_path),
-		LogLevel:           logger.TRACE,
-		LogLevelProduction: logger.ERROR,
-		Debug:              options.Debug{OpenInspectorOnStartup: true},
 	})
 
+	app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:                  "SyreDB",
+		Width:                  1024,
+		Height:                 768,
+		BackgroundColour:       application.NewRGB(0, 0, 0),
+		OpenInspectorOnStartup: true,
+	})
+
+	app.RegisterService(application.NewService(sdb.NewAppService(app)))
+
+	err = app.Run()
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 }

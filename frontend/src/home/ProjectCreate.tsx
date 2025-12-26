@@ -1,8 +1,7 @@
 import classNames from "classnames";
 import { FormEvent, MouseEvent, useState } from "react";
-import { MouseButton } from "../common";
-import * as models from "../../wailsjs/go/models";
-import * as app from "../../wailsjs/go/app/App";
+import * as common from "../common";
+import * as app from "../../bindings/syredb/app";
 import { useNavigate } from "react-router";
 
 export default function () {
@@ -15,25 +14,43 @@ export default function () {
         e.preventDefault();
         setError("");
 
-        const data = new FormData(e.target as HTMLFormElement);
-        const label = data.get("label")!.toString();
-        const description = data.get("description")!.toString();
-        const visibility = data.get("visibility")!.toString();
+        const form = e.target as HTMLFormElement;
+        const data = new FormData(form);
+        const label = data.get("label")!.toString().trim();
+        const description = data.get("description")!.toString().trim();
+        const visibility_str = data.get("visibility")!.toString();
+        const visibility =
+            common.project_visibility_string_to_variant(visibility_str);
+        if (!visibility) {
+            console.error(`invalid project visibility: ${visibility_str}`);
+            const input = document.getElementById(
+                "visibility"
+            )! as HTMLSelectElement;
+            input.setCustomValidity("invalid project visibility");
+            form.reportValidity();
+            return;
+        }
 
-        const project = new models.app.ProjectCreate({
+        if (label.length === 0) {
+            const input = document.getElementById("label")! as HTMLInputElement;
+            input.setCustomValidity("label can not be empty");
+            form.reportValidity();
+            return;
+        }
+
+        const project = new app.ProjectCreate({
             Label: label,
-            Description: description.length === 0 ? null : description,
+            Description: description.length === 0 ? undefined : description,
             Visibility: visibility,
         });
-        await app
-            .CreateProject(project)
+        await app.AppService.CreateProject(project)
             .then((id) => navigate(`/project/${id}`))
             .catch((err) => setError(err));
         setPending(false);
     }
 
     function set_project_visiblity(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != MouseButton.Primary) {
+        if (e.button != common.MouseButton.Primary) {
             return;
         }
 

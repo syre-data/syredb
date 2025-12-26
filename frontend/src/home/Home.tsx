@@ -8,6 +8,7 @@ import ProjectCreate from "./ProjectCreate";
 import Project from "./Project";
 import ProjectSettings from "./ProjectSettings";
 import ProjectSamplesCreate from "./ProjectSamplesCreate";
+import DataSchemaCreate from "./DataSchemaCreate";
 
 export default function Home() {
     return (
@@ -31,6 +32,10 @@ export default function Home() {
                 <Route
                     path="/sample_group/create"
                     element={<SampleGroupCreate />}
+                />
+                <Route
+                    path="/data_schema/create"
+                    element={<DataSchemaCreate />}
                 />
             </Routes>
         </BrowserRouter>

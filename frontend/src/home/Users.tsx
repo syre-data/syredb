@@ -12,14 +12,14 @@ import {
 } from "react";
 import { MouseButton } from "../common";
 import { ErrorBoundary, FallbackProps } from "react-error-boundary";
-import * as app from "../../wailsjs/go/app/App";
+import * as app from "../../bindings/syredb/app";
 import {
     useMutation,
     useQueryClient,
     useSuspenseQuery,
 } from "@tanstack/react-query";
-import * as models from "../../wailsjs/go/models";
 import isEmail from "validator/lib/isEmail";
+import * as common from "../common";
 import classNames from "classnames";
 
 export default function Users() {
@@ -75,7 +75,7 @@ function Loading() {
     return <div className="text-center pt-2">Loading users</div>;
 }
 
-const USER_LIST_QUERY_KEY = ["get_users_list"];
+const QUERY_KEY_USER_LIST = "get_users_list";
 function UserListError({ error, resetErrorBoundary }: FallbackProps) {
     return (
         <div className="flex flex-col gap-2 items-center pt-2">
@@ -97,12 +97,12 @@ function UserListError({ error, resetErrorBoundary }: FallbackProps) {
 function UserList() {
     const [editing, setEditing] = useState<string | null>(null);
     const { data: users } = useSuspenseQuery({
-        queryKey: USER_LIST_QUERY_KEY,
-        queryFn: app.GetUsers,
+        queryKey: [QUERY_KEY_USER_LIST],
+        queryFn: app.AppService.GetUsers,
     });
     const [usersOptimistic, setUsersOptimistic] = useOptimistic<
-        models.app.User[],
-        models.app.User
+        app.User[],
+        app.User
     >(users, (users, user) => {
         return users.map((u) => (u.Id === user.Id ? user : u));
     });
@@ -124,10 +124,10 @@ function UserList() {
 }
 
 interface UserItemProps {
-    user: models.app.User;
+    user: app.User;
     editing: string | null;
     setEditing: Dispatch<SetStateAction<string | null>>;
-    setUsersOptimistic: (action: models.app.User) => void;
+    setUsersOptimistic: (action: app.User) => void;
 }
 function UserItem({
     user,
@@ -185,9 +185,9 @@ function UserItem({
 }
 
 interface UserItemEditingProps {
-    user: models.app.User;
+    user: app.User;
     setEditing: Dispatch<SetStateAction<string | null>>;
-    setUsersOptimistic: (action: models.app.User) => void;
+    setUsersOptimistic: (action: app.User) => void;
 }
 function UserItemEditing({
     user,
@@ -197,14 +197,14 @@ function UserItemEditing({
     const queryClient = useQueryClient();
     const [error, setError] = useState("");
     const updateUserMutation = useMutation({
-        mutationFn: app.UpdateUser,
+        mutationFn: app.AppService.UpdateUser,
         onSettled: () =>
-            queryClient.invalidateQueries({ queryKey: USER_LIST_QUERY_KEY }),
+            queryClient.invalidateQueries({ queryKey: [QUERY_KEY_USER_LIST] }),
     });
     const deactivateUserMutation = useMutation({
-        mutationFn: app.DeactivateUser,
+        mutationFn: app.AppService.DeactivateUser,
         onSettled: () =>
-            queryClient.invalidateQueries({ queryKey: USER_LIST_QUERY_KEY }),
+            queryClient.invalidateQueries({ queryKey: [QUERY_KEY_USER_LIST] }),
     });
 
     function enable_btns(enabled: boolean) {
@@ -224,7 +224,12 @@ function UserItemEditing({
         const data = new FormData(e.target as HTMLFormElement);
         const email = data.get("email")!.toString();
         const name = data.get("name")!.toString();
-        const role = data.get("role")!.toString();
+        const role_str = data.get("role")!.toString();
+        const role = common.user_role_string_to_variant(role_str);
+        if (!role) {
+            console.error(`invalid user role: ${role_str}`);
+            return;
+        }
 
         if (!isEmail(email)) {
             const input = document.getElementById("email")! as HTMLInputElement;
@@ -233,9 +238,9 @@ function UserItemEditing({
             return;
         }
 
-        const update = new models.app.User({
+        const update = new app.User({
             Id: user.Id,
-            AccoutStatus: user.AccountStatus,
+            AccountStatus: user.AccountStatus,
             Email: email,
             Name: name,
             Role: role,
@@ -271,9 +276,9 @@ function UserItemEditing({
         }
         setError("");
 
-        const update = new models.app.User({
+        const update = new app.User({
             Id: user.Id,
-            AccoutStatus: "disabled",
+            AccountStatus: "disabled",
             Email: user.Email,
             Name: user.Name,
             Role: user.Role,

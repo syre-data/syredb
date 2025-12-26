@@ -1,16 +1,16 @@
 import React, { ActionDispatch, createContext } from "react";
-import * as models from "../wailsjs/go/models";
+import * as app from "../bindings/syredb/app";
 import * as uuid from "uuid";
 
 export class State {
-    user: models.app.User;
+    user: app.User;
 
     constructor() {
-        this.user = new models.app.User({
+        this.user = new app.User({
             Id: uuid.NIL,
             Email: "",
             Name: "",
-            PermissionRoles: [],
+            Role: app.UserRole.$zero,
         });
     }
 }
@@ -18,7 +18,7 @@ export class State {
 export const Context = createContext(new State());
 export const Dispatch = createContext<ActionDispatch<[Action]>>(() => {});
 export type Action =
-    | { type: "set_user"; payload: models.app.User }
+    | { type: "set_user"; payload: app.User }
     | { type: "signout" };
 
 export function Reducer(state: State, action: Action) {
@@ -31,11 +31,11 @@ export function Reducer(state: State, action: Action) {
 
         case "signout": {
             let update = structuredClone(state);
-            update.user = new models.app.User({
+            update.user = new app.User({
                 Id: uuid.NIL,
                 Email: "",
                 Name: "",
-                PermissionRoles: [],
+                Role: app.UserRole.$zero,
             });
             return update;
         }
