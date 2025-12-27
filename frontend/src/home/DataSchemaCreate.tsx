@@ -145,7 +145,7 @@ export default function () {
             Description: description,
         });
 
-        await app.AppService.DataSchemaCreate(data_schema)
+        await app.DataService.DataSchemaCreate(data_schema)
             .then(() => {
                 queryClient.invalidateQueries({
                     queryKey: [common.QUERY_KEY_DATA_SCHEMA],

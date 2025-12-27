@@ -357,11 +357,12 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
     const navigate = useNavigate();
     const { data: project } = useSuspenseQuery({
         queryKey: ["project", project_id],
-        queryFn: () => app.AppService.GetProjectWithUserPermission(project_id),
+        queryFn: () =>
+            app.ProjectService.GetProjectWithUserPermission(project_id),
     });
     const { data: project_resources } = useSuspenseQuery({
         queryKey: ["project_resources", project_id],
-        queryFn: async () => app.AppService.GetProjectResources(project_id),
+        queryFn: async () => app.ProjectService.GetProjectResources(project_id),
     });
 
     const [error, setError] = useState("");
@@ -703,7 +704,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
         }
 
         const samples = [...sample_data_filtered.map(([_, sample]) => sample)];
-        await app.AppService.CreateProjectSamples(project_id, samples)
+        await app.ProjectService.CreateProjectSamples(project_id, samples)
             .then(() => {
                 navigate(-1);
             })

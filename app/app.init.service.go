@@ -104,7 +104,7 @@ func (s *AppService) AppConfigSave(config AppConfig) (Ok, error) {
 }
 
 func (s *AppService) DatabaseConnect() (Ok, error) {
-	if s.db.ok != nil {
+	if s.db.ok.conn != nil {
 		return Ok{}, nil
 	}
 	if s.config.err != nil {
@@ -125,10 +125,12 @@ func (s *AppService) DatabaseConnect() (Ok, error) {
 	)
 	if err != nil {
 		s.logger.With("error", err).Error("could not connect to database")
+		s.db.err = err
 		return Ok{}, err
 	}
 
-	s.db = Result[*pgxpool.Pool]{ok: db, err: nil}
+	s.db.ok.conn = db
+	s.db.err = nil
 	return Ok{}, nil
 
 }
@@ -146,15 +148,15 @@ func database_connect(ctx context.Context, url string, db_name string, username 
 
 	// postgresql://[user[:password]@][host[:port]]/[dbname]
 	connectionString := fmt.Sprintf("postgresql://%s:%s@%s/%s", username, password, url, db_name)
-	dbpool, err := pgxpool.New(context.Background(), connectionString)
+	db, err := pgxpool.New(ctx, connectionString)
 	if err != nil {
 		return nil, err
 	}
 
-	err = dbpool.Ping(ctx)
+	err = db.Ping(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return dbpool, nil
+	return db, nil
 }

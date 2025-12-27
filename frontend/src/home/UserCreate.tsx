@@ -47,7 +47,7 @@ export default function UserCreate() {
         });
 
         setPending(true);
-        await app.AppService.CreateUser(user)
+        await app.UserService.CreateUser(user)
             .then(() => navigate(-1))
             .catch((err: string) => {
                 if (err.startsWith("WELCOME_EMAIL_NOT_SENT")) {

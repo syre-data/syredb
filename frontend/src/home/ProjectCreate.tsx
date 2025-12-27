@@ -43,7 +43,7 @@ export default function () {
             Description: description.length === 0 ? undefined : description,
             Visibility: visibility,
         });
-        await app.AppService.CreateProject(project)
+        await app.ProjectService.CreateProject(project)
             .then((id) => navigate(`/project/${id}`))
             .catch((err) => setError(err));
         setPending(false);

@@ -98,7 +98,7 @@ function UserList() {
     const [editing, setEditing] = useState<string | null>(null);
     const { data: users } = useSuspenseQuery({
         queryKey: [QUERY_KEY_USER_LIST],
-        queryFn: app.AppService.GetUsers,
+        queryFn: app.UserService.GetUsers,
     });
     const [usersOptimistic, setUsersOptimistic] = useOptimistic<
         app.User[],
@@ -197,12 +197,12 @@ function UserItemEditing({
     const queryClient = useQueryClient();
     const [error, setError] = useState("");
     const updateUserMutation = useMutation({
-        mutationFn: app.AppService.UpdateUser,
+        mutationFn: app.UserService.UpdateUser,
         onSettled: () =>
             queryClient.invalidateQueries({ queryKey: [QUERY_KEY_USER_LIST] }),
     });
     const deactivateUserMutation = useMutation({
-        mutationFn: app.AppService.DeactivateUser,
+        mutationFn: app.UserService.DeactivateUser,
         onSettled: () =>
             queryClient.invalidateQueries({ queryKey: [QUERY_KEY_USER_LIST] }),
     });

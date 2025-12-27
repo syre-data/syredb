@@ -103,7 +103,7 @@ function LoadingUserProjects() {
 function UserProjectsInner() {
     const { data: projects } = useSuspenseQuery({
         queryKey: ["user_projects"],
-        queryFn: app.AppService.GetUserProjects,
+        queryFn: app.ProjectService.GetUserProjects,
     });
 
     return (
@@ -209,7 +209,7 @@ function DataSchemaLoading() {
 function DataSchemaInner() {
     const { data: data_schemas } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_DATA_SCHEMA],
-        queryFn: app.AppService.GetDataSchemas,
+        queryFn: app.DataService.GetDataSchemas,
     });
 
     if (data_schemas.length === 0) {

@@ -99,7 +99,7 @@ function Project({ id }: ProjectProps) {
     const navigate = useNavigate();
     const { data: project_resources } = useSuspenseQuery({
         queryKey: ["project_resources", id],
-        queryFn: async () => app.AppService.GetProjectResources(id),
+        queryFn: async () => app.ProjectService.GetProjectResources(id),
     });
 
     return (

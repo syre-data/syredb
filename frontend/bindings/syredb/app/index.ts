@@ -3,9 +3,15 @@
 
 import * as AppService from "./appservice.js";
 import * as AuthService from "./authservice.js";
+import * as DataService from "./dataservice.js";
+import * as ProjectService from "./projectservice.js";
+import * as UserService from "./userservice.js";
 export {
     AppService,
-    AuthService
+    AuthService,
+    DataService,
+    ProjectService,
+    UserService
 };
 
 export {

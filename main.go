@@ -55,11 +55,18 @@ func main() {
 		OpenInspectorOnStartup: true,
 	})
 
-	app_service := sdb.NewAppService(app, config_dir_path)
-	auth_service := sdb.NewAuthService(app.Logger, app_service.DbConnection(), config_dir_path, app_service.AppState())
+	db := &sdb.DbConnection{}
+	app_service := sdb.NewAppService(logger, db, config_dir_path)
+	auth_service := sdb.NewAuthService(logger, db, config_dir_path, app_service.AppState())
+	user_service := sdb.NewUserService(logger, db, app_service.AppState())
+	project_service := sdb.NewProjectService(logger, db, app_service.AppState())
+	data_service := sdb.NewDataService(logger, db, app_service.AppState())
 
 	app.RegisterService(application.NewService(app_service))
 	app.RegisterService(application.NewService(auth_service))
+	app.RegisterService(application.NewService(user_service))
+	app.RegisterService(application.NewService(project_service))
+	app.RegisterService(application.NewService(data_service))
 
 	err = app.Run()
 	if err != nil {

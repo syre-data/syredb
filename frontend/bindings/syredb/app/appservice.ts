@@ -7,13 +7,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as uuid$0 from "../../github.com/google/uuid/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as pgxpool$0 from "../../github.com/jackc/pgx/v5/pgxpool/models.js";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 export function AppConfigGet(): $CancellablePromise<$models.AppConfig> {
@@ -40,76 +33,8 @@ function AppState(): $CancellablePromise<$models.AppState | null> {
     });
 }
 
-export function CreateProject(project: $models.ProjectCreate): $CancellablePromise<uuid$0.UUID> {
-    return $Call.ByID(689089897, project);
-}
-
-export function CreateProjectSamples(project: uuid$0.UUID, samples: $models.ProjectSampleCreate[]): $CancellablePromise<$models.Ok> {
-    return $Call.ByID(395745408, project, samples).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
-export function CreateUser(user: $models.UserCreate): $CancellablePromise<uuid$0.UUID> {
-    return $Call.ByID(1206390855, user);
-}
-
-export function DataSchemaCreate(data_schema: $models.DataSchemaCreate): $CancellablePromise<$models.Ok> {
-    return $Call.ByID(2840553235, data_schema).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
 export function DatabaseConnect(): $CancellablePromise<$models.Ok> {
     return $Call.ByID(1954003937).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
-function DbConnection(): $CancellablePromise<pgxpool$0.Pool | null> {
-    return $Call.ByID(1168194670).then(($result: any) => {
-        return $$createType6($result);
-    });
-}
-
-export function DeactivateUser(user_id: uuid$0.UUID): $CancellablePromise<$models.Ok> {
-    return $Call.ByID(412352425, user_id).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
-export function GetDataSchemas(): $CancellablePromise<$models.DataSchema[]> {
-    return $Call.ByID(2775246468).then(($result: any) => {
-        return $$createType8($result);
-    });
-}
-
-export function GetProjectResources(project_id: uuid$0.UUID): $CancellablePromise<$models.ProjectResources> {
-    return $Call.ByID(3312231750, project_id).then(($result: any) => {
-        return $$createType9($result);
-    });
-}
-
-export function GetProjectWithUserPermission(project_id: uuid$0.UUID): $CancellablePromise<$models.ProjectWithUserPermission> {
-    return $Call.ByID(131050117, project_id).then(($result: any) => {
-        return $$createType10($result);
-    });
-}
-
-export function GetUserProjects(): $CancellablePromise<$models.Project[]> {
-    return $Call.ByID(3290360125).then(($result: any) => {
-        return $$createType12($result);
-    });
-}
-
-export function GetUsers(): $CancellablePromise<$models.User[]> {
-    return $Call.ByID(2688471908).then(($result: any) => {
-        return $$createType14($result);
-    });
-}
-
-export function UpdateUser(update: $models.User): $CancellablePromise<$models.Ok> {
-    return $Call.ByID(2320279886, update).then(($result: any) => {
         return $$createType1($result);
     });
 }
@@ -119,14 +44,3 @@ const $$createType0 = $models.AppConfig.createFrom;
 const $$createType1 = $models.Ok.createFrom;
 const $$createType2 = $models.AppState.createFrom;
 const $$createType3 = $Create.Nullable($$createType2);
-const $$createType4 = pgxpool$0.Pool.createFrom;
-const $$createType5 = $Create.Nullable($$createType4);
-const $$createType6 = $Create.Nullable($$createType5);
-const $$createType7 = $models.DataSchema.createFrom;
-const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = $models.ProjectResources.createFrom;
-const $$createType10 = $models.ProjectWithUserPermission.createFrom;
-const $$createType11 = $models.Project.createFrom;
-const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = $models.User.createFrom;
-const $$createType14 = $Create.Array($$createType13);

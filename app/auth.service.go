@@ -40,14 +40,14 @@ func (e *InsufficientPermissionsError) Error() string {
 type AuthService struct {
 	ctx       context.Context
 	logger    *slog.Logger
-	db        **pgxpool.Pool
+	db        *DbConnection
 	app_dir   string
 	app_state *AppState
 }
 
 func NewAuthService(
 	logger *slog.Logger,
-	db **pgxpool.Pool,
+	db *DbConnection,
 	app_dir string,
 	app_state *AppState,
 ) *AuthService {
@@ -73,7 +73,7 @@ type User struct {
 }
 
 func (s *AuthService) UserFromLocal() (User, error) {
-	user, err := s.user_from_local(*s.db, s.app_dir)
+	user, err := s.user_from_local(s.db.conn, s.app_dir)
 	if err != nil {
 		return User{}, err
 	}
@@ -86,7 +86,8 @@ func (s *AuthService) UserFromLocal() (User, error) {
 
 func (s *AuthService) user_from_local(
 	db *pgxpool.Pool,
-	app_dir string) (User, error) {
+	app_dir string,
+) (User, error) {
 	var user_auth UserAuth
 	auth_file_path := filepath.Join(app_dir, USER_AUTH_FILE_NAME)
 	_, err := toml.DecodeFile(auth_file_path, &user_auth)
@@ -133,7 +134,7 @@ type UserCredentials struct {
 }
 
 func (s *AuthService) AuthenticateAndGet(credentials UserCredentials, remember bool) (User, error) {
-	user, err := s.authenticate_and_get(credentials, remember, *s.db, s.app_dir)
+	user, err := s.authenticate_and_get(credentials, remember, s.db.conn, s.app_dir)
 	if err != nil {
 		return User{}, err
 	}
