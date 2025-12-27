@@ -35,11 +35,11 @@ export default function App() {
     return (
         <QueryClientProvider client={queryClient}>
             <ProvideAppState>
-                <ConnectToDatabase>
-                    <LoadUserFromAuthFile>
+                <DatabaseConnect>
+                    <UserAuthFromLocal>
                         <Home />
-                    </LoadUserFromAuthFile>
-                </ConnectToDatabase>
+                    </UserAuthFromLocal>
+                </DatabaseConnect>
             </ProvideAppState>
         </QueryClientProvider>
     );
@@ -63,30 +63,30 @@ function ProvideAppState({ children }: ChildrenProps) {
     );
 }
 
-function ConnectToDatabase({ children }: ChildrenProps) {
+function DatabaseConnect({ children }: ChildrenProps) {
     return (
         <ErrorBoundary FallbackComponent={DatabaseConnectionError}>
-            <Suspense fallback={<ConnectingToDatabase />}>
-                <ConnectToDatabaseInner>{children}</ConnectToDatabaseInner>
+            <Suspense fallback={<DatabaseConnectLoading />}>
+                <DatabaseConnectInner>{children}</DatabaseConnectInner>
             </Suspense>
         </ErrorBoundary>
     );
 }
 
-interface ConnectToDatabaseInnerProps {
+interface DatabaseConnectInnerProps {
     children: any;
 }
-function ConnectToDatabaseInner({ children }: ConnectToDatabaseInnerProps) {
+function DatabaseConnectInner({ children }: DatabaseConnectInnerProps) {
     useSuspenseQuery({
         queryKey: ["_init_connect_to_db"],
-        queryFn: app.AppService.ConnectToDatabase,
+        queryFn: app.AppService.DatabaseConnect,
         gcTime: 0,
     });
 
     return children;
 }
 
-function ConnectingToDatabase() {
+function DatabaseConnectLoading() {
     return <div className="py-4 text-center">Connecting to database</div>;
 }
 
@@ -114,18 +114,16 @@ function DatabaseConnectionError({ error, resetErrorBoundary }: FallbackProps) {
     }
 }
 
-interface LoadUserProps {
+interface UserAuthFromLocalProps {
     children: any;
 }
-function LoadUserFromAuthFile({ children }: LoadUserProps) {
+function UserAuthFromLocal({ children }: UserAuthFromLocalProps) {
     const appState = useContext(appStateCtx.Context);
     if (appState.user.Id.toString() === uuid.NIL) {
         return (
-            <ErrorBoundary FallbackComponent={LoadUserFromAuthFileError}>
-                <Suspense fallback={<LoadUserFromAuthFileLoading />}>
-                    <LoadUserFromAuthFileInner>
-                        {children}
-                    </LoadUserFromAuthFileInner>
+            <ErrorBoundary FallbackComponent={UserAuthFromLocalError}>
+                <Suspense fallback={<UserAuthFromLocalLoading />}>
+                    <UserAuthFromLocalInner>{children}</UserAuthFromLocalInner>
                 </Suspense>
             </ErrorBoundary>
         );
@@ -134,27 +132,22 @@ function LoadUserFromAuthFile({ children }: LoadUserProps) {
     }
 }
 
-function LoadUserFromAuthFileError({
-    error,
-    resetErrorBoundary,
-}: FallbackProps) {
+function UserAuthFromLocalError({ error, resetErrorBoundary }: FallbackProps) {
     console.error("could not load user:", error);
     return <Login onsuccess={resetErrorBoundary} />;
 }
 
-function LoadUserFromAuthFileLoading() {
+function UserAuthFromLocalLoading() {
     return <div>Loading user</div>;
 }
 
-interface LoadUserFromAuthFileInnerProps {
+interface UserAuthFromLocalInnerProps {
     children: any;
 }
-function LoadUserFromAuthFileInner({
-    children,
-}: LoadUserFromAuthFileInnerProps) {
+function UserAuthFromLocalInner({ children }: UserAuthFromLocalInnerProps) {
     const { data: user } = useSuspenseQuery({
         queryKey: ["_init_load_user"],
-        queryFn: app.AppService.LoadUserFromAuthFile,
+        queryFn: app.AuthService.UserFromLocal,
         gcTime: 0,
     });
 
@@ -209,7 +202,7 @@ function Login({ onsuccess = () => {} }: LoginProps) {
             Email: email,
             Password: password,
         });
-        app.AppService.AuthenticateAndGetUser(credentials, remember)
+        app.AuthService.AuthenticateAndGet(credentials, remember)
             .then((user) => {
                 if (user.Id.toString() === uuid.NIL) {
                     setError("invalid user credentials");

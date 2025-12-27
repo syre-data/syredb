@@ -3,10 +3,22 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
+
+type UserService struct {
+	logger *slog.Logger
+	ctx    context.Context
+	db     DbConnectionState
+	state  AppState
+}
+
+// func NewUserService() *AppService {
+// 	return &AppService{app: app, init_service: init_service, auth_service: auth_service}
+// }
 
 type UserCreate struct {
 	Email    string

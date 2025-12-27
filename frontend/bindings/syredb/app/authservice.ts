@@ -7,27 +7,26 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as pgxpool$0 from "../../github.com/jackc/pgx/v5/pgxpool/models.js";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
-export function AuthenticateAndGetUser(credentials: $models.UserCredentials, remember: boolean, db: pgxpool$0.Pool | null, app_dir: string): $CancellablePromise<$models.User> {
-    return $Call.ByID(2560556312, credentials, remember, db, app_dir).then(($result: any) => {
+export function AuthenticateAndGet(credentials: $models.UserCredentials, remember: boolean): $CancellablePromise<$models.User> {
+    return $Call.ByID(1111446811, credentials, remember).then(($result: any) => {
         return $$createType0($result);
     });
 }
 
-export function LoadUserFromAuthFile(db: pgxpool$0.Pool | null, app_dir: string): $CancellablePromise<$models.User> {
-    return $Call.ByID(2186491458, db, app_dir).then(($result: any) => {
-        return $$createType0($result);
+export function Logout(): $CancellablePromise<$models.Ok> {
+    return $Call.ByID(2575216583).then(($result: any) => {
+        return $$createType1($result);
     });
 }
 
-export function Logout(app_dir: string): $CancellablePromise<void> {
-    return $Call.ByID(2575216583, app_dir);
+export function UserFromLocal(): $CancellablePromise<$models.User> {
+    return $Call.ByID(1130375377).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 // Private type creation functions
 const $$createType0 = $models.User.createFrom;
+const $$createType1 = $models.Ok.createFrom;

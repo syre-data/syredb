@@ -2,12 +2,14 @@ package main
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
-
 	"path/filepath"
+
+	"go.linka.cloud/go-appdir"
 
 	sdb "syredb/app"
 
@@ -20,12 +22,12 @@ const LOG_FILE = "syredb.log"
 var assets embed.FS
 
 func main() {
-	conf_dir_path := sdb.GetConfigDir()
-	if !sdb.PathExists(conf_dir_path) {
-		os.MkdirAll(conf_dir_path, sdb.FILE_PERMISSIONS_WRR)
+	config_dir_path := get_config_dir()
+	if !path_exists(config_dir_path) {
+		os.MkdirAll(config_dir_path, sdb.FILE_PERMISSIONS_WRR)
 	}
 
-	log_file_path := filepath.Join(conf_dir_path, LOG_FILE)
+	log_file_path := filepath.Join(config_dir_path, LOG_FILE)
 	log_file, err := os.OpenFile(log_file_path, os.O_CREATE|os.O_WRONLY, sdb.FILE_PERMISSIONS_WRR)
 	if err != nil {
 		panic(fmt.Sprintf("could not open log file: %v", err))
@@ -53,15 +55,25 @@ func main() {
 		OpenInspectorOnStartup: true,
 	})
 
-	init_service := sdb.NewInitService(app.Logger)
-	auth_service := sdb.NewAuthService(app.Logger)
-	app_service := sdb.NewAppService(app, init_service, auth_service)
+	app_service := sdb.NewAppService(app, config_dir_path)
+	auth_service := sdb.NewAuthService(app.Logger, app_service.DbConnection(), config_dir_path, app_service.AppState())
+
 	app.RegisterService(application.NewService(app_service))
-	app.RegisterService(application.NewService(init_service))
 	app.RegisterService(application.NewService(auth_service))
 
 	err = app.Run()
 	if err != nil {
 		panic(err)
 	}
+}
+
+// Get app config directory path.
+func get_config_dir() string {
+	dirs := appdir.New(sdb.APP_NAME)
+	return dirs.UserConfig()
+}
+
+func path_exists(path string) bool {
+	_, err := os.Stat(path)
+	return !errors.Is(err, os.ErrNotExist)
 }

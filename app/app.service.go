@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 
 	// "path/filepath"
-
-	"go.linka.cloud/go-appdir"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -46,28 +45,26 @@ type AppConfig struct {
 }
 
 type AppState struct {
+	_lock   sync.RWMutex
 	user_id uuid.UUID
 }
 
 type AppService struct {
-	app          *application.App
-	logger       *slog.Logger
-	ctx          context.Context
-	init_service *InitService
-	auth_service *AuthService
-	app_dir      string
-	config       AppConfigState
-	db           DbConnectionState
-	state        AppState
+	app     *application.App
+	logger  *slog.Logger
+	ctx     context.Context
+	app_dir string
+	config  AppConfigState
+	db      DbConnectionState
+	state   AppState
 }
 
-func NewAppService(app *application.App, init_service *InitService, auth_service *AuthService) *AppService {
-	return &AppService{app: app, init_service: init_service, auth_service: auth_service}
+func NewAppService(app *application.App, app_dir string) *AppService {
+	return &AppService{app: app, app_dir: app_dir}
 }
 
 func (s *AppService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	s.ctx = ctx
-	s.app_dir = GetConfigDir()
 
 	err := os.MkdirAll(s.app_dir, FILE_PERMISSIONS_WRR)
 	if err != nil {
@@ -76,7 +73,10 @@ func (s *AppService) ServiceStartup(ctx context.Context, options application.Ser
 	}
 
 	if err == nil {
-		s.AppConfigLoad()
+		_, err = s.AppConfigLoad()
+		if err == nil {
+
+		}
 	}
 
 	return nil
@@ -87,49 +87,14 @@ func (s *AppService) ServiceShutdown() error {
 	return nil
 }
 
-func (s *AppService) LoadUserFromAuthFile() (User, error) {
-	if s.db.err != nil {
-		return User{}, s.db.err
-	}
-
-	user, err := s.auth_service.LoadUserFromAuthFile(s.db.ok, s.app_dir)
-	if err != nil {
-		return User{}, err
-	}
-
-	s.state.user_id = user.Id
-	return user, nil
+//wails:internal
+func (s *AppService) DbConnection() **pgxpool.Pool {
+	return &s.db.ok
 }
 
-func (s *AppService) AuthenticateAndGetUser(credentials UserCredentials, remember bool) (User, error) {
-	if s.db.err != nil {
-		return User{}, s.db.err
-	}
-
-	user, err := s.auth_service.AuthenticateAndGetUser(credentials, remember, s.db.ok, s.app_dir)
-	if err != nil {
-		return User{}, err
-	}
-
-	s.state.user_id = user.Id
-	return user, nil
-}
-
-func (s *AppService) Logout() (Ok, error) {
-	s.state.user_id = uuid.Nil
-	err := s.auth_service.Logout(s.app_dir)
-	return Ok{}, err
-}
-
-// Get app config directory path.
-func GetConfigDir() string {
-	dirs := appdir.New(APP_NAME)
-	return dirs.UserConfig()
-}
-
-func PathExists(path string) bool {
-	_, err := os.Stat(path)
-	return !errors.Is(err, os.ErrNotExist)
+//wails:internal
+func (s *AppService) AppState() *AppState {
+	return &s.state
 }
 
 func (s *AppService) send_mail(to string, subject string, body string) error {

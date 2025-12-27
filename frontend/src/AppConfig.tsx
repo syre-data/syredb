@@ -24,7 +24,7 @@ function AppConfigInner({ onsuccess = () => {} }: AppConfigProps) {
     const { data: config } = useSuspenseQuery({
         queryKey: ["app_config"],
         queryFn: () =>
-            app.AppService.GetAppConfig().catch(() => new app.AppConfig()),
+            app.AppService.AppConfigGet().catch(() => new app.AppConfig()),
     });
 
     function onsubmit(e: FormEvent<HTMLFormElement>) {

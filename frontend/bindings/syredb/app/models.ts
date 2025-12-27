@@ -45,6 +45,23 @@ export class AppConfig {
     }
 }
 
+export class AppState {
+
+    /** Creates a new AppState instance. */
+    constructor($$source: Partial<AppState> = {}) {
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new AppState instance from a string or object.
+     */
+    static createFrom($$source: any = {}): AppState {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new AppState($$parsedSource as Partial<AppState>);
+    }
+}
+
 export class ColumnSchema {
     "label": string;
     "dtype": DataType;

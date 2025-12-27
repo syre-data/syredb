@@ -38,14 +38,20 @@ func (e *InsufficientPermissionsError) Error() string {
 }
 
 type AuthService struct {
-	ctx    context.Context
-	logger *slog.Logger
+	ctx       context.Context
+	logger    *slog.Logger
+	db        **pgxpool.Pool
+	app_dir   string
+	app_state *AppState
 }
 
 func NewAuthService(
 	logger *slog.Logger,
+	db **pgxpool.Pool,
+	app_dir string,
+	app_state *AppState,
 ) *AuthService {
-	return &AuthService{logger: logger}
+	return &AuthService{logger: logger, db: db, app_dir: app_dir, app_state: app_state}
 }
 
 func (s *AuthService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
@@ -53,22 +59,32 @@ func (s *AuthService) ServiceStartup(ctx context.Context, options application.Se
 	return nil
 }
 
-func (s *AuthService) Logout(app_dir string) error {
-	user_auth_file_path := filepath.Join(app_dir, USER_AUTH_FILE_NAME)
-	err := os.Remove(user_auth_file_path)
-	if err != nil {
-		s.logger.With("error", err).Error("could not remove user auth file")
-	}
-
-	return err
-}
-
 type UserAuth struct {
 	UserId    string
 	AuthToken string
 }
 
-func (s *AuthService) LoadUserFromAuthFile(
+type User struct {
+	Id            uuid.UUID
+	AccountStatus string
+	Email         string
+	Name          string
+	Role          UserRole
+}
+
+func (s *AuthService) UserFromLocal() (User, error) {
+	user, err := s.user_from_local(*s.db, s.app_dir)
+	if err != nil {
+		return User{}, err
+	}
+
+	s.app_state._lock.Lock()
+	defer s.app_state._lock.Unlock()
+	s.app_state.user_id = user.Id
+	return user, nil
+}
+
+func (s *AuthService) user_from_local(
 	db *pgxpool.Pool,
 	app_dir string) (User, error) {
 	var user_auth UserAuth
@@ -116,9 +132,24 @@ type UserCredentials struct {
 	Password string
 }
 
-func (s *AuthService) AuthenticateAndGetUser(credentials UserCredentials, remember bool,
+func (s *AuthService) AuthenticateAndGet(credentials UserCredentials, remember bool) (User, error) {
+	user, err := s.authenticate_and_get(credentials, remember, *s.db, s.app_dir)
+	if err != nil {
+		return User{}, err
+	}
+
+	s.app_state._lock.Lock()
+	defer s.app_state._lock.Unlock()
+	s.app_state.user_id = user.Id
+	return user, nil
+}
+
+func (s *AuthService) authenticate_and_get(
+	credentials UserCredentials,
+	remember bool,
 	db *pgxpool.Pool,
-	app_dir string) (User, error) {
+	app_dir string,
+) (User, error) {
 	var user User
 	user_row := db.QueryRow(context.Background(), "SELECT _id, email, name, role FROM user_ WHERE email=$1", credentials.Email)
 	err := user_row.Scan(&user.Id, &user.Email, &user.Name, &user.Role)
@@ -297,4 +328,23 @@ func comparePasswordAndHash(clear_text_password string, encoded_hash string) (ma
 		return true, nil
 	}
 	return false, nil
+}
+
+func (s *AuthService) Logout() (Ok, error) {
+	s.app_state._lock.Lock()
+	s.app_state.user_id = uuid.Nil
+	s.app_state._lock.Unlock()
+
+	err := s.logout(s.app_dir)
+	return Ok{}, err
+}
+
+func (s *AuthService) logout(app_dir string) error {
+	user_auth_file_path := filepath.Join(app_dir, USER_AUTH_FILE_NAME)
+	err := os.Remove(user_auth_file_path)
+	if err != nil {
+		s.logger.With("error", err).Error("could not remove user auth file")
+	}
+
+	return err
 }

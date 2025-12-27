@@ -3,15 +3,14 @@
 
 import * as AppService from "./appservice.js";
 import * as AuthService from "./authservice.js";
-import * as InitService from "./initservice.js";
 export {
     AppService,
-    AuthService,
-    InitService
+    AuthService
 };
 
 export {
     AppConfig,
+    AppState,
     ColumnSchema,
     DataSchema,
     DataSchemaCreate,

@@ -33,7 +33,7 @@ function Nav() {
             return;
         }
 
-        await app.AppService.Logout()
+        await app.AuthService.Logout()
             .then(() => {
                 appStateDispatch({ type: "signout" });
             })
