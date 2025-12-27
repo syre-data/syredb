@@ -300,7 +300,7 @@ function DataSchemaContent({ index, schema }: DataSchemaProps) {
                 style={{ gridRow: row_schema }}
             >
                 {schema.Schema.map((col, idx) => (
-                    <div>
+                    <div key={col.label}>
                         <span>{col.label}</span> <span>({col.dtype})</span>
                         {idx === schema.Schema.length - 1 ? "" : " | "}
                     </div>

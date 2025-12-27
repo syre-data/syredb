@@ -43,10 +43,6 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 		},
-		OnShutdown: func() {
-			//TODO
-			// app.db_pool.ok.Close()
-		},
 	})
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -57,7 +53,12 @@ func main() {
 		OpenInspectorOnStartup: true,
 	})
 
-	app.RegisterService(application.NewService(sdb.NewAppService(app)))
+	init_service := sdb.NewInitService(app.Logger)
+	auth_service := sdb.NewAuthService(app.Logger)
+	app_service := sdb.NewAppService(app, init_service, auth_service)
+	app.RegisterService(application.NewService(app_service))
+	app.RegisterService(application.NewService(init_service))
+	app.RegisterService(application.NewService(auth_service))
 
 	err = app.Run()
 	if err != nil {

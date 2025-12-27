@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
-	"path/filepath"
+
+	// "path/filepath"
 
 	"go.linka.cloud/go-appdir"
 
@@ -18,7 +20,6 @@ import (
 
 const APP_NAME = "syredb"
 const CONFIG_FILE_NAME = "config.toml"
-const USER_AUTH_FILE_NAME = "user_auth.toml"
 
 const APP_EMAIL_URL_KEY = "app:email:url"
 const APP_EMAIL_USERNAME_KEY = "app:email:username"
@@ -34,18 +35,6 @@ type Result[T any] struct {
 
 type Ok struct{}
 
-type UserNotAuthenticatedError struct{}
-
-func (e *UserNotAuthenticatedError) Error() string {
-	return "USER_NOT_AUTHENTICATED"
-}
-
-type InsufficientPermissionsError struct{}
-
-func (e *InsufficientPermissionsError) Error() string {
-	return "INSUFFICEINT_PERMISSIONS"
-}
-
 type AppConfigState = Result[AppConfig]
 type DbConnectionState = Result[*pgxpool.Pool]
 
@@ -60,22 +49,20 @@ type AppState struct {
 	user_id uuid.UUID
 }
 
-// func (app *App) Shutdown(ctx context.Context) {
-// 	// TODO: Might break if not set, check err?
-// 	app.db_pool.ok.Close()
-// }
-
 type AppService struct {
-	app     *application.App
-	ctx     context.Context
-	app_dir string
-	config  AppConfigState
-	db_pool DbConnectionState
-	state   AppState
+	app          *application.App
+	logger       *slog.Logger
+	ctx          context.Context
+	init_service *InitService
+	auth_service *AuthService
+	app_dir      string
+	config       AppConfigState
+	db           DbConnectionState
+	state        AppState
 }
 
-func NewAppService(app *application.App) *AppService {
-	return &AppService{app: app}
+func NewAppService(app *application.App, init_service *InitService, auth_service *AuthService) *AppService {
+	return &AppService{app: app, init_service: init_service, auth_service: auth_service}
 }
 
 func (s *AppService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
@@ -89,20 +76,48 @@ func (s *AppService) ServiceStartup(ctx context.Context, options application.Ser
 	}
 
 	if err == nil {
-		s.LoadAppConfig()
+		s.AppConfigLoad()
 	}
 
 	return nil
 }
 
-func (s *AppService) Logout() (Ok, error) {
-	user_auth_file_path := filepath.Join(s.app_dir, USER_AUTH_FILE_NAME)
-	err := os.Remove(user_auth_file_path)
-	if err != nil {
-		s.app.Logger.With("error", err).Error("could not remove user auth file")
+func (s *AppService) ServiceShutdown() error {
+	s.db.ok.Close()
+	return nil
+}
+
+func (s *AppService) LoadUserFromAuthFile() (User, error) {
+	if s.db.err != nil {
+		return User{}, s.db.err
 	}
 
+	user, err := s.auth_service.LoadUserFromAuthFile(s.db.ok, s.app_dir)
+	if err != nil {
+		return User{}, err
+	}
+
+	s.state.user_id = user.Id
+	return user, nil
+}
+
+func (s *AppService) AuthenticateAndGetUser(credentials UserCredentials, remember bool) (User, error) {
+	if s.db.err != nil {
+		return User{}, s.db.err
+	}
+
+	user, err := s.auth_service.AuthenticateAndGetUser(credentials, remember, s.db.ok, s.app_dir)
+	if err != nil {
+		return User{}, err
+	}
+
+	s.state.user_id = user.Id
+	return user, nil
+}
+
+func (s *AppService) Logout() (Ok, error) {
 	s.state.user_id = uuid.Nil
+	err := s.auth_service.Logout(s.app_dir)
 	return Ok{}, err
 }
 
@@ -125,7 +140,7 @@ func (s *AppService) send_mail(to string, subject string, body string) error {
 		APP_EMAIL_PASSWORD_KEY,
 		APP_EMAIL_FROM_KEY,
 	)
-	email_rows, _ := s.db_pool.ok.Query(s.ctx, app_email_query)
+	email_rows, _ := s.db.ok.Query(s.ctx, app_email_query)
 	defer email_rows.Close()
 
 	var app_email_url string
@@ -205,12 +220,12 @@ func (s *AppService) send_mail(to string, subject string, body string) error {
 }
 
 func (s *AppService) user_has_role(role string) (bool, error) {
-	if s.db_pool.err != nil {
-		return false, s.db_pool.err
+	if s.db.err != nil {
+		return false, s.db.err
 	}
 
 	user_role_query := "SELECT 1 FROM user_ WHERE _id=$1 AND role=$2"
-	user_row := s.db_pool.ok.QueryRow(context.Background(), user_role_query, s.state.user_id, role)
+	user_row := s.db.ok.QueryRow(context.Background(), user_role_query, s.state.user_id, role)
 	err := user_row.Scan()
 	granted := err != nil
 	return granted, nil

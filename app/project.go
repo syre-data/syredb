@@ -45,15 +45,15 @@ type Project struct {
 }
 
 func (s *AppService) GetUserProjects() ([]Project, error) {
-	if s.db_pool.err != nil {
-		return nil, s.db_pool.err
+	if s.db.err != nil {
+		return nil, s.db.err
 	}
 	if s.state.user_id == uuid.Nil {
 		return nil, &UserNotAuthenticatedError{}
 	}
 
 	user_project_query := "SELECT _id, _creator, label, description, visibility FROM project_ WHERE _creator=$1 ORDER BY _id"
-	rows, _ := s.db_pool.ok.Query(s.ctx, user_project_query, s.state.user_id)
+	rows, _ := s.db.ok.Query(s.ctx, user_project_query, s.state.user_id)
 	user_projects, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Project, error) {
 		var project Project
 		err := row.Scan(&project.Id, &project.Creator, &project.Label, &project.Description, &project.Visibility)
@@ -74,14 +74,14 @@ type ProjectCreate struct {
 }
 
 func (s *AppService) CreateProject(project ProjectCreate) (uuid.UUID, error) {
-	if s.db_pool.err != nil {
-		return uuid.Nil, s.db_pool.err
+	if s.db.err != nil {
+		return uuid.Nil, s.db.err
 	}
 	if s.state.user_id == uuid.Nil {
 		return uuid.Nil, &UserNotAuthenticatedError{}
 	}
 
-	tx, err := s.db_pool.ok.Begin(s.ctx)
+	tx, err := s.db.ok.Begin(s.ctx)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -173,8 +173,8 @@ type ProjectResources struct {
 }
 
 func (s *AppService) GetProjectResources(project_id uuid.UUID) (ProjectResources, error) {
-	if s.db_pool.err != nil {
-		return ProjectResources{}, s.db_pool.err
+	if s.db.err != nil {
+		return ProjectResources{}, s.db.err
 	}
 	if s.state.user_id == uuid.Nil {
 		return ProjectResources{}, &UserNotAuthenticatedError{}
@@ -182,7 +182,7 @@ func (s *AppService) GetProjectResources(project_id uuid.UUID) (ProjectResources
 
 	var project_resources ProjectResources
 	project_query := "SELECT _id, _creator, label, description, visibility FROM project_ WHERE _id=$1"
-	err := s.db_pool.ok.QueryRow(
+	err := s.db.ok.QueryRow(
 		s.ctx,
 		project_query,
 		project_id,
@@ -199,14 +199,14 @@ func (s *AppService) GetProjectResources(project_id uuid.UUID) (ProjectResources
 	}
 
 	project_user_permission_query := "SELECT permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2"
-	err = s.db_pool.ok.QueryRow(s.ctx, project_user_permission_query, project_id, s.state.user_id).Scan(&project_resources.ProjectUserPermission)
+	err = s.db.ok.QueryRow(s.ctx, project_user_permission_query, project_id, s.state.user_id).Scan(&project_resources.ProjectUserPermission)
 	if err != nil {
 		s.app.Logger.With("error", err).Error("could not get project user permission")
 		return ProjectResources{}, err
 	}
 
 	project_tags_query := "SELECT _tag FROM project_tag_ WHERE _project=$1"
-	project_tag_rows, _ := s.db_pool.ok.Query(s.ctx, project_tags_query, project_id)
+	project_tag_rows, _ := s.db.ok.Query(s.ctx, project_tags_query, project_id)
 	project_resources.ProjectTags, err = pgx.CollectRows(project_tag_rows, func(row pgx.CollectableRow) (string, error) {
 		var tag string
 		err := row.Scan(&tag)
@@ -217,7 +217,7 @@ func (s *AppService) GetProjectResources(project_id uuid.UUID) (ProjectResources
 	}
 
 	project_note_count_query := "SELECT COUNT(*) FROM project_note_ WHERE _project=$1"
-	err = s.db_pool.ok.QueryRow(s.ctx, project_note_count_query, project_id).Scan(&project_resources.ProjectNoteCount)
+	err = s.db.ok.QueryRow(s.ctx, project_note_count_query, project_id).Scan(&project_resources.ProjectNoteCount)
 	if err != nil {
 		s.app.Logger.With("error", err).Error("could not get project note count")
 	}
@@ -227,7 +227,7 @@ func (s *AppService) GetProjectResources(project_id uuid.UUID) (ProjectResources
 		FROM project_sample_membership_ 
 		WHERE _project=$1
 	`
-	project_sample_membership_rows, _ := s.db_pool.ok.Query(
+	project_sample_membership_rows, _ := s.db.ok.Query(
 		s.ctx,
 		project_sample_membership_query,
 		project_id,
@@ -252,7 +252,7 @@ func (s *AppService) GetProjectResources(project_id uuid.UUID) (ProjectResources
 	sample_note_count_query := "SELECT COUNT(*) FROM project_sample_note_ WHERE _sample=$1"
 	for i := range project_resources.Samples {
 		sample_id := project_resources.Samples[i].Id
-		sample_tag_rows, _ := s.db_pool.ok.Query(s.ctx, sample_tags_query, project_id, sample_id)
+		sample_tag_rows, _ := s.db.ok.Query(s.ctx, sample_tags_query, project_id, sample_id)
 		project_resources.Samples[i].Tags, err = pgx.CollectRows(sample_tag_rows, func(row pgx.CollectableRow) (string, error) {
 			var tag string
 			err := row.Scan(&tag)
@@ -262,7 +262,7 @@ func (s *AppService) GetProjectResources(project_id uuid.UUID) (ProjectResources
 			s.app.Logger.With("project", project_id, "sample", sample_id, "error", err).Error("could not get project sample tags in project")
 		}
 
-		sample_properties_rows, _ := s.db_pool.ok.Query(s.ctx, sample_properties_query, sample_id)
+		sample_properties_rows, _ := s.db.ok.Query(s.ctx, sample_properties_query, sample_id)
 		project_resources.Samples[i].Properties, err = pgx.CollectRows(sample_properties_rows, func(row pgx.CollectableRow) (Property, error) {
 			var property Property
 			err := row.Scan(&property.Key, &property.Type, &property.Value)
@@ -272,7 +272,7 @@ func (s *AppService) GetProjectResources(project_id uuid.UUID) (ProjectResources
 			s.app.Logger.With("sample", sample_id, "error", err).Error("could not get sample properties")
 		}
 
-		err = s.db_pool.ok.QueryRow(s.ctx, sample_note_count_query, sample_id).Scan(&project_resources.Samples[i].NoteCount)
+		err = s.db.ok.QueryRow(s.ctx, sample_note_count_query, sample_id).Scan(&project_resources.Samples[i].NoteCount)
 		if err != nil {
 			s.app.Logger.With("sample", sample_id, "error", err).Error("could not get sample properties")
 		}
@@ -291,8 +291,8 @@ type ProjectWithUserPermission struct {
 }
 
 func (s *AppService) GetProjectWithUserPermission(project_id uuid.UUID) (ProjectWithUserPermission, error) {
-	if s.db_pool.err != nil {
-		return ProjectWithUserPermission{}, s.db_pool.err
+	if s.db.err != nil {
+		return ProjectWithUserPermission{}, s.db.err
 	}
 	if s.state.user_id == uuid.Nil {
 		return ProjectWithUserPermission{}, &UserNotAuthenticatedError{}
@@ -300,7 +300,7 @@ func (s *AppService) GetProjectWithUserPermission(project_id uuid.UUID) (Project
 
 	var project ProjectWithUserPermission
 	project_query := "SELECT _id, _creator, label, description, visibility FROM project_ WHERE _id=$1"
-	err := s.db_pool.ok.QueryRow(
+	err := s.db.ok.QueryRow(
 		s.ctx,
 		project_query,
 		project_id,
@@ -317,7 +317,7 @@ func (s *AppService) GetProjectWithUserPermission(project_id uuid.UUID) (Project
 	}
 
 	project_user_permission_query := "SELECT permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2"
-	err = s.db_pool.ok.QueryRow(s.ctx, project_user_permission_query, project_id, s.state.user_id).Scan(&project.UserPermission)
+	err = s.db.ok.QueryRow(s.ctx, project_user_permission_query, project_id, s.state.user_id).Scan(&project.UserPermission)
 	if err != nil {
 		s.app.Logger.With("error", err).Error("could not get project user permission")
 		return ProjectWithUserPermission{}, err
@@ -339,8 +339,8 @@ type ProjectSampleCreate struct {
 }
 
 func (s *AppService) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleCreate) (Ok, error) {
-	if s.db_pool.err != nil {
-		return Ok{}, s.db_pool.err
+	if s.db.err != nil {
+		return Ok{}, s.db.err
 	}
 	if s.state.user_id == uuid.Nil {
 		return Ok{}, &UserNotAuthenticatedError{}
@@ -348,7 +348,7 @@ func (s *AppService) CreateProjectSamples(project uuid.UUID, samples []ProjectSa
 
 	user_permission_query := "SELECT permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2"
 	var user_permission ProjectUserPermission
-	err := s.db_pool.ok.QueryRow(
+	err := s.db.ok.QueryRow(
 		s.ctx,
 		user_permission_query,
 		project.String(),
@@ -368,7 +368,7 @@ func (s *AppService) CreateProjectSamples(project uuid.UUID, samples []ProjectSa
 		return Ok{}, nil
 	}
 
-	tx, err := s.db_pool.ok.Begin(s.ctx)
+	tx, err := s.db.ok.Begin(s.ctx)
 	if err != nil {
 		s.app.Logger.With("error", err).Error("could not begin transaction")
 		return Ok{}, err
@@ -586,15 +586,15 @@ type DataSchema struct {
 }
 
 func (s *AppService) GetDataSchemas() ([]DataSchema, error) {
-	if s.db_pool.err != nil {
-		return []DataSchema{}, s.db_pool.err
+	if s.db.err != nil {
+		return []DataSchema{}, s.db.err
 	}
 	if s.state.user_id == uuid.Nil {
 		return []DataSchema{}, &UserNotAuthenticatedError{}
 	}
 
 	data_schema_query := "SELECT (_id, _creator, _schema, _storage, label, description) FROM data_schema_ ORDER BY _id DESC"
-	rows, err := s.db_pool.ok.Query(s.ctx, data_schema_query)
+	rows, err := s.db.ok.Query(s.ctx, data_schema_query)
 	if err != nil {
 		s.app.Logger.With("error", err).Error("could not get data schemas")
 		return []DataSchema{}, err
@@ -622,8 +622,8 @@ type DataSchemaCreate struct {
 }
 
 func (s *AppService) DataSchemaCreate(data_schema DataSchemaCreate) (Ok, error) {
-	if s.db_pool.err != nil {
-		return Ok{}, s.db_pool.err
+	if s.db.err != nil {
+		return Ok{}, s.db.err
 	}
 	if s.state.user_id == uuid.Nil {
 		return Ok{}, &UserNotAuthenticatedError{}
@@ -631,7 +631,7 @@ func (s *AppService) DataSchemaCreate(data_schema DataSchemaCreate) (Ok, error) 
 
 	var user_role UserRole
 	user_role_query := "SELECT role FROM user_ WHERE _id=$1"
-	err := s.db_pool.ok.QueryRow(
+	err := s.db.ok.QueryRow(
 		s.ctx,
 		user_role_query,
 		s.state.user_id,
@@ -646,7 +646,7 @@ func (s *AppService) DataSchemaCreate(data_schema DataSchemaCreate) (Ok, error) 
 	}
 
 	create_schema_query := "INSERT INTO data_schema_ (_creator, _schema, _storage, label, description) VALUES ($1, $2, $3, $4, $5)"
-	_, err = s.db_pool.ok.Exec(
+	_, err = s.db.ok.Exec(
 		s.ctx,
 		create_schema_query,
 		s.state.user_id,

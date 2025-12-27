@@ -16,11 +16,11 @@ type UserCreate struct {
 }
 
 func (s *AppService) CreateUser(user UserCreate) (uuid.UUID, error) {
-	if s.db_pool.err != nil {
-		return uuid.Nil, s.db_pool.err
+	if s.db.err != nil {
+		return uuid.Nil, s.db.err
 	}
 
-	tx, err := s.db_pool.ok.Begin(context.Background())
+	tx, err := s.db.ok.Begin(context.Background())
 	if err != nil {
 		s.app.Logger.With("error", err).Error("unable to begin create user transaction")
 		return uuid.Nil, err
@@ -60,14 +60,14 @@ func (s *AppService) CreateUser(user UserCreate) (uuid.UUID, error) {
 }
 
 func (s *AppService) DeactivateUser(user_id uuid.UUID) (Ok, error) {
-	if s.db_pool.err != nil {
-		s.app.Logger.With("error", s.db_pool.err).Debug("could not connect to database")
-		return Ok{}, s.db_pool.err
+	if s.db.err != nil {
+		s.app.Logger.With("error", s.db.err).Debug("could not connect to database")
+		return Ok{}, s.db.err
 	}
 
 	// SAFETY: Deleteing a user should only remove their access to the database.
 	// All information about the user should be retained.
-	tx, err := s.db_pool.ok.Begin(context.Background())
+	tx, err := s.db.ok.Begin(context.Background())
 	if err != nil {
 		s.app.Logger.With("error", err).Error("could not begin delete user transaction")
 		return Ok{}, err
@@ -97,13 +97,13 @@ func (s *AppService) DeactivateUser(user_id uuid.UUID) (Ok, error) {
 }
 
 func (s *AppService) UpdateUser(update User) (Ok, error) {
-	if s.db_pool.err != nil {
-		s.app.Logger.With("error", s.db_pool.err).Debug("could not connect to database")
-		return Ok{}, s.db_pool.err
+	if s.db.err != nil {
+		s.app.Logger.With("error", s.db.err).Debug("could not connect to database")
+		return Ok{}, s.db.err
 	}
 
 	update_user_query := "UPDATE user_ SET account_status=$2, email=$3, name=$4, role=$5 WHERE _id=$1"
-	_, err := s.db_pool.ok.Exec(
+	_, err := s.db.ok.Exec(
 		context.Background(),
 		update_user_query,
 		update.AccountStatus,
@@ -121,8 +121,8 @@ func (s *AppService) UpdateUser(update User) (Ok, error) {
 }
 
 func (s *AppService) GetUsers() ([]User, error) {
-	if s.db_pool.err != nil {
-		return nil, s.db_pool.err
+	if s.db.err != nil {
+		return nil, s.db.err
 	}
 	if s.state.user_id == uuid.Nil {
 		return nil, &UserNotAuthenticatedError{}
@@ -138,7 +138,7 @@ func (s *AppService) GetUsers() ([]User, error) {
 	}
 
 	users_query := "SELECT _id, account_status, email, name, role FROM user_ ORDER BY _id"
-	user_rows, _ := s.db_pool.ok.Query(context.Background(), users_query)
+	user_rows, _ := s.db.ok.Query(context.Background(), users_query)
 	users, err := pgx.CollectRows(user_rows, func(row pgx.CollectableRow) (User, error) {
 		var user User
 		err := row.Scan(&user.Id, &user.AccountStatus, &user.Email, &user.Name, &user.Role)

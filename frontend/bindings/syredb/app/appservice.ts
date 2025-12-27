@@ -13,15 +13,27 @@ import * as uuid$0 from "../../github.com/google/uuid/models.js";
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function AppConfigLoad(): $CancellablePromise<$models.Ok> {
+    return $Call.ByID(3320918005).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function AppConfigSave(config: $models.AppConfig): $CancellablePromise<$models.Ok> {
+    return $Call.ByID(448852716, config).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function AuthenticateAndGetUser(credentials: $models.UserCredentials, remember: boolean): $CancellablePromise<$models.User> {
     return $Call.ByID(3448934749, credentials, remember).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType1($result);
     });
 }
 
 export function ConnectToDatabase(): $CancellablePromise<$models.Ok> {
     return $Call.ByID(3054858142).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType0($result);
     });
 }
 
@@ -31,7 +43,7 @@ export function CreateProject(project: $models.ProjectCreate): $CancellablePromi
 
 export function CreateProjectSamples(project: uuid$0.UUID, samples: $models.ProjectSampleCreate[]): $CancellablePromise<$models.Ok> {
     return $Call.ByID(395745408, project, samples).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType0($result);
     });
 }
 
@@ -41,13 +53,13 @@ export function CreateUser(user: $models.UserCreate): $CancellablePromise<uuid$0
 
 export function DataSchemaCreate(data_schema: $models.DataSchemaCreate): $CancellablePromise<$models.Ok> {
     return $Call.ByID(2840553235, data_schema).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType0($result);
     });
 }
 
 export function DeactivateUser(user_id: uuid$0.UUID): $CancellablePromise<$models.Ok> {
     return $Call.ByID(412352425, user_id).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType0($result);
     });
 }
 
@@ -87,39 +99,27 @@ export function GetUsers(): $CancellablePromise<$models.User[]> {
     });
 }
 
-export function LoadAppConfig(): $CancellablePromise<$models.Ok> {
-    return $Call.ByID(29814733).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
 export function LoadUserFromAuthFile(): $CancellablePromise<$models.User> {
     return $Call.ByID(3160409131).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType1($result);
     });
 }
 
 export function Logout(): $CancellablePromise<$models.Ok> {
     return $Call.ByID(515391062).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
-export function SaveConfig(config: $models.AppConfig): $CancellablePromise<$models.Ok> {
-    return $Call.ByID(3992850959, config).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType0($result);
     });
 }
 
 export function UpdateUser(update: $models.User): $CancellablePromise<$models.Ok> {
     return $Call.ByID(2320279886, update).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType0($result);
     });
 }
 
 // Private type creation functions
-const $$createType0 = $models.User.createFrom;
-const $$createType1 = $models.Ok.createFrom;
+const $$createType0 = $models.Ok.createFrom;
+const $$createType1 = $models.User.createFrom;
 const $$createType2 = $models.AppConfig.createFrom;
 const $$createType3 = $models.DataSchema.createFrom;
 const $$createType4 = $Create.Array($$createType3);
@@ -127,4 +127,4 @@ const $$createType5 = $models.ProjectResources.createFrom;
 const $$createType6 = $models.ProjectWithUserPermission.createFrom;
 const $$createType7 = $models.Project.createFrom;
 const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = $Create.Array($$createType0);
+const $$createType9 = $Create.Array($$createType1);

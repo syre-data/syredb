@@ -50,10 +50,10 @@ function AppConfigInner({ onsuccess = () => {} }: AppConfigProps) {
             DbPassword: password,
             DbName: dbName,
         });
-        app.AppService.SaveConfig(config)
+        app.AppService.AppConfigSave(config)
             .then(async () => {
                 try {
-                    await app.AppService.LoadAppConfig();
+                    await app.AppService.AppConfigLoad();
                     btn_submit.disabled = true;
                     onsuccess();
                 } catch (err) {

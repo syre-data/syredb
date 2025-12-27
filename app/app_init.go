@@ -1,42 +1,21 @@
 package app
 
 import (
-	"bytes"
-	"context"
-	"encoding/base64"
 	"errors"
-	"fmt"
 	"os"
-	"path/filepath"
-	"slices"
-	"strings"
-
-	"crypto/rand"
-	"crypto/subtle"
 
 	"github.com/BurntSushi/toml"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"golang.org/x/crypto/argon2"
 )
 
-func (s *AppService) LoadAppConfig() (Ok, error) {
+func (s *AppService) AppConfigLoad() (Ok, error) {
 	s.config = AppConfigState{}
-	config_file_path := filepath.Join(s.app_dir, CONFIG_FILE_NAME)
-	_, err := toml.DecodeFile(config_file_path, &s.config.ok)
+	config, err := s.init_service.AppConfigLoad(s.app_dir)
 	if err != nil {
-		var parse_err toml.ParseError
-		if errors.Is(err, os.ErrNotExist) {
-			s.app.Logger.With("error", err).Error("app config file not found")
-			s.config.err = err
-		} else if errors.As(err, &parse_err) {
-			s.app.Logger.With("error", err).Error("app config file invalid format")
-			s.config.err = err
-		} else {
-			s.app.Logger.With("error", err).Error("app config file invalid")
-			s.config.err = err
-		}
+		s.config.err = err
+	} else {
+		s.config.ok = config
 	}
 
 	return Ok{}, s.config.err
@@ -50,44 +29,25 @@ func (s *AppService) GetAppConfig() (AppConfig, error) {
 	return s.config.ok, err
 }
 
-func (s *AppService) SaveConfig(config AppConfig) (Ok, error) {
-	config_toml := new(bytes.Buffer)
-	err := toml.NewEncoder(config_toml).Encode(config)
+func (s *AppService) AppConfigSave(config AppConfig) (Ok, error) {
+	err := s.init_service.AppConfigSave(s.app_dir, config)
 	if err != nil {
-		return Ok{}, err
-	}
-
-	config_file_path := filepath.Join(s.app_dir, CONFIG_FILE_NAME)
-	f, err := os.OpenFile(config_file_path, os.O_CREATE|os.O_WRONLY, FILE_PERMISSIONS_WRR)
-	if err != nil {
-		s.config.err = err
-		s.app.Logger.With("error", err).Error("could not open app config file")
-		return Ok{}, err
-	}
-	defer f.Close()
-
-	err = f.Truncate(0)
-	if err != nil {
-		s.config.err = err
-		s.app.Logger.With("error", err).Error("could not truncate app config file")
-		return Ok{}, err
-	}
-
-	_, err = f.Write(config_toml.Bytes())
-	if err != nil {
-		s.config.err = err
-		s.app.Logger.With("error", err).Error("could not write app config file")
-		return Ok{}, err
+		var parse_err toml.ParseError
+		if errors.As(err, &parse_err) {
+			return Ok{}, err
+		} else {
+			s.config.err = err
+			return Ok{}, err
+		}
 	}
 
 	s.config.err = nil
 	s.config.ok = config
-
 	return Ok{}, nil
 }
 
 func (s *AppService) ConnectToDatabase() (Ok, error) {
-	if s.db_pool.ok != nil {
+	if s.db.ok != nil {
 		return Ok{}, nil
 	}
 	if s.config.err != nil {
@@ -99,31 +59,18 @@ func (s *AppService) ConnectToDatabase() (Ok, error) {
 		return Ok{}, err
 	}
 
-	config := s.config.ok
-	if len(config.DbUsername) == 0 {
-		return Ok{}, errors.New("invalid username")
-	}
-	if len(config.DbUrl) == 0 {
-		return Ok{}, errors.New("invalid url")
-	}
-	if len(config.DbName) == 0 {
-		return Ok{}, errors.New("invalid database name")
-	}
-
-	// postgresql://[user[:password]@][host[:port]]/[dbname]
-	connectionString := fmt.Sprintf("postgresql://%s:%s@%s/%s", config.DbUsername, config.DbPassword, config.DbUrl, config.DbName)
-	dbpool, err := pgxpool.New(context.Background(), connectionString)
+	db, err := s.init_service.ConnectToDatabase(
+		s.config.ok.DbUrl,
+		s.config.ok.DbName,
+		s.config.ok.DbUsername,
+		s.config.ok.DbPassword,
+	)
 	if err != nil {
-		s.app.Logger.With("error", err).Error("Unable to connect to database")
+		s.logger.With("error", err).Error("could not connect to database")
 		return Ok{}, err
 	}
 
-	err = dbpool.Ping(context.Background())
-	if err != nil {
-		return Ok{}, err
-	}
-
-	s.db_pool = Result[*pgxpool.Pool]{ok: dbpool, err: nil}
+	s.db = Result[*pgxpool.Pool]{ok: db, err: nil}
 	return Ok{}, nil
 
 }
@@ -134,241 +81,4 @@ type User struct {
 	Email         string
 	Name          string
 	Role          UserRole
-}
-
-type UserAuth struct {
-	UserId    string
-	AuthToken string
-}
-
-func (s *AppService) LoadUserFromAuthFile() (User, error) {
-	if s.db_pool.err != nil {
-		return User{}, s.db_pool.err
-	}
-
-	var user_auth UserAuth
-	auth_file_path := filepath.Join(s.app_dir, USER_AUTH_FILE_NAME)
-	_, err := toml.DecodeFile(auth_file_path, &user_auth)
-	if err != nil {
-		var parse_err toml.ParseError
-		if errors.Is(err, os.ErrNotExist) {
-			s.app.Logger.With("error", err).Error("user auth file not found")
-			return User{}, nil
-		} else if errors.As(err, &parse_err) {
-			s.app.Logger.With("error", err).Error("user auth file invalid format")
-			return User{}, err
-		} else {
-			s.app.Logger.With("error", err).Error("user auth file invalid")
-			return User{}, err
-		}
-	}
-
-	var db_auth_tokens []string
-	auth_row := s.db_pool.ok.QueryRow(context.Background(), "SELECT tokens FROM user_auth_ WHERE _id=$1", user_auth.UserId)
-	err = auth_row.Scan(&db_auth_tokens)
-	if err != nil {
-		s.app.Logger.With("error", err).Error("could not get user auth tokens")
-		return User{}, err
-	}
-
-	if !slices.Contains(db_auth_tokens, user_auth.AuthToken) {
-		return User{}, nil
-	}
-
-	var user User
-	user_row := s.db_pool.ok.QueryRow(context.Background(), "SELECT _id, email, name, role FROM user_ WHERE _id=$1", user_auth.UserId)
-	err = user_row.Scan(&user.Id, &user.Email, &user.Name, &user.Role)
-	if err != nil {
-		s.app.Logger.With("error", err).Error("could not get user")
-		return User{}, err
-	}
-
-	s.state.user_id = user.Id
-	return user, nil
-}
-
-type UserCredentials struct {
-	Email    string
-	Password string
-}
-
-func (s *AppService) AuthenticateAndGetUser(credentials UserCredentials, remember bool) (User, error) {
-	if s.db_pool.err != nil {
-		return User{}, s.db_pool.err
-	}
-
-	var user User
-	user_row := s.db_pool.ok.QueryRow(context.Background(), "SELECT _id, email, name, role FROM user_ WHERE email=$1", credentials.Email)
-	err := user_row.Scan(&user.Id, &user.Email, &user.Name, &user.Role)
-	if err != nil {
-		s.app.Logger.With("error", err).Error("could not get user")
-		return User{}, nil
-	}
-
-	var auth_hash string
-	auth_row := s.db_pool.ok.QueryRow(context.Background(), "SELECT auth FROM user_auth_ WHERE _id=$1", user.Id.String())
-	err = auth_row.Scan(&auth_hash)
-	if err != nil {
-		s.app.Logger.With("error", err).Error("could not get user auth")
-		return User{}, nil
-	}
-
-	authorized, err := comparePasswordAndHash(credentials.Password, auth_hash)
-	if err != nil {
-		s.app.Logger.With("error", err).Error("could not compare password to hash")
-		return User{}, nil
-	}
-
-	if !authorized {
-		return User{}, nil
-	}
-
-	s.state.user_id = user.Id
-	if remember {
-		func() {
-			auth_token_b := make([]byte, PASSWORD_HASH_SALT_LENGTH_BYTES)
-			rand.Read(auth_token_b)
-			auth_token := base64.RawStdEncoding.EncodeToString(auth_token_b)
-
-			append_token_query := "UPDATE user_auth_ SET tokens=ARRAY_APPEND(tokens, $1) WHERE _id=$2"
-			_, err := s.db_pool.ok.Exec(context.Background(), append_token_query, auth_token, user.Id)
-			if err != nil {
-				s.app.Logger.With("error", err).Error("could not insert user auth token")
-				return
-			}
-
-			user_auth := UserAuth{UserId: user.Id.String(), AuthToken: auth_token}
-			user_auth_toml := new(bytes.Buffer)
-			err = toml.NewEncoder(user_auth_toml).Encode(user_auth)
-			if err != nil {
-				s.app.Logger.With("error", err).Error("could not save user auth token")
-				return
-			}
-
-			user_auth_file_path := filepath.Join(s.app_dir, USER_AUTH_FILE_NAME)
-			f, err := os.OpenFile(user_auth_file_path, os.O_CREATE|os.O_WRONLY, FILE_PERMISSIONS_WRR)
-			if err != nil {
-				s.app.Logger.With("error", err).Error("could not save user auth token")
-				return
-			}
-			defer f.Close()
-			_, err = f.Write(user_auth_toml.Bytes())
-			if err != nil {
-				s.app.Logger.With("error", err).Error("could not save user auth token")
-				return
-			}
-		}()
-	} else {
-		user_auth_file_path := filepath.Join(s.app_dir, USER_AUTH_FILE_NAME)
-		err = os.Remove(user_auth_file_path)
-		if err != nil {
-			s.app.Logger.With("error", err).Error("could not remove user auth file")
-		}
-	}
-
-	return user, nil
-}
-
-const PASSWORD_HASH_ALGO_ID = "argon2id"
-const PASSWORD_HASH_HASH_LENGTH_BYTES = 512
-const PASSWORD_HASH_SALT_LENGTH_BYTES = 64
-const PASSWORD_HASH_ITERATIONS = 2
-const PASSWORD_HASH_MEMORY = 64 * 1024
-const PASSWORD_HASH_PARALLELISM = 4
-
-func encodePassword(password string) string {
-	salt := make([]byte, PASSWORD_HASH_SALT_LENGTH_BYTES)
-	rand.Read(salt)
-	hash := argon2.IDKey(
-		[]byte(password),
-		salt,
-		PASSWORD_HASH_ITERATIONS,
-		PASSWORD_HASH_MEMORY,
-		PASSWORD_HASH_PARALLELISM,
-		PASSWORD_HASH_HASH_LENGTH_BYTES,
-	)
-
-	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
-	b64Hash := base64.RawStdEncoding.EncodeToString(hash)
-
-	return fmt.Sprintf(
-		"$%s$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		PASSWORD_HASH_ALGO_ID,
-		argon2.Version,
-		PASSWORD_HASH_MEMORY,
-		PASSWORD_HASH_ITERATIONS,
-		PASSWORD_HASH_PARALLELISM,
-		b64Salt,
-		b64Hash,
-	)
-}
-
-type passwordHashParameters struct {
-	memory      uint32
-	iterations  uint32
-	parallelism uint8
-	saltLength  uint32
-	keyLength   uint32
-}
-
-func decodePasswordHash(encoded_hash string) (p *passwordHashParameters, salt, hash []byte, err error) {
-	vals := strings.Split(encoded_hash, "$")
-	if len(vals) != 6 {
-		return nil, nil, nil, fmt.Errorf("invalid hash format")
-	}
-
-	if vals[1] != PASSWORD_HASH_ALGO_ID {
-		return nil, nil, nil, errors.New("incompatible hash alogrithm")
-	}
-
-	var version int
-	_, err = fmt.Sscanf(vals[2], "v=%d", &version)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if version != argon2.Version {
-		return nil, nil, nil, errors.New("incompatible version of argon2")
-	}
-
-	p = &passwordHashParameters{}
-	_, err = fmt.Sscanf(vals[3], "m=%d,t=%d,p=%d", &p.memory, &p.iterations, &p.parallelism)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	salt, err = base64.RawStdEncoding.Strict().DecodeString(vals[4])
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	p.saltLength = uint32(len(salt))
-
-	hash, err = base64.RawStdEncoding.Strict().DecodeString(vals[5])
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	p.keyLength = uint32(len(hash))
-
-	return p, salt, hash, nil
-}
-
-func comparePasswordAndHash(clear_text_password string, encoded_hash string) (match bool, err error) {
-	p, salt, stored_hash, err := decodePasswordHash(encoded_hash)
-	if err != nil {
-		return false, err
-	}
-
-	password_hash := argon2.IDKey(
-		[]byte(clear_text_password),
-		salt,
-		p.iterations,
-		p.memory,
-		p.parallelism,
-		p.keyLength,
-	)
-
-	// SAFETY: `subtle.ConstantTimeCompare()` prevents timing attacks.
-	if subtle.ConstantTimeCompare(stored_hash, password_hash) == 1 {
-		return true, nil
-	}
-	return false, nil
 }
