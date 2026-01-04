@@ -216,6 +216,10 @@ export enum DataType {
     DATA_TYPE_TIMESTAMP = "timestamp",
 };
 
+/**
+ * TODO: Should be able to remove as it just mimics `application.FileFilter`
+ * but `application.FileFilter` is not exported to the frontend for some reason.
+ */
 export class FileFilter {
     /**
      * Filter information EG: "Image Files (*.jpg, *.png)"
@@ -512,6 +516,7 @@ export class ProjectSampleDataCreate {
     "Schema": uuid$0.UUID;
     "FilePath": string;
     "Timestamp": IsoTimestamp;
+    "Properties": ProjectSampleDataPropertyCreate[];
 
     /** Creates a new ProjectSampleDataCreate instance. */
     constructor($$source: Partial<ProjectSampleDataCreate> = {}) {
@@ -524,6 +529,9 @@ export class ProjectSampleDataCreate {
         if (!("Timestamp" in $$source)) {
             this["Timestamp"] = "";
         }
+        if (!("Properties" in $$source)) {
+            this["Properties"] = [];
+        }
 
         Object.assign(this, $$source);
     }
@@ -532,8 +540,45 @@ export class ProjectSampleDataCreate {
      * Creates a new ProjectSampleDataCreate instance from a string or object.
      */
     static createFrom($$source: any = {}): ProjectSampleDataCreate {
+        const $$createField3_0 = $$createType18;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Properties" in $$parsedSource) {
+            $$parsedSource["Properties"] = $$createField3_0($$parsedSource["Properties"]);
+        }
         return new ProjectSampleDataCreate($$parsedSource as Partial<ProjectSampleDataCreate>);
+    }
+}
+
+export class ProjectSampleDataPropertyCreate {
+    "Key": string;
+    "Type": PropertyType;
+
+    /**
+     * TODO: match type
+     */
+    "Value": any;
+
+    /** Creates a new ProjectSampleDataPropertyCreate instance. */
+    constructor($$source: Partial<ProjectSampleDataPropertyCreate> = {}) {
+        if (!("Key" in $$source)) {
+            this["Key"] = "";
+        }
+        if (!("Type" in $$source)) {
+            this["Type"] = PropertyType.$zero;
+        }
+        if (!("Value" in $$source)) {
+            this["Value"] = null;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ProjectSampleDataPropertyCreate instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ProjectSampleDataPropertyCreate {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ProjectSampleDataPropertyCreate($$parsedSource as Partial<ProjectSampleDataPropertyCreate>);
     }
 }
 
@@ -574,7 +619,7 @@ export class ProjectSampleGroup {
      */
     static createFrom($$source: any = {}): ProjectSampleGroup {
         const $$createField4_0 = $$createType12;
-        const $$createField5_0 = $$createType17;
+        const $$createField5_0 = $$createType19;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Properties" in $$parsedSource) {
             $$parsedSource["Properties"] = $$createField4_0($$parsedSource["Properties"]);
@@ -881,4 +926,6 @@ const $$createType13 = ProjectSampleDataCreate.createFrom;
 const $$createType14 = $Create.Array($$createType13);
 const $$createType15 = ProjectSampleNoteCreate.createFrom;
 const $$createType16 = $Create.Array($$createType15);
-const $$createType17 = $Create.Array($Create.Any);
+const $$createType17 = ProjectSampleDataPropertyCreate.createFrom;
+const $$createType18 = $Create.Array($$createType17);
+const $$createType19 = $Create.Array($Create.Any);

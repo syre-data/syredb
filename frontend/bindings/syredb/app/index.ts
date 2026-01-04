@@ -32,6 +32,7 @@ export {
     ProjectSample,
     ProjectSampleCreate,
     ProjectSampleDataCreate,
+    ProjectSampleDataPropertyCreate,
     ProjectSampleGroup,
     ProjectSampleNoteCreate,
     ProjectUserPermission,

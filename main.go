@@ -57,12 +57,12 @@ func main() {
 		Width:                  1024,
 		Height:                 768,
 		BackgroundColour:       application.NewRGB(0, 0, 0),
-		EnableDragAndDrop:      true,
+		EnableFileDrop:         true,
 		OpenInspectorOnStartup: true,
 	})
 
 	w_main.OnWindowEvent(
-		events.Common.WindowDropZoneFilesDropped,
+		events.Common.WindowFilesDropped,
 		func(event *application.WindowEvent) {},
 	)
 

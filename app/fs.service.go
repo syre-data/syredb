@@ -29,6 +29,8 @@ func (e *CancelledByUserError) Error() string {
 	return "CANCELLED_BY_USER"
 }
 
+// TODO: Should be able to remove as it just mimics `application.FileFilter`
+// but `application.FileFilter` is not exported to the frontend for some reason.
 type FileFilter application.FileFilter
 
 func (s *FsService) OpenFileDialogSingle(title string, filters []FileFilter) (string, error) {

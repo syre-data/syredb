@@ -352,9 +352,16 @@ func (s *ProjectService) GetProjectWithUserPermission(project_id uuid.UUID) (Pro
 }
 
 type ProjectSampleDataCreate struct {
-	Schema    uuid.UUID
-	FilePath  string
-	Timestamp IsoTimestamp
+	Schema     uuid.UUID
+	FilePath   string
+	Timestamp  IsoTimestamp
+	Properties []ProjectSampleDataPropertyCreate
+}
+
+type ProjectSampleDataPropertyCreate struct {
+	Key   string
+	Type  PropertyType
+	Value any // TODO: match type
 }
 
 type sampleDataParsed struct {
@@ -436,6 +443,11 @@ func (s *ProjectService) CreateProjectSamples(project uuid.UUID, samples []Proje
 	}
 
 	sample_data_ids, err := s.create_project_samples_create_sample_data(tx, schema_data, sample_ids, user_id)
+	if err != nil {
+		return Ok{}, err
+	}
+
+	err = s.create_project_samples_create_sample_data_properties(tx, sample_data_ids, samples)
 	if err != nil {
 		return Ok{}, err
 	}
@@ -1003,6 +1015,94 @@ func (s *ProjectService) create_project_samples_store_sample_data_file(
 			"query", store_data_query.String(),
 			"args", args,
 		).Error("could not insert data")
+		return err
+	}
+
+	return nil
+}
+
+func (s *ProjectService) create_project_samples_create_sample_data_properties(
+	tx pgx.Tx,
+	sample_data_ids map[sampleDataIdx]uuid.UUID,
+	samples []ProjectSampleCreate,
+) error {
+	const NUM_VALUES_PER_PROPERTY = 4
+
+	properties_count := 0
+	for _, sample := range samples {
+		for _, data := range sample.Data {
+			properties_count += len(data.Properties)
+		}
+	}
+
+	var query strings.Builder
+	args := make([]any, properties_count*NUM_VALUES_PER_PROPERTY)
+	args_idx := 0
+
+	query.WriteString(
+		"INSERT INTO sample_data_property_ (_sample_data, _key, _type, value) VALUES ",
+	)
+	for sample_idx, sample := range samples {
+		for data_idx, data := range sample.Data {
+			sample_data_idx := sampleDataIdx{
+				SampleIndex: sample_idx,
+				DataIndex:   data_idx,
+			}
+			sample_data_id, present := sample_data_ids[sample_data_idx]
+			if !present {
+				s.logger.With(
+					"sample data ids", sample_data_ids,
+					"sample index", sample_idx,
+					"data index", data_idx,
+				).Error("invalid sample data index")
+				panic("invalid sample data index")
+			}
+
+			for _, property := range data.Properties {
+				id_arg_idx := args_idx
+				key_arg_idx := args_idx + 1
+				type_arg_idx := args_idx + 2
+				value_arg_idx := args_idx + 3
+
+				if args_idx > 0 {
+					query.WriteString(", ")
+				}
+
+				value, err := json.Marshal(property.Value)
+				if err != nil {
+					s.logger.With(
+						"error", err,
+						"value", property.Value,
+					).Error("could not serialize value")
+					panic(err)
+				}
+
+				args[id_arg_idx] = sample_data_id
+				args[key_arg_idx] = property.Key
+				args[type_arg_idx] = property.Type
+				args[value_arg_idx] = string(value)
+
+				fmt.Fprintf(
+					&query,
+					"($%d, $%d, $%d, $%d)",
+					id_arg_idx+1,
+					key_arg_idx+1,
+					type_arg_idx+1,
+					value_arg_idx+1,
+				)
+
+				args_idx += NUM_VALUES_PER_PROPERTY
+			}
+		}
+	}
+
+	_, err := tx.Exec(s.ctx, query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"query", query.String(),
+			"args", args,
+		).Error("could not create sample data properties")
 		return err
 	}
 

@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, data } from "react-router";
 import * as app from "../../bindings/syredb/app";
 import * as common from "../common";
 import { ErrorBoundary, FallbackProps } from "react-error-boundary";
@@ -7,10 +7,12 @@ import { useImmerReducer } from "use-immer";
 import {
     ActionDispatch,
     ChangeEvent,
+    ComponentPropsWithoutRef,
     createContext,
     Dispatch,
     FormEvent,
     InputEvent,
+    KeyboardEvent,
     MouseEvent,
     SetStateAction,
     Suspense,
@@ -54,7 +56,7 @@ function ProjectSamplesCreateError({
     return (
         <div>
             <div>Could not load project data</div>
-            <div>{error}</div>
+            <div>{error.message}</div>
         </div>
     );
 }
@@ -68,7 +70,7 @@ interface SampleInfo {
     label: string;
 }
 
-interface PropertyData {
+interface PropertyInfo {
     key: string;
     type: app.PropertyType;
 }
@@ -202,7 +204,7 @@ class State {
     _next_sample_id: number;
     _project_sample_labels: string[];
     samples: SampleInfo[];
-    properties: PropertyData[];
+    properties: PropertyInfo[];
     display: DisplayState;
 
     constructor(project_sample_labels: string[]) {
@@ -228,7 +230,7 @@ type StateAction =
     | { type: "set_sample_label"; payload: { id: number; label: string } }
     | {
           type: "add_property";
-          payload: { property: PropertyData; width?: number };
+          payload: { property: PropertyInfo; width?: number };
       }
     | { type: "remove_property"; payload: { key: string } }
     | {
@@ -350,12 +352,20 @@ function project_sample_create_is_empty(
     );
 }
 
+interface SampleDataProperty {
+    id: string;
+    key?: string;
+    type?: app.PropertyType;
+    value: any;
+}
+
 interface SampleDataCreate {
     id: string;
     sample_id: string;
     schema?: string;
     file?: string;
     timestamp?: Date;
+    properties: Map<string, SampleDataProperty>;
 }
 
 interface SampleNoteCreate {
@@ -452,12 +462,106 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                 continue;
             }
 
+            const data_properties = [];
+            for (const property of data.properties.values()) {
+                if (!property.key || !property.type) {
+                    console.error(`invalid sample data property`, property);
+                    return;
+                }
+
+                if (!property.value) {
+                    continue;
+                }
+
+                let value;
+                switch (property.type) {
+                    case app.PropertyType.PROPERTY_TYPE_STRING:
+                        value = property.value;
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_BOOL:
+                        switch (property.value) {
+                            case "true":
+                                value = true;
+                                break;
+                            case "false":
+                                value = false;
+                                break;
+                            default:
+                                console.error(
+                                    `invalid sample data property value: ${property.value}`
+                                );
+                                return;
+                        }
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_INT:
+                        value = parseInt(property.value);
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_UINT:
+                        value = parseInt(property.value);
+                        if (value < 0) {
+                            const input = document.getElementById(
+                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value]`
+                            )! as HTMLInputElement;
+                            input.setCustomValidity(
+                                "invalid value, must be non-negative"
+                            );
+                        }
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_FLOAT:
+                        value = parseFloat(property.value);
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_TIMESTAMP:
+                        // TODO
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_QUANTITY:
+                        if (!property.value.magnitude && !property.value.unit) {
+                            continue;
+                        }
+                        if (!property.value.magnitude) {
+                            const input = document.getElementById(
+                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value][magnitude]`
+                            )! as HTMLInputElement;
+                            input.setCustomValidity(
+                                "magnitude can not be empty"
+                            );
+                        } else if (!property.value.unit) {
+                            const input = document.getElementById(
+                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value][magnitude]`
+                            )! as HTMLInputElement;
+                            input.setCustomValidity("unit can not be empty");
+                        }
+
+                        const magnitude_value = parseFloat(
+                            property.value.magnitude
+                        );
+                        value = {
+                            MagnitudeString: property.value.magnitude,
+                            MagnitudeValue: magnitude_value,
+                            Unit: property.value.unit,
+                        };
+                        break;
+                    default:
+                        throw new Error(
+                            `invalid property type: ${property.type}`
+                        );
+                }
+
+                data_properties.push(
+                    new app.ProjectSampleDataPropertyCreate({
+                        Key: property.key,
+                        Type: property.type,
+                        Value: value,
+                    })
+                );
+            }
+
             const sample = sample_info.get(data.sample_id)!;
             sample.Data.push(
                 new app.ProjectSampleDataCreate({
                     Schema: data.schema!,
                     FilePath: data.file!,
                     Timestamp: data.timestamp?.toISOString(),
+                    Properties: data_properties,
                 })
             );
         }
@@ -572,23 +676,25 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
  */
 function project_samples_create_parse_form_data(
     data: FormData,
-    properties: PropertyData[]
+    properties: PropertyInfo[]
 ): [
     Map<string, app.ProjectSampleCreate>,
     Map<string, SampleDataCreate>,
     Map<string, SampleNoteCreate>
 ] {
-    const sample_form_key_pattern = /sample\[(\d+?)\]\[(\w+?)\]/;
-    const sample_property_pattern = /sample\[\d+?\]\[property\]\[(\w+?)\]/;
-    const sample_data_pattern = /sample\[\d+?\]\[data\]\[(\d+?)\]\[(\w+?)\]/;
-    const sample_note_pattern = /sample\[\d+?\]\[note\]\[(\d+?)\]\[(\w+?)\]/;
+    const SAMPLE_FORM_KEY_PATTERN = /sample\[(\d+?)\]\[(\w+?)\]/;
+    const SAMPLE_PROPERTY_PATTERN = /sample\[\d+?\]\[property\]\[(\w+?)\]/;
+    const SAMPLE_DATA_PATTERN = /sample\[\d+?\]\[data\]\[(\d+?)\]\[(\w+?)\]/;
+    const SAMPLE_DATA_PROPERTY_PATTERN =
+        /sample\[\d+?\]\[data\]\[\d+?\]\[property\]\[(\d+)\]\[(\w+?)\]/;
+    const SAMPLE_NOTE_PATTERN = /sample\[\d+?\]\[note\]\[(\d+?)\]\[(\w+?)\]/;
 
     const sample_info = new Map<string, app.ProjectSampleCreate>();
     const sample_data = new Map<string, SampleDataCreate>();
     const sample_notes = new Map<string, SampleNoteCreate>();
 
     for (const [key, value] of data.entries()) {
-        const matches = key.match(sample_form_key_pattern);
+        const matches = key.match(SAMPLE_FORM_KEY_PATTERN);
         if (matches === null) {
             throw new Error(`invalid sample form key: ${key}`);
         }
@@ -621,7 +727,7 @@ function project_samples_create_parse_form_data(
                 sample.Tags = [...tags];
                 break;
             case "property":
-                const property_matches = key.match(sample_property_pattern);
+                const property_matches = key.match(SAMPLE_PROPERTY_PATTERN);
                 if (property_matches === null) {
                     throw new Error(`invalid sample property form key: ${key}`);
                 }
@@ -778,7 +884,7 @@ function project_samples_create_parse_form_data(
                 sample.Properties.push(property);
                 break;
             case "data":
-                const data_matches = key.match(sample_data_pattern);
+                const data_matches = key.match(SAMPLE_DATA_PATTERN);
                 if (data_matches === null) {
                     throw new Error(`invalid sample data form key: ${key}`);
                 }
@@ -792,6 +898,7 @@ function project_samples_create_parse_form_data(
                         sample_id: sample_id,
                         file: undefined,
                         timestamp: undefined,
+                        properties: new Map(),
                     });
                 }
                 const sample_datum = sample_data.get(data_map_key)!;
@@ -805,12 +912,71 @@ function project_samples_create_parse_form_data(
                     case "timestamp":
                         sample_datum.timestamp = new Date(value.toString());
                         break;
+                    case "property":
+                        const data_property_matches = key.match(
+                            SAMPLE_DATA_PROPERTY_PATTERN
+                        );
+                        if (data_property_matches === null) {
+                            throw new Error(
+                                `invalid sample data form key: ${key}`
+                            );
+                        }
+                        const data_property_id = data_property_matches[1];
+                        const data_property_key = data_property_matches[2];
+                        if (!sample_datum.properties.has(data_property_id)) {
+                            sample_datum.properties.set(data_property_id, {
+                                id: data_property_id,
+                                key: undefined,
+                                type: undefined,
+                                value: undefined,
+                            });
+                        }
+
+                        const datum_property =
+                            sample_datum.properties.get(data_property_id)!;
+                        switch (data_property_key) {
+                            case "key":
+                                datum_property.key = value.toString();
+                                break;
+                            case "type":
+                                datum_property.type =
+                                    common.property_type_string_to_variant(
+                                        value.toString()
+                                    );
+                                break;
+                            case "value":
+                                if (key.endsWith("[magnitude]")) {
+                                    if (datum_property.value === undefined) {
+                                        datum_property.value = {};
+                                    }
+                                    datum_property.value.magnitude = value
+                                        .toString()
+                                        .trim();
+                                } else if (key.endsWith("[unit]")) {
+                                    if (datum_property.value === undefined) {
+                                        datum_property.value = {};
+                                    }
+                                    datum_property.value.unit = value
+                                        .toString()
+                                        .trim();
+                                } else {
+                                    datum_property.value = value
+                                        .toString()
+                                        .trim();
+                                }
+                                break;
+                            default:
+                                throw new Error(
+                                    `invalid sample data property form key: ${key}`
+                                );
+                        }
+                        break;
                     default:
                         throw new Error(`invalid sample data key: ${key}`);
                 }
                 break;
             case "note":
-                const note_matches = key.match(sample_note_pattern);
+                const note_matches = key.match(SAMPLE_NOTE_PATTERN);
                 if (note_matches === null) {
                     throw new Error(`invalid sample note form key: ${key}`);
                 }
@@ -850,9 +1016,9 @@ const SAMPLE_LABEL_COL = 2;
 const SAMPLE_TAGS_COL = 3;
 const PROPERTIES_START_COL = 4;
 const NUM_HEADER_ROWS = 2;
+const NEW_PROPERTY_TYPE_DEFAULT_VALUE = "string";
 
 function ProjectSamplesFormHeader() {
-    const NEW_PROPERTY_TYPE_DEFAULT_VALUE = "string";
     const state = useContext(StateCtx);
     const stateDispatch = useContext(StateDispatchCtx);
     const gridWrapperNode = useRef<HTMLDivElement | null>(null);
@@ -933,7 +1099,7 @@ function ProjectSamplesFormHeader() {
                 className="row-1 -col-end-1 flex gap-2 sticky left-0"
                 style={{ gridColumnStart: PROPERTIES_START_COL }}
             >
-                <div>Properties</div>
+                <h3>Properties</h3>
                 <form className="flex gap-1" onSubmit={add_property}>
                     <div>
                         <label>
@@ -951,46 +1117,23 @@ function ProjectSamplesFormHeader() {
                     </div>
                     <div>
                         <span className="hidden">Property type</span>
-                        <select
+                        <SelectPropertyType
                             ref={newPropertyTypeNode}
                             id="new-property-type"
                             name="new-property-type"
                             className="input-basic"
                             defaultValue={NEW_PROPERTY_TYPE_DEFAULT_VALUE}
-                        >
-                            <option value="string" title="Text">
-                                String
-                            </option>
-                            <option value="int" title="Integer">
-                                Int
-                            </option>
-                            <option
-                                value="uint"
-                                title="Unsigned integer (counting numbers)"
-                            >
-                                UInt
-                            </option>
-                            <option value="float" title="Decimal number">
-                                Float
-                            </option>
-                            <option value="boolean" title="True/False">
-                                Boolean
-                            </option>
-                            <option
-                                value="quantity"
-                                title="Measured value (e.g. 10.0 cm)"
-                            >
-                                Quantity
-                            </option>
-                        </select>
+                        />
                     </div>
-
                     <button type="submit" className="btn-cmd">
                         <icon.Plus />
                     </button>
                 </form>
             </div>
-            <div className="row-2" style={{ gridColumn: SAMPLE_LABEL_COL }}>
+            <div
+                className={`row-2 sticky left-[${DEFAULT_COLUMN_WIDTH_SM}px]`}
+                style={{ gridColumn: SAMPLE_LABEL_COL }}
+            >
                 Label
             </div>
             <div className="row-2" style={{ gridColumn: SAMPLE_TAGS_COL }}>
@@ -1018,7 +1161,7 @@ function ProjectSamplesFormHeader() {
 
 interface ProjectSamplesFormHeaderPropertyProps {
     index: number;
-    property: PropertyData;
+    property: PropertyInfo;
 }
 function ProjectSamplesFormHeaderProperty({
     index,
@@ -1070,7 +1213,7 @@ function ProjectSamplesFormList({ data_schemas }: ProjectSamplesFormListProps) {
 
     return (
         <ol
-            className="grid gap-y-2"
+            className="grid gap-y-2 gap-x-1"
             style={{
                 gridTemplateColumns: state.display.columns.asTemplate(),
                 gridTemplateRows: state.display.rows.asTemplate() + " auto",
@@ -1095,7 +1238,7 @@ function ProjectSamplesFormList({ data_schemas }: ProjectSamplesFormListProps) {
                             gridRowStart: idx * SAMPLE_ROW_SPAN + 1,
                             gridRowEnd: `span ${SAMPLE_ROW_SPAN}`,
                         }}
-                        data-wails-dropzone
+                        data-file-drop-target
                     >
                         <SamplesFormListItem
                             sample={sample}
@@ -1239,7 +1382,10 @@ function SamplesFormListItem({
     const ROW_NOTES_IDX = 3;
     return (
         <div className="group/sample-row contents">
-            <div style={{ gridColumn: LIST_MARKER_COL, gridRow: ROW_MAIN_IDX }}>
+            <div
+                className="sticky left-0 bg-white dark:bg-black"
+                style={{ gridColumn: LIST_MARKER_COL, gridRow: ROW_MAIN_IDX }}
+            >
                 <button
                     type="button"
                     className="cursor-pointer"
@@ -1258,7 +1404,10 @@ function SamplesFormListItem({
                 </button>
                 {index + 1}.
             </div>
-            <div className="col-2" style={{ gridRow: ROW_MAIN_IDX }}>
+            <div
+                className={`col-2 sticky left-[${DEFAULT_COLUMN_WIDTH_SM}px] bg-white dark:bg-black`}
+                style={{ gridRow: ROW_MAIN_IDX }}
+            >
                 <label>
                     <span className="hidden">Label</span>
                     <input
@@ -1298,7 +1447,8 @@ function SamplesFormListItem({
                 className={classNames({
                     "invisible group-hover/sample-row:visible \
                     flex gap-1 items-center \
-                    sticky right-0 bg-white dark:bg-black": true,
+                    sticky right-0 bg-white dark:bg-black":
+                        state.samples.length > 1,
                     "justify-center": state.display.columns.numColumns() > 4,
                 })}
                 style={{
@@ -1335,19 +1485,16 @@ function SamplesFormListItem({
                         </button>
                     </div>
                 </div>
-                <ol className="grid grid-cols-[1.5rem_auto] gap-1 pb-2">
+                <ol className="grid grid-cols-[1.1rem_1.5rem_auto] gap-1 pb-2">
                     {data.map((data, index) => (
-                        <li key={data.id} className="contents">
-                            <div className="col-1">{index + 1}.</div>
-                            <SampleData
-                                index={index}
-                                id={data.id}
-                                sample={sample}
-                                data_schemas={data_schemas}
-                                onRemove={remove_data}
-                                className="col-2"
-                            />
-                        </li>
+                        <SampleDataListItem
+                            key={data.id}
+                            index={index}
+                            sample={sample}
+                            data={data}
+                            data_schemas={data_schemas}
+                            onRemove={remove_data}
+                        />
                     ))}
                 </ol>
             </div>
@@ -1389,7 +1536,7 @@ function SamplesFormListItem({
 interface SamplePropertyProps {
     gridRow: number;
     sample: SampleInfo;
-    property: PropertyData;
+    property: PropertyInfo;
 }
 function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
     const state = useContext(StateCtx);
@@ -1453,7 +1600,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
             return (
                 <div style={style}>
                     <input
-                        type="number"
+                        type="text"
                         id={`sample[${sample.id}][property][${property.key}]`}
                         name={`sample[${sample.id}][property][${property.key}]`}
                         className="input-basic"
@@ -1506,12 +1653,72 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
     }
 }
 
+interface SampleDataListItemProps {
+    index: number;
+    sample: SampleInfo;
+    data: SampleDataInfo;
+    data_schemas: app.DataSchema[];
+    onRemove: (id: number) => void;
+}
+function SampleDataListItem({
+    index,
+    sample,
+    data,
+    data_schemas,
+    onRemove,
+}: SampleDataListItemProps) {
+    const [expanded, setExpanded] = useState(false);
+
+    function toggle_expand(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        setExpanded(!expanded);
+    }
+
+    return (
+        <li
+            key={data.id}
+            className={classNames({
+                "col-span-full grid grid-cols-subgrid group/data-list-item border-l":
+                    true,
+                "border-l-transparent": !expanded,
+            })}
+        >
+            <div className="col-1">
+                <button
+                    type="button"
+                    className={classNames({
+                        "group-hover/data-list-item:visible btn-cmd": true,
+                        "invisible -rotate-90": !expanded,
+                    })}
+                    onMouseDown={toggle_expand}
+                >
+                    <icon.CaretDown />
+                </button>
+            </div>
+            <div className="col-2">{index + 1}.</div>
+            <SampleData
+                index={index}
+                id={data.id}
+                sample={sample}
+                data_schemas={data_schemas}
+                onRemove={onRemove}
+                expanded={expanded}
+                className="col-3"
+            />
+        </li>
+    );
+}
+
 interface SampleDataProps {
     index: number;
     id: number;
     sample: SampleInfo;
     data_schemas: app.DataSchema[];
     onRemove: (id: number) => void;
+    expanded: boolean;
     className?: string;
 }
 function SampleData({
@@ -1520,9 +1727,11 @@ function SampleData({
     sample,
     data_schemas,
     onRemove,
+    expanded,
     className,
 }: SampleDataProps) {
     const file_input = useRef<HTMLInputElement>(null);
+    const [properties, setProperties] = useState<DataPropertyInfo[]>([]);
 
     function remove(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
@@ -1602,84 +1811,317 @@ function SampleData({
             });
     }
 
+    function add_property(key: string, type: app.PropertyType) {
+        const id =
+            properties.length === 0
+                ? 0
+                : properties[properties.length - 1].id + 1;
+        const new_prop = { id, key, type };
+        setProperties([...properties, new_prop]);
+    }
+
+    function remove_property(id: number) {
+        const remaining = properties.filter((property) => property.id !== id);
+        setProperties(remaining);
+    }
+
     const now = nowLocalISOString();
     return (
         <div
             id={`sample[${sample.id}][data][${id}]`}
-            className={`px-0.5 flex gap-2 ${className}`}
+            className={`px-0.5 ${className}`}
             data-wails-dropzone
         >
-            <div>
-                <label>
-                    <span className="hidden">Data schema</span>
-                    <select
-                        id={`sample[${sample.id}][data][${id}][schema]`}
-                        name={`sample[${sample.id}][data][${id}][schema]`}
-                        className="px-1 py-0.5 w-full min-h-4 input-basic"
-                        title={`Data schema`}
-                        onChange={try_parse_data}
-                        defaultValue={""}
-                    >
-                        <option value="" disabled>
-                            Data schema
-                        </option>
-                        {data_schemas.map((schema) => (
-                            <option
-                                key={schema.Id}
-                                value={schema.Id}
-                                title={schema.Description}
-                            >
-                                {schema.Label}
+            <div className="flex gap-2">
+                <div>
+                    <label>
+                        <span className="hidden">Data schema</span>
+                        <select
+                            id={`sample[${sample.id}][data][${id}][schema]`}
+                            name={`sample[${sample.id}][data][${id}][schema]`}
+                            className="px-1 py-0.5 w-full min-h-4 input-basic"
+                            title={`Data schema`}
+                            onChange={try_parse_data}
+                            defaultValue={""}
+                        >
+                            <option value="" disabled>
+                                Data schema
                             </option>
-                        ))}
-                    </select>
-                </label>
-            </div>
-            <div className="flex gap-1">
-                <label>
-                    <span className="hidden">File path</span>
-                    <input
-                        ref={file_input}
-                        type="text"
-                        id={`sample[${sample.id}][data][${id}][file]`}
-                        name={`sample[${sample.id}][data][${id}][file]`}
-                        className="input-basic"
-                        title={`Data file`}
-                        placeholder="Data file"
-                        onChange={try_parse_data}
-                    />
-                </label>
+                            {data_schemas.map((schema) => (
+                                <option
+                                    key={schema.Id}
+                                    value={schema.Id}
+                                    title={schema.Description}
+                                >
+                                    {schema.Label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                </div>
+                <div className="flex gap-1">
+                    <label>
+                        <span className="hidden">File path</span>
+                        <input
+                            ref={file_input}
+                            type="text"
+                            id={`sample[${sample.id}][data][${id}][file]`}
+                            name={`sample[${sample.id}][data][${id}][file]`}
+                            className="input-basic"
+                            title={`Data file`}
+                            placeholder="Data file"
+                            onChange={try_parse_data}
+                        />
+                    </label>
+                    <div>
+                        <button
+                            type="button"
+                            title="Select a data file"
+                            className="btn-cmd"
+                            onMouseDown={open_file_select}
+                        >
+                            <icon.FileUpload />
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label>
+                        <span className="hidden">Timestamp</span>
+                        <input
+                            type="datetime-local"
+                            id={`sample[${sample.id}][data][${id}][timestamp]`}
+                            name={`sample[${sample.id}][data][${id}][timestamp]`}
+                            className="input-basic"
+                            title={`Data timestamp`}
+                            placeholder="Timestamp"
+                            defaultValue={now}
+                            max={now}
+                        />
+                    </label>
+                </div>
                 <div>
                     <button
                         type="button"
-                        title="Select a data file"
                         className="btn-cmd"
-                        onMouseDown={open_file_select}
+                        title={`Remove data ${index + 1}`}
+                        onMouseDown={remove}
                     >
-                        <icon.FileUpload />
+                        <icon.Trash />
                     </button>
                 </div>
             </div>
-            <div>
-                <label>
-                    <span className="hidden">Timestamp</span>
-                    <input
-                        type="datetime-local"
-                        id={`sample[${sample.id}][data][${id}][timestamp]`}
-                        name={`sample[${sample.id}][data][${id}][timestamp]`}
+            <SampleDataProperties
+                sample_id={sample.id}
+                data_id={id}
+                properties={properties}
+                onAddProperty={add_property}
+                onRemoveProperty={remove_property}
+                className={classNames({
+                    "overflow-hidden": true,
+                    "h-0": !expanded,
+                    "py-2": expanded,
+                })}
+            />
+        </div>
+    );
+}
+
+interface DataPropertyInfo {
+    id: number;
+    key: string;
+    type: app.PropertyType;
+}
+
+interface SampleDataPropertiesProps {
+    sample_id: number;
+    data_id: number;
+    properties: DataPropertyInfo[];
+    onAddProperty: (key: string, type: app.PropertyType) => void;
+    onRemoveProperty: (id: number) => void;
+    className?: string;
+}
+function SampleDataProperties({
+    sample_id,
+    data_id,
+    properties,
+    onAddProperty,
+    onRemoveProperty,
+    className,
+}: SampleDataPropertiesProps) {
+    const newPropertyKeyNode = useRef<HTMLInputElement | null>(null);
+    const newPropertyTypeNode = useRef<HTMLSelectElement | null>(null);
+
+    function on_change_property_key(e: ChangeEvent<HTMLInputElement>) {
+        const key_input = e.target;
+        if (!key_input.validity.customError) {
+            return;
+        }
+        key_input.setCustomValidity("");
+
+        const key = key_input.value.trim();
+        if (properties.findIndex((property) => property.key === key) > -1) {
+            key_input.setCustomValidity("key already exists");
+            key_input.reportValidity();
+        }
+    }
+
+    function add_property() {
+        const key_input = newPropertyKeyNode.current! as HTMLInputElement;
+        const type_input = newPropertyTypeNode.current! as HTMLSelectElement;
+        key_input.setCustomValidity("");
+        type_input.setCustomValidity("");
+
+        const key = key_input.value.trim();
+        if (key.length === 0) {
+            key_input.setCustomValidity("key can not be empty");
+            key_input.reportValidity();
+            return;
+        }
+        if (properties.findIndex((property) => property.key === key) > -1) {
+            key_input.setCustomValidity("key already exists");
+            key_input.reportValidity();
+            return;
+        }
+
+        const type = common.property_type_string_to_variant(type_input.value);
+        if (type === undefined) {
+            type_input.setCustomValidity("invalid type");
+            type_input.reportValidity();
+            return;
+        }
+
+        onAddProperty(key, type);
+        key_input.value = "";
+        type_input.value = NEW_PROPERTY_TYPE_DEFAULT_VALUE;
+    }
+
+    function add_property_btn(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        add_property();
+    }
+
+    function capture_enter(e: KeyboardEvent<HTMLInputElement>) {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            add_property();
+        }
+    }
+
+    return (
+        <div className={className}>
+            <div className="flex gap-2 pb-2">
+                <h4>Properties</h4>
+                <div>
+                    <label>
+                        <span className="hidden">Property key</span>
+                        <input
+                            ref={newPropertyKeyNode}
+                            type="text"
+                            placeholder="Key"
+                            className="input-basic"
+                            onChange={on_change_property_key}
+                            onKeyDown={capture_enter}
+                        />
+                    </label>
+                </div>
+                <div>
+                    <span className="hidden">Property type</span>
+                    <SelectPropertyType
+                        ref={newPropertyTypeNode}
                         className="input-basic"
-                        title={`Data timestamp`}
-                        placeholder="Timestamp"
-                        defaultValue={now}
-                        max={now}
+                        defaultValue={NEW_PROPERTY_TYPE_DEFAULT_VALUE}
+                    />
+                </div>
+                <div>
+                    <button
+                        type="button"
+                        className="btn-cmd"
+                        onMouseDown={add_property_btn}
+                    >
+                        <icon.Plus />
+                    </button>
+                </div>
+            </div>
+            <ol
+                className="grid gap-1"
+                style={{
+                    gridTemplateColumns: `min-content ${DEFAULT_COLUMN_WIDTH}px ${DEFAULT_COLUMN_WIDTH_SM}px`,
+                }}
+            >
+                {properties.map((property) => {
+                    return (
+                        <SampleDataProperty
+                            key={property.id}
+                            sample_id={sample_id}
+                            data_id={data_id}
+                            property={property}
+                            onRemove={onRemoveProperty}
+                        />
+                    );
+                })}
+            </ol>
+        </div>
+    );
+}
+
+interface SampleDataPropertyProps {
+    sample_id: number;
+    data_id: number;
+    property: DataPropertyInfo;
+    onRemove: (id: number) => void;
+}
+function SampleDataProperty({
+    sample_id,
+    data_id,
+    property,
+    onRemove,
+}: SampleDataPropertyProps) {
+    function remove(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        onRemove(property.id);
+    }
+
+    return (
+        <div className="col-span-full grid grid-cols-subgrid group/sample-data-property">
+            <div className="col-1 whitespace-nowrap">
+                <label>
+                    <input
+                        type="hidden"
+                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][key]`}
+                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][key]`}
+                        value={property.key}
+                        readOnly
                     />
                 </label>
+                <label>
+                    <input
+                        type="hidden"
+                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][type]`}
+                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][type]`}
+                        value={property.type}
+                        readOnly
+                    />
+                </label>
+                {property.key}{" "}
+                <span className="text-gray-500">({property.type})</span>
             </div>
-            <div>
+            <SampleDataPropertyValue
+                sample_id={sample_id}
+                data_id={data_id}
+                property={property}
+                className="col-2"
+            />
+            <div className="col-3">
                 <button
                     type="button"
-                    className="btn-cmd"
-                    title={`Remove data ${index + 1}`}
+                    className="btn-cmd invisible group-hover/sample-data-property:visible"
                     onMouseDown={remove}
                 >
                     <icon.Trash />
@@ -1687,6 +2129,122 @@ function SampleData({
             </div>
         </div>
     );
+}
+
+interface SampleDataPropertyValueProps {
+    sample_id: number;
+    data_id: number;
+    property: DataPropertyInfo;
+    className?: string;
+}
+function SampleDataPropertyValue({
+    sample_id,
+    data_id,
+    property,
+    className,
+}: SampleDataPropertyValueProps) {
+    const inputNode = useRef(null);
+
+    useLayoutEffect(() => {
+        if (
+            inputNode.current !== null &&
+            property.type === app.PropertyType.PROPERTY_TYPE_BOOL
+        ) {
+            const input = inputNode.current as HTMLInputElement;
+            input.indeterminate = true;
+        }
+    }, [inputNode]);
+
+    switch (property.type) {
+        case app.PropertyType.PROPERTY_TYPE_STRING:
+            return (
+                <div className={className}>
+                    <input
+                        type="string"
+                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        className="input-basic"
+                    />
+                </div>
+            );
+        case app.PropertyType.PROPERTY_TYPE_INT:
+            return (
+                <div className={className}>
+                    <input
+                        type="number"
+                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        className="input-basic"
+                    />
+                </div>
+            );
+        case app.PropertyType.PROPERTY_TYPE_UINT:
+            return (
+                <div className={className}>
+                    <input
+                        type="number"
+                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        min={0}
+                        className="input-basic"
+                    />
+                </div>
+            );
+        case app.PropertyType.PROPERTY_TYPE_FLOAT:
+            return (
+                <div className={className}>
+                    <input
+                        type="text"
+                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        className="input-basic"
+                    />
+                </div>
+            );
+        case app.PropertyType.PROPERTY_TYPE_BOOL:
+            return (
+                <div className={className}>
+                    <input
+                        ref={inputNode}
+                        type="checkbox"
+                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        className="input-basic"
+                    />
+                </div>
+            );
+        case app.PropertyType.PROPERTY_TYPE_TIMESTAMP:
+            return (
+                <div className={className}>
+                    <input
+                        ref={inputNode}
+                        type="datetime-local"
+                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+                        className="input-basic"
+                    />
+                </div>
+            );
+        case app.PropertyType.PROPERTY_TYPE_QUANTITY:
+            return (
+                <div className={`flex gap-1 ${className}`}>
+                    <input
+                        type="text"
+                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][magnitude]`}
+                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][magnitude]`}
+                        className="input-basic min-w-0 shrink"
+                        placeholder="Magnitude"
+                    />
+                    <input
+                        type="string"
+                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][unit]`}
+                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][unit]`}
+                        className="input-basic min-w-0 shrink-2"
+                        placeholder="Units"
+                    />
+                </div>
+            );
+    }
 }
 
 interface SampleNoteProps {
@@ -1751,6 +2309,34 @@ function SampleNote({
                 </label>
             </div>
         </div>
+    );
+}
+
+type SelectPropertyTypeProps = ComponentPropsWithoutRef<"select"> & {
+    ref?: React.Ref<HTMLSelectElement>;
+};
+function SelectPropertyType({ ref, ...props }: SelectPropertyTypeProps) {
+    return (
+        <select ref={ref} {...props}>
+            <option value="string" title="Text">
+                String
+            </option>
+            <option value="int" title="Integer">
+                Int
+            </option>
+            <option value="uint" title="Unsigned integer (counting numbers)">
+                UInt
+            </option>
+            <option value="float" title="Decimal number">
+                Float
+            </option>
+            <option value="boolean" title="True/False">
+                Boolean
+            </option>
+            <option value="quantity" title="Measured value (e.g. 10.0 cm)">
+                Quantity
+            </option>
+        </select>
     );
 }
 
