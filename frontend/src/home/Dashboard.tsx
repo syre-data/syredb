@@ -209,7 +209,7 @@ function DataSchemaLoading() {
 function DataSchemaInner() {
     const { data: data_schemas } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_DATA_SCHEMA],
-        queryFn: app.DataService.GetDataSchemas,
+        queryFn: app.DataService.GetDataSchemasAll,
     });
 
     if (data_schemas.length === 0) {
@@ -218,7 +218,8 @@ function DataSchemaInner() {
                 <div>
                     <div>No data schemas</div>
                     <div>
-                        Create your first data schema by clicking the + above.
+                        Create your first data schema by clicking the{" "}
+                        <icon.Plus className="inline" /> above.
                     </div>
                 </div>
             </div>
@@ -227,6 +228,7 @@ function DataSchemaInner() {
         return (
             <ul className="grid gap-y-2 grid-cols-[50px_1fr_5fr]">
                 {data_schemas.map((schema, index) => (
+                    // TODO: Change to subgrid
                     <li key={schema.Id.toString()} className="contents">
                         <DataSchemaContent index={index} schema={schema} />
                     </li>

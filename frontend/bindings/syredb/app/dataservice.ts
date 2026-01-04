@@ -7,6 +7,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as uuid$0 from "../../github.com/google/uuid/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 export function DataSchemaCreate(data_schema: $models.DataSchemaCreate): $CancellablePromise<$models.Ok> {
@@ -15,9 +19,21 @@ export function DataSchemaCreate(data_schema: $models.DataSchemaCreate): $Cancel
     });
 }
 
-export function GetDataSchemas(): $CancellablePromise<$models.DataSchema[]> {
-    return $Call.ByID(2506708843).then(($result: any) => {
+export function GetDataSchemasAll(): $CancellablePromise<$models.DataSchema[]> {
+    return $Call.ByID(106594542).then(($result: any) => {
         return $$createType2($result);
+    });
+}
+
+export function GetDataSchemasById(schema_ids: uuid$0.UUID[]): $CancellablePromise<$models.DataSchema[]> {
+    return $Call.ByID(3821527915, schema_ids).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+export function ParseDataFileToSchema(file_path: string, schema_id: uuid$0.UUID): $CancellablePromise<$models.ColumnData[]> {
+    return $Call.ByID(3004645630, file_path, schema_id).then(($result: any) => {
+        return $$createType4($result);
     });
 }
 
@@ -25,3 +41,5 @@ export function GetDataSchemas(): $CancellablePromise<$models.DataSchema[]> {
 const $$createType0 = $models.Ok.createFrom;
 const $$createType1 = $models.DataSchema.createFrom;
 const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = $models.ColumnData.createFrom;
+const $$createType4 = $Create.Array($$createType3);

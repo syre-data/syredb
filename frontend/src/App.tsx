@@ -103,7 +103,7 @@ function DatabaseConnectionError({ error, resetErrorBoundary }: FallbackProps) {
             <div className="text-center pt-4">
                 <div>
                     <h2 className="py-2">Could not connect to database</h2>
-                    <div className="px-4">{error + ""}</div>
+                    <div className="px-4">{error}</div>
                 </div>
                 <div className="pt-4">
                     <h3 className="pb-2">Update your database connection</h3>

@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS project_sample_note_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _sample UUID REFERENCES sample_(_id) NOT NULL,
     _project UUID REFERENCES project_(_id) NOT NULL,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
     timestamp TIMESTAMP(3) WITH TIME ZONE DEFAULT NOT() NOT NULL, 
     content TEXT NOT NULL
 );
@@ -154,7 +155,7 @@ CREATE TABLE IF NOT EXISTS data_schema_ (
     description TEXT
 );
 
-CREATE OR REPLACE FUNCTION data_schmea_schema_is_valid(_schema jsonb)
+CREATE OR REPLACE FUNCTION data_schema_schema_is_valid(_schema jsonb)
 RETURNS boolean
 LANGUAGE sql
 IMMUTABLE
@@ -175,13 +176,12 @@ $$;
 
 ALTER TABLE data_schema_
 ADD CONSTRAINT schema_is_valid
-CHECK (data_schmea_schema_is_valid(_schema));
+CHECK (data_schema_schema_is_valid(_schema));
 
 CREATE TABLE IF NOT EXISTS sample_data_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _sample UUID REFERENCES sample_(_id) NOT NULL,
     _schema UUID REFERENCES data_schema_(_id) NOT NULL,
-    _project UUID REFERENCES project_(_id) NOT NULL,
     _creator UUID REFERENCES user_(_id) NOT NULL,
     timestamp TIMESTAMP(3) WITH TIME ZONE NOT NULL
 );
@@ -196,7 +196,8 @@ CREATE TABLE IF NOT EXISTS sample_data_property_ (
 
 CREATE TABLE IF NOT EXISTS sample_data_note_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _data UUID REFERENCES sample_data_(_id) NOT NULL,
+    _sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
     timestamp TIMESTAMP(3) WITH TIME ZONE DEFAULT NOW() NOT NULL, 
     content TEXT NOT NULL
 );

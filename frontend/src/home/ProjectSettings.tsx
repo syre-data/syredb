@@ -27,7 +27,7 @@ export default function () {
         );
     } else {
         navigate("/");
-        return <></>;
+        return null;
     }
 }
 
@@ -41,7 +41,7 @@ function ProjectSettingsError({ error, resetErrorBoundary }: FallbackProps) {
     if (error === common.USER_NOT_AUTHENTICATED_ERROR) {
         console.error(common.USER_NOT_AUTHENTICATED_ERROR);
         navigate("/");
-        return <></>;
+        return null;
     } else {
         console.error(error);
     }

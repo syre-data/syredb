@@ -34,7 +34,7 @@ func (e *UserNotAuthenticatedError) Error() string {
 type InsufficientPermissionsError struct{}
 
 func (e *InsufficientPermissionsError) Error() string {
-	return "INSUFFICEINT_PERMISSIONS"
+	return "INSUFFICIENT_PERMISSIONS"
 }
 
 type AuthService struct {
@@ -62,14 +62,6 @@ func (s *AuthService) ServiceStartup(ctx context.Context, options application.Se
 type UserAuth struct {
 	UserId    string
 	AuthToken string
-}
-
-type User struct {
-	Id            uuid.UUID
-	AccountStatus string
-	Email         string
-	Name          string
-	Role          UserRole
 }
 
 func (s *AuthService) UserFromLocal() (User, error) {

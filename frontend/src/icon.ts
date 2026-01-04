@@ -1,5 +1,5 @@
 import { AiOutlinePlus, AiOutlineReload } from "react-icons/ai";
-import { FaUsersCog, FaCheck } from "react-icons/fa";
+import { FaUsersCog, FaCheck, FaFileUpload } from "react-icons/fa";
 import {
     FaTrash,
     FaGear,
@@ -16,6 +16,7 @@ export default {
     CaretDown: FaCaretDown,
     Check: FaCheck,
     Close: FaX,
+    FileUpload: FaFileUpload,
     Gear: FaGear,
     Home: IoMdHome,
     LeftArrow: FaArrowLeft,

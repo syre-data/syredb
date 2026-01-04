@@ -63,7 +63,7 @@ const DEFAULT_COLUMN_WIDTH = 200;
 const DEFAULT_COLUMN_WIDTH_SM = 50;
 const DEFAULT_ROW_HEIGHT = 24;
 
-interface SampleData {
+interface SampleInfo {
     id: number;
     label: string;
 }
@@ -148,9 +148,9 @@ class SampleRowsState {
         const rows = this.rows.map((row) => {
             let template = "auto";
             if (row.expanded) {
-                template += " auto";
+                template += " auto auto";
             } else {
-                template += " 0px";
+                template += " 0px 0px";
             }
 
             return template;
@@ -201,7 +201,7 @@ class State {
     [immerable] = true;
     _next_sample_id: number;
     _project_sample_labels: string[];
-    samples: SampleData[];
+    samples: SampleInfo[];
     properties: PropertyData[];
     display: DisplayState;
 
@@ -238,8 +238,8 @@ type StateAction =
     | { type: "set_width"; payload: { column: number; width: number } };
 
 function stateReducer(draft: State, action: StateAction) {
-    let sample: SampleData;
-    let maybe_sample: SampleData | undefined;
+    let sample: SampleInfo;
+    let maybe_sample: SampleInfo | undefined;
     let property;
     let idx: number;
     let key: string;
@@ -338,9 +338,24 @@ function project_sample_create_is_empty(
     const tags_empty = !sample.Tags || sample.Tags.length === 0;
     const properties_empty =
         !sample.Properties || sample.Properties.length === 0;
+    const data_empty = sample.Data.length === 0;
     const notes_empty = sample.Notes.length === 0;
 
-    return label_empty && tags_empty && properties_empty && notes_empty;
+    return (
+        label_empty &&
+        tags_empty &&
+        properties_empty &&
+        data_empty &&
+        notes_empty
+    );
+}
+
+interface SampleDataCreate {
+    id: string;
+    sample_id: string;
+    schema?: string;
+    file?: string;
+    timestamp?: Date;
 }
 
 interface SampleNoteCreate {
@@ -363,6 +378,10 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
     const { data: project_resources } = useSuspenseQuery({
         queryKey: ["project_resources", project_id],
         queryFn: async () => app.ProjectService.GetProjectResources(project_id),
+    });
+    const { data: data_schemas } = useSuspenseQuery({
+        queryKey: [common.QUERY_KEY_DATA_SCHEMA],
+        queryFn: app.DataService.GetDataSchemasAll,
     });
 
     const [error, setError] = useState("");
@@ -405,259 +424,43 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
         )! as HTMLButtonElement;
         submitBtn.disabled = true;
 
-        const sample_form_key_pattern = /sample\[(\d+?)\]\[(\w+?)\]/;
-        const sample_property_pattern = /sample\[\d+?\]\[property\]\[(\w+?)\]/;
-        const sample_note_pattern =
-            /sample\[\d+?\]\[note\]\[(\d+?)\]\[(\w+?)\]/;
-
-        const sample_data = new Map<string, app.ProjectSampleCreate>();
-        const sample_notes = new Map<string, SampleNoteCreate>();
         const data = new FormData(e.target as HTMLFormElement);
         for (const [key, _] of data.entries()) {
-            const input = document.getElementById(key) as HTMLInputElement;
+            const input = document.getElementById(key)! as HTMLInputElement;
             input.setCustomValidity("");
         }
 
-        for (const [key, value] of data.entries()) {
-            const matches = key.match(sample_form_key_pattern);
-            if (matches === null) {
-                console.error(`invalid sample form key: ${key}`);
-                return;
-            }
-            const sample_id = matches[1];
-            const value_key = matches[2];
-            if (!sample_data.has(sample_id)) {
-                sample_data.set(
-                    sample_id,
-                    new app.ProjectSampleCreate({
-                        Label: "",
-                        Tags: [],
-                        Properties: [],
-                        Notes: [],
-                    })
-                );
-            }
-            const sample = sample_data.get(sample_id)!;
-
-            switch (value_key) {
-                case "label":
-                    sample.Label = value.toString();
-                    break;
-                case "tags":
-                    const tags_maybe_dup = value
-                        .toString()
-                        .split(",")
-                        .map((tag) => tag.trim())
-                        .filter((tag) => tag.length > 0);
-                    const tags = new Set(tags_maybe_dup);
-                    sample.Tags = [...tags];
-                    break;
-                case "property":
-                    const property_matches = key.match(sample_property_pattern);
-                    if (property_matches === null) {
-                        console.error(
-                            `invalid sample property form key: ${key}`
-                        );
-                        return;
-                    }
-                    const property_key = property_matches[1];
-
-                    const property_data = state.properties.find(
-                        (property) => property.key === property_key
-                    );
-                    if (property_data === undefined) {
-                        console.error(`invalid property key: ${property_key}`);
-                        return;
-                    }
-
-                    let property_value;
-                    switch (property_data.type) {
-                        case app.PropertyType.PROPERTY_TYPE_BOOL:
-                            property_value = value.toString() === "true";
-                            break;
-                        case app.PropertyType.PROPERTY_TYPE_STRING:
-                            property_value = value.toString().trim();
-                            if (property_value.length === 0) {
-                                continue;
-                            }
-                            break;
-                        case app.PropertyType.PROPERTY_TYPE_INT:
-                            property_value = value.toString().trim();
-                            if (property_value.length === 0) {
-                                continue;
-                            }
-
-                            property_value = parseInt(property_value);
-                            if (isNaN(property_value)) {
-                                const input = document.getElementById(
-                                    key
-                                )! as HTMLInputElement;
-                                input.setCustomValidity("invalid integer");
-                                continue;
-                            }
-                            break;
-                        case app.PropertyType.PROPERTY_TYPE_UINT:
-                            property_value = value.toString().trim();
-                            if (property_value.length === 0) {
-                                continue;
-                            }
-
-                            property_value = parseInt(property_value);
-                            if (isNaN(property_value) || property_value < 0) {
-                                const input = document.getElementById(
-                                    key
-                                )! as HTMLInputElement;
-                                input.setCustomValidity(
-                                    "invalid unsigned integer"
-                                );
-                                continue;
-                            }
-                            break;
-                        case app.PropertyType.PROPERTY_TYPE_FLOAT:
-                            property_value = value.toString().trim();
-                            if (property_value.length === 0) {
-                                continue;
-                            }
-
-                            property_value = parseFloat(property_value);
-                            if (isNaN(property_value)) {
-                                const input = document.getElementById(
-                                    key
-                                )! as HTMLInputElement;
-                                input.setCustomValidity(
-                                    "could not parse as a number"
-                                );
-                                continue;
-                            }
-                            break;
-                        case app.PropertyType.PROPERTY_TYPE_QUANTITY:
-                            const magnitude_key = `sample[${sample_id}][property][${property_key}][magnitude]`;
-                            const unit_key = `sample[${sample_id}][property][${property_key}][unit]`;
-                            if (key === unit_key) {
-                                continue;
-                            }
-                            if (key !== magnitude_key) {
-                                console.error(
-                                    `invalid sample property quantity form key: ${key}`
-                                );
-                                return;
-                            }
-
-                            const unit_data = data.get(unit_key);
-                            if (unit_data === null) {
-                                console.error(`quantity missing unit: ${key}`);
-                                return;
-                            }
-
-                            const magnitude_string = value.toString().trim();
-                            const unit = unit_data.toString().trim();
-                            if (
-                                magnitude_string.length === 0 &&
-                                unit.length === 0
-                            ) {
-                                continue;
-                            }
-                            if (
-                                magnitude_string.length === 0 &&
-                                unit.length !== 0
-                            ) {
-                                const input = document.getElementById(
-                                    magnitude_key
-                                )! as HTMLInputElement;
-
-                                input.setCustomValidity(
-                                    "magnitude can not be empty"
-                                );
-                                continue;
-                            }
-
-                            const magnitude_value =
-                                parseFloat(magnitude_string);
-                            if (isNaN(magnitude_value)) {
-                                const input = document.getElementById(
-                                    magnitude_key
-                                )! as HTMLInputElement;
-
-                                input.setCustomValidity(
-                                    "could not parse as a number"
-                                );
-                                continue;
-                            }
-
-                            if (
-                                unit.length === 0 &&
-                                magnitude_string.length !== 0
-                            ) {
-                                const input = document.getElementById(
-                                    unit_key
-                                )! as HTMLInputElement;
-
-                                input.setCustomValidity(
-                                    "unit can not be empty"
-                                );
-                                continue;
-                            }
-
-                            property_value = {
-                                MagnitudeString: magnitude_string,
-                                MagnitudeValue: magnitude_value,
-                                Unit: unit,
-                            };
-
-                            break;
-                        case app.PropertyType.PROPERTY_TYPE_TIMESTAMP:
-                            console.error("TODO");
-                            return;
-                        default:
-                            console.error(
-                                `invalid sample property type key: ${key}`
-                            );
-                            return;
-                    }
-
-                    const property = new app.Property({
-                        Key: property_key,
-                        Type: property_data.type,
-                        Value: property_value,
-                    });
-                    sample.Properties.push(property);
-                    break;
-                case "note":
-                    const note_matches = key.match(sample_note_pattern);
-                    if (note_matches === null) {
-                        console.error(`invalid sample note form key: ${key}`);
-                        return;
-                    }
-                    const note_id = note_matches[1];
-                    const note_key = note_matches[2];
-                    const map_key = `${sample_id}/${note_id}`;
-                    if (!sample_notes.has(map_key)) {
-                        sample_notes.set(map_key, {
-                            id: note_id,
-                            sample_id: sample_id,
-                            timestamp: undefined,
-                            content: undefined,
-                        });
-                    }
-                    const sample_note = sample_notes.get(map_key)!;
-                    switch (note_key) {
-                        case "timestamp":
-                            sample_note.timestamp = new Date(value.toString());
-                            break;
-                        case "content":
-                            sample_note.content = value.toString().trim();
-                            break;
-                        default:
-                            console.error(`invalid sample note key: ${key}`);
-                            return;
-                    }
-                    break;
-                default:
-                    console.error(`invalid sample form property key: ${key}`);
-                    return;
-            }
+        let sample_info, sample_data, sample_notes;
+        try {
+            [sample_info, sample_data, sample_notes] =
+                project_samples_create_parse_form_data(data, state.properties);
+        } catch (err) {
+            console.error(err);
+            return;
         }
+
         const form = e.target as HTMLFormElement;
+        for (const data of sample_data.values()) {
+            if (!data.file) {
+                continue;
+            }
+            if (!data.schema) {
+                const input = document.getElementById(
+                    `sample[${data.sample_id}][data][${data.id}][schema]`
+                )! as HTMLInputElement;
+                input.setCustomValidity("data schema must be set");
+                continue;
+            }
+
+            const sample = sample_info.get(data.sample_id)!;
+            sample.Data.push(
+                new app.ProjectSampleDataCreate({
+                    Schema: data.schema!,
+                    FilePath: data.file!,
+                    Timestamp: data.timestamp?.toISOString(),
+                })
+            );
+        }
 
         for (const note of sample_notes.values()) {
             if (!note.content) {
@@ -668,9 +471,10 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                     `sample[${note.sample_id}][note][${note.id}][timestamp]`
                 )! as HTMLInputElement;
                 input.setCustomValidity("timestamp must be set");
+                continue;
             }
 
-            const sample = sample_data.get(note.sample_id)!;
+            const sample = sample_info.get(note.sample_id)!;
             sample.Notes.push(
                 new app.ProjectSampleNoteCreate({
                     Timestamp: note.timestamp!.toISOString(),
@@ -683,12 +487,16 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
         }
 
         const sample_data_filtered = [
-            ...sample_data
+            ...sample_info
                 .entries()
                 .filter(
                     ([_, sample]) => !project_sample_create_is_empty(sample)
                 ),
         ];
+        if (sample_data_filtered.length === 0) {
+            setError("All samples are empty");
+            return;
+        }
 
         for (const [sample_id, sample] of sample_data_filtered) {
             if (sample.Label.length === 0) {
@@ -698,7 +506,6 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                 input.setCustomValidity("label can not be empty");
             }
         }
-
         if (!form.reportValidity()) {
             return;
         }
@@ -728,7 +535,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                         onSubmit={create_samples}
                         className="flex flex-col gap-2 pt-2"
                     >
-                        <ProjectSamplesFormList />
+                        <ProjectSamplesFormList data_schemas={data_schemas} />
                         <div className="flex gap-2 justify-center px-4">
                             <div>
                                 <button
@@ -755,6 +562,287 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
             <div>{error}</div>
         </div>
     );
+}
+
+/**
+ *
+ * @param data Form data
+ * @returns Parsed form data
+ * @throws Error if data is invalid.
+ */
+function project_samples_create_parse_form_data(
+    data: FormData,
+    properties: PropertyData[]
+): [
+    Map<string, app.ProjectSampleCreate>,
+    Map<string, SampleDataCreate>,
+    Map<string, SampleNoteCreate>
+] {
+    const sample_form_key_pattern = /sample\[(\d+?)\]\[(\w+?)\]/;
+    const sample_property_pattern = /sample\[\d+?\]\[property\]\[(\w+?)\]/;
+    const sample_data_pattern = /sample\[\d+?\]\[data\]\[(\d+?)\]\[(\w+?)\]/;
+    const sample_note_pattern = /sample\[\d+?\]\[note\]\[(\d+?)\]\[(\w+?)\]/;
+
+    const sample_info = new Map<string, app.ProjectSampleCreate>();
+    const sample_data = new Map<string, SampleDataCreate>();
+    const sample_notes = new Map<string, SampleNoteCreate>();
+
+    for (const [key, value] of data.entries()) {
+        const matches = key.match(sample_form_key_pattern);
+        if (matches === null) {
+            throw new Error(`invalid sample form key: ${key}`);
+        }
+        const sample_id = matches[1];
+        const value_key = matches[2];
+        if (!sample_info.has(sample_id)) {
+            sample_info.set(
+                sample_id,
+                new app.ProjectSampleCreate({
+                    Label: "",
+                    Tags: [],
+                    Properties: [],
+                    Notes: [],
+                })
+            );
+        }
+        const sample = sample_info.get(sample_id)!;
+
+        switch (value_key) {
+            case "label":
+                sample.Label = value.toString();
+                break;
+            case "tags":
+                const tags_maybe_dup = value
+                    .toString()
+                    .split(",")
+                    .map((tag) => tag.trim())
+                    .filter((tag) => tag.length > 0);
+                const tags = new Set(tags_maybe_dup);
+                sample.Tags = [...tags];
+                break;
+            case "property":
+                const property_matches = key.match(sample_property_pattern);
+                if (property_matches === null) {
+                    throw new Error(`invalid sample property form key: ${key}`);
+                }
+                const property_key = property_matches[1];
+
+                const property_data = properties.find(
+                    (property) => property.key === property_key
+                );
+                if (property_data === undefined) {
+                    throw new Error(`invalid property key: ${property_key}`);
+                }
+
+                let property_value;
+                switch (property_data.type) {
+                    case app.PropertyType.PROPERTY_TYPE_BOOL:
+                        property_value = value.toString() === "true";
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_STRING:
+                        property_value = value.toString().trim();
+                        if (property_value.length === 0) {
+                            continue;
+                        }
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_INT:
+                        property_value = value.toString().trim();
+                        if (property_value.length === 0) {
+                            continue;
+                        }
+
+                        property_value = parseInt(property_value);
+                        if (isNaN(property_value)) {
+                            const input = document.getElementById(
+                                key
+                            )! as HTMLInputElement;
+                            input.setCustomValidity("invalid integer");
+                            continue;
+                        }
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_UINT:
+                        property_value = value.toString().trim();
+                        if (property_value.length === 0) {
+                            continue;
+                        }
+
+                        property_value = parseInt(property_value);
+                        if (isNaN(property_value) || property_value < 0) {
+                            const input = document.getElementById(
+                                key
+                            )! as HTMLInputElement;
+                            input.setCustomValidity("invalid unsigned integer");
+                            continue;
+                        }
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_FLOAT:
+                        property_value = value.toString().trim();
+                        if (property_value.length === 0) {
+                            continue;
+                        }
+
+                        property_value = parseFloat(property_value);
+                        if (isNaN(property_value)) {
+                            const input = document.getElementById(
+                                key
+                            )! as HTMLInputElement;
+                            input.setCustomValidity(
+                                "could not parse as a number"
+                            );
+                            continue;
+                        }
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_QUANTITY:
+                        const magnitude_key = `sample[${sample_id}][property][${property_key}][magnitude]`;
+                        const unit_key = `sample[${sample_id}][property][${property_key}][unit]`;
+                        if (key === unit_key) {
+                            continue;
+                        }
+                        if (key !== magnitude_key) {
+                            throw new Error(
+                                `invalid sample property quantity form key: ${key}`
+                            );
+                        }
+
+                        const unit_data = data.get(unit_key);
+                        if (unit_data === null) {
+                            throw new Error(`quantity missing unit: ${key}`);
+                        }
+
+                        const magnitude_string = value.toString().trim();
+                        const unit = unit_data.toString().trim();
+                        if (
+                            magnitude_string.length === 0 &&
+                            unit.length === 0
+                        ) {
+                            continue;
+                        }
+                        if (
+                            magnitude_string.length === 0 &&
+                            unit.length !== 0
+                        ) {
+                            const input = document.getElementById(
+                                magnitude_key
+                            )! as HTMLInputElement;
+
+                            input.setCustomValidity(
+                                "magnitude can not be empty"
+                            );
+                            continue;
+                        }
+
+                        const magnitude_value = parseFloat(magnitude_string);
+                        if (isNaN(magnitude_value)) {
+                            const input = document.getElementById(
+                                magnitude_key
+                            )! as HTMLInputElement;
+
+                            input.setCustomValidity(
+                                "could not parse as a number"
+                            );
+                            continue;
+                        }
+
+                        if (
+                            unit.length === 0 &&
+                            magnitude_string.length !== 0
+                        ) {
+                            const input = document.getElementById(
+                                unit_key
+                            )! as HTMLInputElement;
+
+                            input.setCustomValidity("unit can not be empty");
+                            continue;
+                        }
+
+                        property_value = {
+                            MagnitudeString: magnitude_string,
+                            MagnitudeValue: magnitude_value,
+                            Unit: unit,
+                        };
+
+                        break;
+                    case app.PropertyType.PROPERTY_TYPE_TIMESTAMP:
+                        throw new Error("TODO");
+                    default:
+                        throw new Error(
+                            `invalid sample property type key: ${key}`
+                        );
+                }
+
+                const property = new app.Property({
+                    Key: property_key,
+                    Type: property_data.type,
+                    Value: property_value,
+                });
+                sample.Properties.push(property);
+                break;
+            case "data":
+                const data_matches = key.match(sample_data_pattern);
+                if (data_matches === null) {
+                    throw new Error(`invalid sample data form key: ${key}`);
+                }
+
+                const data_id = data_matches[1];
+                const data_key = data_matches[2];
+                const data_map_key = `${sample_id}/${data_id}`;
+                if (!sample_data.has(data_map_key)) {
+                    sample_data.set(data_map_key, {
+                        id: data_id,
+                        sample_id: sample_id,
+                        file: undefined,
+                        timestamp: undefined,
+                    });
+                }
+                const sample_datum = sample_data.get(data_map_key)!;
+                switch (data_key) {
+                    case "schema":
+                        sample_datum.schema = value.toString().trim();
+                        break;
+                    case "file":
+                        sample_datum.file = value.toString().trim();
+                        break;
+                    case "timestamp":
+                        sample_datum.timestamp = new Date(value.toString());
+                        break;
+                    default:
+                        throw new Error(`invalid sample data key: ${key}`);
+                }
+                break;
+            case "note":
+                const note_matches = key.match(sample_note_pattern);
+                if (note_matches === null) {
+                    throw new Error(`invalid sample note form key: ${key}`);
+                }
+                const note_id = note_matches[1];
+                const note_key = note_matches[2];
+                const note_map_key = `${sample_id}/${note_id}`;
+                if (!sample_notes.has(note_map_key)) {
+                    sample_notes.set(note_map_key, {
+                        id: note_id,
+                        sample_id: sample_id,
+                        timestamp: undefined,
+                        content: undefined,
+                    });
+                }
+                const sample_note = sample_notes.get(note_map_key)!;
+                switch (note_key) {
+                    case "timestamp":
+                        sample_note.timestamp = new Date(value.toString());
+                        break;
+                    case "content":
+                        sample_note.content = value.toString().trim();
+                        break;
+                    default:
+                        throw new Error(`invalid sample note key: ${key}`);
+                }
+                break;
+            default:
+                throw new Error(`invalid sample form property key: ${key}`);
+        }
+    }
+
+    return [sample_info, sample_data, sample_notes];
 }
 
 const LIST_MARKER_COL = 1;
@@ -962,8 +1050,11 @@ function ProjectSamplesFormHeaderProperty({
     );
 }
 
-function ProjectSamplesFormList() {
-    const SAMPLE_ROW_SPAN = 2;
+interface ProjectSamplesFormListProps {
+    data_schemas: app.DataSchema[];
+}
+function ProjectSamplesFormList({ data_schemas }: ProjectSamplesFormListProps) {
+    const SAMPLE_ROW_SPAN = 3;
 
     const state = useContext(StateCtx);
     const stateDispatch = useContext(StateDispatchCtx);
@@ -979,25 +1070,42 @@ function ProjectSamplesFormList() {
 
     return (
         <ol
-            className="grid gap-2"
+            className="grid gap-y-2"
             style={{
                 gridTemplateColumns: state.display.columns.asTemplate(),
                 gridTemplateRows: state.display.rows.asTemplate() + " auto",
             }}
         >
-            {state.samples.map((sample, idx) => (
-                <li
-                    key={sample.id.toString()}
-                    className="px-4 col-span-full grid grid-cols-subgrid grid-rows-subgrid"
-                    style={{
-                        gridRowStart: idx * SAMPLE_ROW_SPAN + 1,
-                        gridRowEnd: `span ${SAMPLE_ROW_SPAN}`,
-                    }}
-                >
-                    <SamplesFormListItem sample={sample} index={idx} />
-                </li>
-            ))}
-            <li className="px-4 col-1 -row-2">
+            {state.samples.map((sample, idx) => {
+                const expanded = state.display.rows.rows.find(
+                    (row) => row.sample_id === sample.id
+                )?.expanded;
+
+                return (
+                    <li
+                        key={sample.id.toString()}
+                        id={`sample[${sample.id}]`}
+                        className={classNames({
+                            "px-4 col-span-full grid grid-cols-subgrid grid-rows-subgrid border-l":
+                                true,
+                            "border-l-transparent": !expanded,
+                            "pb-2": expanded,
+                        })}
+                        style={{
+                            gridRowStart: idx * SAMPLE_ROW_SPAN + 1,
+                            gridRowEnd: `span ${SAMPLE_ROW_SPAN}`,
+                        }}
+                        data-wails-dropzone
+                    >
+                        <SamplesFormListItem
+                            sample={sample}
+                            index={idx}
+                            data_schemas={data_schemas}
+                        />
+                    </li>
+                );
+            })}
+            <li className="px-4 col-1 -row-2 pl-1">
                 <div>
                     <button
                         type="button"
@@ -1012,18 +1120,28 @@ function ProjectSamplesFormList() {
     );
 }
 
-interface SampleNoteData {
+interface SampleNoteInfo {
+    id: number;
+}
+
+interface SampleDataInfo {
     id: number;
 }
 
 interface SamplesFormListItemProps {
-    sample: SampleData;
+    sample: SampleInfo;
     index: number;
+    data_schemas: app.DataSchema[];
 }
-function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
+function SamplesFormListItem({
+    sample,
+    index,
+    data_schemas,
+}: SamplesFormListItemProps) {
     const state = useContext(StateCtx);
     const stateDispatch = useContext(StateDispatchCtx);
-    const [notes, setNotes] = useState<SampleNoteData[]>([{ id: 0 }]);
+    const [notes, setNotes] = useState<SampleNoteInfo[]>([{ id: 0 }]);
+    const [data, setData] = useState<SampleDataInfo[]>([{ id: 0 }]);
 
     function update_label(e: ChangeEvent<HTMLInputElement>) {
         const input = e.target as HTMLInputElement;
@@ -1090,6 +1208,19 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
         });
     }
 
+    function add_data(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        const id = data.length === 0 ? 0 : data[data.length - 1].id + 1;
+        setData([...data, { id }]);
+    }
+
+    function remove_data(id: number) {
+        setData(data.filter((data) => data.id !== id));
+    }
+
     function add_note(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
             return;
@@ -1103,11 +1234,12 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
         setNotes(notes.filter((note) => note.id !== id));
     }
 
-    const mainRowIdx = 1;
-    const notesRowIdx = 2;
+    const ROW_MAIN_IDX = 1;
+    const ROW_DATA_IDX = 2;
+    const ROW_NOTES_IDX = 3;
     return (
         <div className="group/sample-row contents">
-            <div style={{ gridColumn: LIST_MARKER_COL, gridRow: mainRowIdx }}>
+            <div style={{ gridColumn: LIST_MARKER_COL, gridRow: ROW_MAIN_IDX }}>
                 <button
                     type="button"
                     className="cursor-pointer"
@@ -1126,7 +1258,7 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
                 </button>
                 {index + 1}.
             </div>
-            <div className="col-2" style={{ gridRow: mainRowIdx }}>
+            <div className="col-2" style={{ gridRow: ROW_MAIN_IDX }}>
                 <label>
                     <span className="hidden">Label</span>
                     <input
@@ -1141,7 +1273,7 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
                     />
                 </label>
             </div>
-            <div className="col-3" style={{ gridRow: mainRowIdx }}>
+            <div className="col-3" style={{ gridRow: ROW_MAIN_IDX }}>
                 <label>
                     <span className="hidden">Tags</span>
                     <input
@@ -1158,15 +1290,20 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
                 <SampleProperty
                     key={property.key}
                     sample={sample}
-                    gridRow={mainRowIdx}
+                    gridRow={ROW_MAIN_IDX}
                     property={property}
                 />
             ))}
             <div
-                className="invisible group-hover/sample-row:visible flex gap-1 sticky right-0"
+                className={classNames({
+                    "invisible group-hover/sample-row:visible \
+                    flex gap-1 items-center \
+                    sticky right-0 bg-white dark:bg-black": true,
+                    "justify-center": state.display.columns.numColumns() > 4,
+                })}
                 style={{
                     gridColumn: state.display.columns.numColumns(),
-                    gridRow: mainRowIdx,
+                    gridRow: ROW_MAIN_IDX,
                 }}
             >
                 {state.samples.length <= 1 ? null : (
@@ -1184,9 +1321,41 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
             </div>
             <div
                 className="col-start-2 -col-end-1 overflow-hidden"
-                style={{ gridRow: notesRowIdx }}
+                style={{ gridRow: ROW_DATA_IDX }}
             >
-                <div className="flex gap-2">
+                <div className="flex gap-2 pb-2">
+                    <h3>Data</h3>
+                    <div>
+                        <button
+                            type="button"
+                            className="btn-cmd"
+                            onMouseDown={add_data}
+                        >
+                            <icon.Plus />
+                        </button>
+                    </div>
+                </div>
+                <ol className="grid grid-cols-[1.5rem_auto] gap-1 pb-2">
+                    {data.map((data, index) => (
+                        <li key={data.id} className="contents">
+                            <div className="col-1">{index + 1}.</div>
+                            <SampleData
+                                index={index}
+                                id={data.id}
+                                sample={sample}
+                                data_schemas={data_schemas}
+                                onRemove={remove_data}
+                                className="col-2"
+                            />
+                        </li>
+                    ))}
+                </ol>
+            </div>
+            <div
+                className="col-start-2 -col-end-1 overflow-hidden"
+                style={{ gridRow: ROW_NOTES_IDX }}
+            >
+                <div className="flex gap-2 pb-2">
                     <h3>Notes</h3>
                     <div>
                         <button
@@ -1203,6 +1372,7 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
                         <li key={note.id} className="contents">
                             <div className="col-1">{index + 1}.</div>
                             <SampleNote
+                                index={index}
                                 id={note.id}
                                 sample={sample}
                                 onRemove={remove_note}
@@ -1218,7 +1388,7 @@ function SamplesFormListItem({ sample, index }: SamplesFormListItemProps) {
 
 interface SamplePropertyProps {
     gridRow: number;
-    sample: SampleData;
+    sample: SampleInfo;
     property: PropertyData;
 }
 function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
@@ -1240,7 +1410,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
     );
     if (colIdx < 0) {
         console.error("invalid column index");
-        return <></>;
+        return null;
     }
 
     const style = { gridRow, gridColumn: colIdx + 1 };
@@ -1321,14 +1491,14 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
                         type="text"
                         id={`sample[${sample.id}][property][${property.key}][magnitude]`}
                         name={`sample[${sample.id}][property][${property.key}][magnitude]`}
-                        className="input-basic"
+                        className="input-basic min-w-0 shrink"
                         placeholder="Magnitude"
                     />
                     <input
                         type="string"
                         id={`sample[${sample.id}][property][${property.key}][unit]`}
                         name={`sample[${sample.id}][property][${property.key}][unit]`}
-                        className="input-basic"
+                        className="input-basic min-w-0 shrink-2"
                         placeholder="Units"
                     />
                 </div>
@@ -1336,13 +1506,24 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
     }
 }
 
-interface SampleNoteProps {
+interface SampleDataProps {
+    index: number;
     id: number;
-    sample: SampleData;
+    sample: SampleInfo;
+    data_schemas: app.DataSchema[];
     onRemove: (id: number) => void;
     className?: string;
 }
-function SampleNote({ id, sample, onRemove, className }: SampleNoteProps) {
+function SampleData({
+    index,
+    id,
+    sample,
+    data_schemas,
+    onRemove,
+    className,
+}: SampleDataProps) {
+    const file_input = useRef<HTMLInputElement>(null);
+
     function remove(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
             return;
@@ -1351,17 +1532,198 @@ function SampleNote({ id, sample, onRemove, className }: SampleNoteProps) {
         onRemove(id);
     }
 
+    async function open_file_select(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== common.MouseButton.Primary) {
+            return;
+        }
+
+        await app.FsService.OpenFileDialogSingle("Select a data file", [
+            new app.FileFilter({
+                DisplayName: "CSV",
+                Pattern: "*.csv;*.tsv",
+            }),
+            new app.FileFilter({
+                DisplayName: "Spreadsheets",
+                Pattern: "*.xlsx;*.xls;*.ods",
+            }),
+            new app.FileFilter({ DisplayName: "All files", Pattern: "*.*" }),
+        ])
+            .then((path) => {
+                const input = file_input.current!;
+                input.value = path;
+                try_parse_data();
+            })
+            .catch((err) => {
+                if (err === "CANCELLED_BY_USER") {
+                    return;
+                }
+
+                console.error(err);
+                const input = file_input.current;
+                input?.setCustomValidity(err.message);
+            });
+    }
+
+    async function try_parse_data() {
+        const file_input = document.getElementById(
+            `sample[${sample.id}][data][${id}][file]`
+        )! as HTMLInputElement;
+
+        const schema_input = document.getElementById(
+            `sample[${sample.id}][data][${id}][schema]`
+        )! as HTMLSelectElement;
+
+        const file = file_input.value.trim();
+        const schema = schema_input.value.trim();
+        if (file.length === 0 || schema.length === 0) {
+            return;
+        }
+
+        await app.DataService.ParseDataFileToSchema(file, schema)
+            .then((data) => {
+                // TODO: data preview
+                console.debug(data);
+            })
+            .catch((err) => {
+                console.error(err);
+                switch (err.message) {
+                    case "INVALID_FILE_EXTENSION":
+                        file_input.setCustomValidity("invalid file extension");
+                    case "INCOMAPTIBLE_DATA_SIZE":
+                        file_input.setCustomValidity(
+                            "data file column length does not match schema"
+                        );
+                    default:
+                        file_input.setCustomValidity(
+                            "data incompatible with schema"
+                        );
+                }
+                file_input.reportValidity();
+            });
+    }
+
+    const now = nowLocalISOString();
+    return (
+        <div
+            id={`sample[${sample.id}][data][${id}]`}
+            className={`px-0.5 flex gap-2 ${className}`}
+            data-wails-dropzone
+        >
+            <div>
+                <label>
+                    <span className="hidden">Data schema</span>
+                    <select
+                        id={`sample[${sample.id}][data][${id}][schema]`}
+                        name={`sample[${sample.id}][data][${id}][schema]`}
+                        className="px-1 py-0.5 w-full min-h-4 input-basic"
+                        title={`Data schema`}
+                        onChange={try_parse_data}
+                        defaultValue={""}
+                    >
+                        <option value="" disabled>
+                            Data schema
+                        </option>
+                        {data_schemas.map((schema) => (
+                            <option
+                                key={schema.Id}
+                                value={schema.Id}
+                                title={schema.Description}
+                            >
+                                {schema.Label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+            </div>
+            <div className="flex gap-1">
+                <label>
+                    <span className="hidden">File path</span>
+                    <input
+                        ref={file_input}
+                        type="text"
+                        id={`sample[${sample.id}][data][${id}][file]`}
+                        name={`sample[${sample.id}][data][${id}][file]`}
+                        className="input-basic"
+                        title={`Data file`}
+                        placeholder="Data file"
+                        onChange={try_parse_data}
+                    />
+                </label>
+                <div>
+                    <button
+                        type="button"
+                        title="Select a data file"
+                        className="btn-cmd"
+                        onMouseDown={open_file_select}
+                    >
+                        <icon.FileUpload />
+                    </button>
+                </div>
+            </div>
+            <div>
+                <label>
+                    <span className="hidden">Timestamp</span>
+                    <input
+                        type="datetime-local"
+                        id={`sample[${sample.id}][data][${id}][timestamp]`}
+                        name={`sample[${sample.id}][data][${id}][timestamp]`}
+                        className="input-basic"
+                        title={`Data timestamp`}
+                        placeholder="Timestamp"
+                        defaultValue={now}
+                        max={now}
+                    />
+                </label>
+            </div>
+            <div>
+                <button
+                    type="button"
+                    className="btn-cmd"
+                    title={`Remove data ${index + 1}`}
+                    onMouseDown={remove}
+                >
+                    <icon.Trash />
+                </button>
+            </div>
+        </div>
+    );
+}
+
+interface SampleNoteProps {
+    index: number;
+    id: number;
+    sample: SampleInfo;
+    onRemove: (id: number) => void;
+    className?: string;
+}
+function SampleNote({
+    index,
+    id,
+    sample,
+    onRemove,
+    className,
+}: SampleNoteProps) {
+    function remove(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        onRemove(id);
+    }
+
+    const now = nowLocalISOString();
     return (
         <div className={`px-0.5 ${className}`}>
             <div className="pb-2 flex gap-2">
                 <div>
                     <label>
-                        <span className="hidden">Date for note {id}</span>
+                        <span className="hidden">Date</span>
                         <input
                             type="datetime-local"
                             id={`sample[${sample.id}][note][${id}][timestamp]`}
                             name={`sample[${sample.id}][note][${id}][timestamp]`}
-                            defaultValue={nowLocalISOString()}
+                            defaultValue={now}
+                            max={now}
                             className="input-basic pb-2"
                         />
                     </label>
@@ -1370,7 +1732,7 @@ function SampleNote({ id, sample, onRemove, className }: SampleNoteProps) {
                     <button
                         type="button"
                         className="btn-cmd"
-                        title={`Remove note ${id}`}
+                        title={`Remove note ${index + 1}`}
                         onMouseDown={remove}
                     >
                         <icon.Trash />
@@ -1379,7 +1741,7 @@ function SampleNote({ id, sample, onRemove, className }: SampleNoteProps) {
             </div>
             <div>
                 <label>
-                    <span className="hidden">Content for note {id}</span>
+                    <span className="hidden">Note</span>
                     <textarea
                         id={`sample[${sample.id}][note][${id}][content]`}
                         name={`sample[${sample.id}][note][${id}][content]`}

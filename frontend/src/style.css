@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
 
 @utility input-basic {
     @apply rounded-xs ring py-0.5 px-1

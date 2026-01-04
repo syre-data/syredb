@@ -3,6 +3,9 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,14 +18,6 @@ import (
 )
 
 type IsoTimestamp string
-
-const (
-	USER_ROLE_OWNER = UserRole("owner")
-	USER_ROLE_ADMIN = UserRole("admin")
-	USER_ROLE_USER  = UserRole("user")
-)
-
-type UserRole string
 
 const (
 	PROJECT_USER_PERMISSION_READ       = ProjectUserPermission("read")
@@ -41,23 +36,31 @@ const (
 type ProjectVisibility string
 
 type ProjectService struct {
-	ctx       context.Context
-	logger    *slog.Logger
-	db        *DbConnection
-	app_state *AppState
+	ctx          context.Context
+	logger       *slog.Logger
+	db           *DbConnection
+	app_state    *AppState
+	data_service *DataService
 }
 
 func NewProjectService(
 	logger *slog.Logger,
 	db *DbConnection,
 	app_state *AppState,
+	data_service *DataService,
 ) *ProjectService {
-	return &ProjectService{logger: logger, db: db, app_state: app_state}
+	return &ProjectService{logger: logger, db: db, app_state: app_state, data_service: data_service}
 }
 
 func (s *ProjectService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	s.ctx = ctx
 	return nil
+}
+
+func (s *ProjectService) user_id() uuid.UUID {
+	s.app_state._lock.RLock()
+	defer s.app_state._lock.RUnlock()
+	return s.app_state.user_id
 }
 
 type Project struct {
@@ -69,10 +72,7 @@ type Project struct {
 }
 
 func (s *ProjectService) GetUserProjects() ([]Project, error) {
-	s.app_state._lock.RLock()
-	user_id := s.app_state.user_id
-	s.app_state._lock.RUnlock()
-
+	user_id := s.user_id()
 	if user_id == uuid.Nil {
 		return nil, &UserNotAuthenticatedError{}
 	}
@@ -99,10 +99,7 @@ type ProjectCreate struct {
 }
 
 func (s *ProjectService) CreateProject(project ProjectCreate) (uuid.UUID, error) {
-	s.app_state._lock.RLock()
-	user_id := s.app_state.user_id
-	s.app_state._lock.RUnlock()
-
+	user_id := s.user_id()
 	if user_id == uuid.Nil {
 		return uuid.Nil, &UserNotAuthenticatedError{}
 	}
@@ -114,14 +111,19 @@ func (s *ProjectService) CreateProject(project ProjectCreate) (uuid.UUID, error)
 	defer tx.Rollback(s.ctx)
 
 	var project_id uuid.UUID
-	create_project_query := "INSERT INTO project_ (_creator, label, description, visibility) VALUES ($1, $2, $3, $4) RETURNING _id"
+	create_project_query :=
+		`INSERT INTO project_ (_creator, label, description, visibility) 
+	VALUES ($1, $2, $3, $4) 
+	RETURNING _id`
 	err = tx.QueryRow(s.ctx, create_project_query, user_id, project.Label, project.Description, project.Visibility).Scan(&project_id)
 	if err != nil {
 		s.logger.With("error", err).Error("could not create project")
 		return uuid.Nil, err
 	}
 
-	set_user_permission_query := "INSERT INTO project_user_permission_ (_project, _user, permission) VALUES ($1, $2, $3)"
+	set_user_permission_query :=
+		`INSERT INTO project_user_permission_ (_project, _user, permission) 
+	VALUES ($1, $2, $3)`
 	_, err = tx.Exec(s.ctx, set_user_permission_query, project_id, user_id, PROJECT_USER_PERMISSION_OWNER)
 	if err != nil {
 		s.logger.With("error", err).Error("could not create user project permission")
@@ -199,10 +201,7 @@ type ProjectResources struct {
 }
 
 func (s *ProjectService) GetProjectResources(project_id uuid.UUID) (ProjectResources, error) {
-	s.app_state._lock.RLock()
-	user_id := s.app_state.user_id
-	s.app_state._lock.RUnlock()
-
+	user_id := s.user_id()
 	if user_id == uuid.Nil {
 		return ProjectResources{}, &UserNotAuthenticatedError{}
 	}
@@ -253,6 +252,7 @@ func (s *ProjectService) GetProjectResources(project_id uuid.UUID) (ProjectResou
 		SELECT _sample, _creator, _timestamp, label 
 		FROM project_sample_membership_ 
 		WHERE _project=$1
+		ORDER BY label
 	`
 	project_sample_membership_rows, _ := s.db.conn.Query(
 		s.ctx,
@@ -318,9 +318,7 @@ type ProjectWithUserPermission struct {
 }
 
 func (s *ProjectService) GetProjectWithUserPermission(project_id uuid.UUID) (ProjectWithUserPermission, error) {
-	s.app_state._lock.RLock()
-	user_id := s.app_state.user_id
-	s.app_state._lock.RUnlock()
+	user_id := s.user_id()
 	if user_id == uuid.Nil {
 		return ProjectWithUserPermission{}, &UserNotAuthenticatedError{}
 	}
@@ -353,6 +351,19 @@ func (s *ProjectService) GetProjectWithUserPermission(project_id uuid.UUID) (Pro
 	return project, nil
 }
 
+type ProjectSampleDataCreate struct {
+	Schema    uuid.UUID
+	FilePath  string
+	Timestamp IsoTimestamp
+}
+
+type sampleDataParsed struct {
+	SampleIndex int
+	DataIndex   int
+	Timestamp   IsoTimestamp
+	Payload     any
+}
+
 type ProjectSampleNoteCreate struct {
 	Timestamp IsoTimestamp
 	Content   string
@@ -362,26 +373,17 @@ type ProjectSampleCreate struct {
 	Label      string
 	Tags       []string
 	Properties []Property
+	Data       []ProjectSampleDataCreate
 	Notes      []ProjectSampleNoteCreate
 }
 
 func (s *ProjectService) CreateProjectSamples(project uuid.UUID, samples []ProjectSampleCreate) (Ok, error) {
-	s.app_state._lock.RLock()
-	user_id := s.app_state.user_id
-	s.app_state._lock.RUnlock()
-
+	user_id := s.user_id()
 	if user_id == uuid.Nil {
 		return Ok{}, &UserNotAuthenticatedError{}
 	}
 
-	user_permission_query := "SELECT permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2"
-	var user_permission ProjectUserPermission
-	err := s.db.conn.QueryRow(
-		s.ctx,
-		user_permission_query,
-		project.String(),
-		user_id.String(),
-	).Scan(&user_permission)
+	user_permission, err := s.project_user_permission(project, user_id)
 	if err != nil ||
 		(user_permission != PROJECT_USER_PERMISSION_OWNER &&
 			user_permission != PROJECT_USER_PERMISSION_ADMIN &&
@@ -396,6 +398,16 @@ func (s *ProjectService) CreateProjectSamples(project uuid.UUID, samples []Proje
 		return Ok{}, nil
 	}
 
+	data_schemas, err := s.create_project_samples_sample_data_schemas(samples)
+	if err != nil {
+		return Ok{}, err
+	}
+
+	schema_data, err := s.create_project_samples_parse_sample_data_to_schema(samples, data_schemas)
+	if err != nil {
+		return Ok{}, err
+	}
+
 	tx, err := s.db.conn.Begin(s.ctx)
 	if err != nil {
 		s.logger.With("error", err).Error("could not begin transaction")
@@ -403,6 +415,162 @@ func (s *ProjectService) CreateProjectSamples(project uuid.UUID, samples []Proje
 	}
 	defer tx.Rollback(s.ctx)
 
+	sample_ids, err := s.create_project_samples_create_samples(tx, samples, user_id)
+	if err != nil {
+		return Ok{}, err
+	}
+
+	err = s.create_project_samples_create_sample_memberships(tx, samples, sample_ids, project, user_id)
+	if err != nil {
+		return Ok{}, err
+	}
+
+	err = s.create_project_samples_create_sample_tags(tx, samples, sample_ids, project)
+	if err != nil {
+		return Ok{}, err
+	}
+
+	err = s.create_project_samples_create_sample_properties(tx, samples, sample_ids)
+	if err != nil {
+		return Ok{}, err
+	}
+
+	sample_data_ids, err := s.create_project_samples_create_sample_data(tx, schema_data, sample_ids, user_id)
+	if err != nil {
+		return Ok{}, err
+	}
+
+	err = s.create_project_samples_store_sample_data(tx, schema_data, sample_data_ids, data_schemas)
+	if err != nil {
+		return Ok{}, err
+	}
+
+	err = s.create_project_samples_create_sample_notes(tx, samples, sample_ids, project, user_id)
+	if err != nil {
+		return Ok{}, err
+	}
+
+	err = tx.Commit(s.ctx)
+	if err != nil {
+		return Ok{}, err
+	}
+
+	return Ok{}, nil
+}
+
+func (s *ProjectService) project_user_permission(project uuid.UUID, user uuid.UUID) (ProjectUserPermission, error) {
+	user_permission_query := "SELECT permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2"
+	var user_permission ProjectUserPermission
+	err := s.db.conn.QueryRow(
+		s.ctx,
+		user_permission_query,
+		project.String(),
+		user.String(),
+	).Scan(&user_permission)
+	if err != nil {
+		return ProjectUserPermission(""), err
+	}
+
+	return user_permission, nil
+}
+
+func (s *ProjectService) create_project_samples_sample_data_schemas(
+	samples []ProjectSampleCreate,
+) ([]DataSchema, error) {
+	schema_ids := []uuid.UUID{}
+	for _, sample := range samples {
+		for _, data := range sample.Data {
+			present := slices.Index(schema_ids, data.Schema) > -1
+			if !present {
+				schema_ids = append(schema_ids, data.Schema)
+			}
+		}
+	}
+
+	data_schemas, err := s.data_service.GetDataSchemasById(schema_ids)
+	if err != nil {
+		s.logger.With("error", err).Error("could not get data schemas")
+		return nil, err
+	}
+
+	return data_schemas, nil
+}
+
+func (s *ProjectService) create_project_samples_parse_sample_data_to_schema(
+	samples []ProjectSampleCreate,
+	data_schemas []DataSchema,
+) (map[uuid.UUID][]sampleDataParsed, error) {
+	schema_id_counts := make(map[uuid.UUID]int)
+	for _, sample := range samples {
+		for _, data := range sample.Data {
+			count, present := schema_id_counts[data.Schema]
+			if !present {
+				schema_id_counts[data.Schema] = 1
+			} else {
+				schema_id_counts[data.Schema] = count + 1
+			}
+		}
+	}
+
+	errs := ParseSampleDataErrors{}
+	schema_data_idx := make(map[uuid.UUID]int, len(data_schemas))
+	schema_data := make(map[uuid.UUID][]sampleDataParsed, len(data_schemas))
+	for schema_id, count := range schema_id_counts {
+		schema_data[schema_id] = make([]sampleDataParsed, count)
+	}
+	for sample_idx, sample := range samples {
+		for data_idx, data := range sample.Data {
+			file, err := os.Open(data.FilePath)
+			if err != nil {
+				s.logger.With("error", err, "file", data.FilePath).Error("could not open data file")
+				errs.errors = append(errs.errors, err)
+				continue
+			}
+
+			data_schema_idx := slices.IndexFunc(data_schemas, func(schema DataSchema) bool {
+				return schema.Id == data.Schema
+			})
+			data_schema := data_schemas[data_schema_idx]
+			ext := filepath.Ext(data.FilePath)
+			data_parsed, err := parse_data_file_to_schema(ext, file, data_schema)
+			if err != nil {
+				s.logger.With("error", err, "sample", sample.Label, "data_idx", data_idx).Error("invalid smaple data")
+				errs.errors = append(errs.errors, err)
+				continue
+			}
+
+			var payload any
+			switch data_schema.Storage {
+			case STORAGE_INTERNAL:
+				payload = data_parsed
+			case STORAGE_FILE:
+				payload = data.FilePath
+			default:
+				s.logger.With("data_schema", data.Schema, "storage", data_schema.Storage).Error("invalid storage type")
+				panic("invalid storage type")
+			}
+
+			sample_data_parsed := sampleDataParsed{
+				SampleIndex: sample_idx,
+				DataIndex:   data_idx,
+				Timestamp:   data.Timestamp,
+				Payload:     payload,
+			}
+			schema_idx := schema_data_idx[data.Schema]
+			schema_data[data.Schema][schema_idx] = sample_data_parsed
+			schema_data_idx[data.Schema] += 1
+		}
+	}
+
+	if len(errs.errors) > 0 {
+		s.logger.With("errors", errs.errors).Error("invalid data")
+		return nil, &errs
+	}
+
+	return schema_data, nil
+}
+
+func (s *ProjectService) create_project_samples_create_samples(tx pgx.Tx, samples []ProjectSampleCreate, user_id uuid.UUID) ([]uuid.UUID, error) {
 	var sample_create_query strings.Builder
 	sample_create_query.WriteString("INSERT INTO sample_ (_creator) VALUES ")
 	for idx := range samples {
@@ -413,25 +581,37 @@ func (s *ProjectService) CreateProjectSamples(project uuid.UUID, samples []Proje
 		fmt.Fprintf(&sample_create_query, "('%s')", user_id)
 	}
 	sample_create_query.WriteString(" RETURNING _id")
-	create_rows, err := tx.Query(s.ctx, sample_create_query.String())
+	rows, err := tx.Query(s.ctx, sample_create_query.String())
 	if err != nil {
 		s.logger.With("error", err).Error("could not create samples")
-		return Ok{}, err
+		return []uuid.UUID{}, err
 	}
 
-	sample_ids, err := pgx.CollectRows(create_rows, func(row pgx.CollectableRow) (uuid.UUID, error) {
+	sample_ids, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (uuid.UUID, error) {
 		var id uuid.UUID
 		err := row.Scan(&id)
 		return id, err
 	})
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect user projects")
-		return Ok{}, err
+		return []uuid.UUID{}, err
 	}
 
+	return sample_ids, nil
+}
+
+func (s *ProjectService) create_project_samples_create_sample_memberships(
+	tx pgx.Tx,
+	samples []ProjectSampleCreate,
+	sample_ids []uuid.UUID,
+	project uuid.UUID,
+	user_id uuid.UUID,
+) error {
 	labels := make([]any, len(samples))
 	var project_membership_query strings.Builder
-	project_membership_query.WriteString("INSERT INTO project_sample_membership_ (_project, _sample, _creator, label) VALUES ")
+	project_membership_query.WriteString(
+		"INSERT INTO project_sample_membership_ (_project, _sample, _creator, label) VALUES ",
+	)
 	for idx, sample_id := range sample_ids {
 		if idx > 0 {
 			fmt.Fprintf(&project_membership_query, ", ")
@@ -447,136 +627,457 @@ func (s *ProjectService) CreateProjectSamples(project uuid.UUID, samples []Proje
 		)
 		labels[idx] = samples[idx].Label
 	}
-	_, err = tx.Exec(s.ctx, project_membership_query.String(), labels...)
+	_, err := tx.Exec(s.ctx, project_membership_query.String(), labels...)
 	if err != nil {
 		s.logger.With("error", err).Error("could not create project sample memberships")
-		return Ok{}, err
+		return err
 	}
 
+	return nil
+}
+
+func (s *ProjectService) create_project_samples_create_sample_tags(
+	tx pgx.Tx,
+	samples []ProjectSampleCreate,
+	sample_ids []uuid.UUID,
+	project uuid.UUID,
+) error {
 	num_tags := 0
 	for _, sample := range samples {
 		num_tags += len(sample.Tags)
 	}
-	if num_tags > 0 {
-		tags := make([]any, num_tags)
-		tidx := 0
-		var sample_tags_query strings.Builder
-		sample_tags_query.WriteString("INSERT INTO project_sample_tag_ (_sample, _project, _tag) VALUES ")
-		for idx, sample_id := range sample_ids {
-			for _, tag := range samples[idx].Tags {
-				if tidx > 0 {
-					fmt.Fprintf(&sample_tags_query, ", ")
-				}
-				fmt.Fprintf(
-					&sample_tags_query,
-					"('%s', '%s', $%d)",
-					sample_id,
-					project,
-					tidx+1,
-				)
-				tags[tidx] = tag
-				tidx += 1
+	if num_tags == 0 {
+		return nil
+	}
+
+	tags := make([]any, num_tags)
+	tidx := 0
+	var sample_tags_query strings.Builder
+	sample_tags_query.WriteString("INSERT INTO project_sample_tag_ (_sample, _project, _tag) VALUES ")
+	for idx, sample_id := range sample_ids {
+		sample_tags_set := []string{}
+		for _, tag := range samples[idx].Tags {
+			if slices.Contains(sample_tags_set, tag) {
+				continue
 			}
-		}
-		_, err = tx.Exec(s.ctx, sample_tags_query.String(), tags...)
-		if err != nil {
-			s.logger.With("error", err).Error("could not create project sample tags")
-			return Ok{}, err
+			sample_tags_set = append(sample_tags_set, tag)
+
+			if tidx > 0 {
+				fmt.Fprintf(&sample_tags_query, ", ")
+			}
+			fmt.Fprintf(
+				&sample_tags_query,
+				"('%s', '%s', $%d)",
+				sample_id,
+				project,
+				tidx+1,
+			)
+			tags[tidx] = tag
+			tidx += 1
 		}
 	}
 
+	_, err := tx.Exec(s.ctx, sample_tags_query.String(), tags...)
+	if err != nil {
+		s.logger.With("error", err).Error("could not create project sample tags")
+		return err
+	}
+
+	return nil
+}
+
+func (s *ProjectService) create_project_samples_create_sample_properties(
+	tx pgx.Tx,
+	samples []ProjectSampleCreate,
+	sample_ids []uuid.UUID,
+) error {
 	const NUM_PROPERTY_VALUES = 3
 	num_properties := 0
 	for _, sample := range samples {
 		num_properties += len(sample.Properties)
 	}
-	if num_properties > 0 {
-		property_values := make([]any, num_properties*NUM_PROPERTY_VALUES)
-		pidx := 0
-		var sample_properties_query strings.Builder
-		sample_properties_query.WriteString("INSERT INTO sample_property_ (_sample, _key, _type, value) VALUES ")
-		for idx, sample_id := range sample_ids {
-			for _, property := range samples[idx].Properties {
-				if pidx > 0 {
-					fmt.Fprint(&sample_properties_query, ", ")
-				}
+	if num_properties == 0 {
+		return nil
+	}
 
-				key_idx := pidx
-				type_idx := key_idx + 1
-				value_idx := type_idx + 1
-				fmt.Fprintf(
-					&sample_properties_query,
-					"('%s', $%d, $%d, $%d)",
-					sample_id,
-					key_idx+1,
-					type_idx+1,
-					value_idx+1,
-				)
-
-				property_value, err := json.Marshal(property.Value)
-				if err != nil {
-					s.logger.With("error", err, "key", property.Key, "value", property.Value).Error(
-						"could not serialize property",
-					)
-					return Ok{}, err
-				}
-
-				property_values[key_idx] = property.Key
-				property_values[type_idx] = property.Type
-				property_values[value_idx] = property_value
-				pidx += NUM_PROPERTY_VALUES
+	property_values := make([]any, num_properties*NUM_PROPERTY_VALUES)
+	pidx := 0
+	var sample_properties_query strings.Builder
+	sample_properties_query.WriteString("INSERT INTO sample_property_ (_sample, _key, _type, value) VALUES ")
+	for idx, sample_id := range sample_ids {
+		for _, property := range samples[idx].Properties {
+			if pidx > 0 {
+				fmt.Fprint(&sample_properties_query, ", ")
 			}
+
+			key_idx := pidx
+			type_idx := key_idx + 1
+			value_idx := type_idx + 1
+			fmt.Fprintf(
+				&sample_properties_query,
+				"('%s', $%d, $%d, $%d)",
+				sample_id,
+				key_idx+1,
+				type_idx+1,
+				value_idx+1,
+			)
+
+			property_value, err := json.Marshal(property.Value)
+			if err != nil {
+				s.logger.With("error", err, "key", property.Key, "value", property.Value).Error(
+					"could not serialize property",
+				)
+				return err
+			}
+
+			property_values[key_idx] = property.Key
+			property_values[type_idx] = property.Type
+			property_values[value_idx] = property_value
+			pidx += NUM_PROPERTY_VALUES
 		}
-		_, err = tx.Exec(s.ctx, sample_properties_query.String(), property_values...)
+	}
+	_, err := tx.Exec(s.ctx, sample_properties_query.String(), property_values...)
+	if err != nil {
+		s.logger.With("error", err).Error("could not create sample properties")
+		return err
+	}
+
+	return nil
+}
+
+type sampleDataIdx struct {
+	SampleIndex int
+	DataIndex   int
+}
+
+func (s *ProjectService) create_project_samples_create_sample_data(
+	tx pgx.Tx,
+	schema_data map[uuid.UUID][]sampleDataParsed,
+	sample_ids []uuid.UUID,
+	user_id uuid.UUID,
+) (map[sampleDataIdx]uuid.UUID, error) {
+	const QUERY_ARGS_SCHEMA_ID_OFFSET = 1
+	var QUERY_ARGS_SAMPLE_ID_OFFSET = QUERY_ARGS_SCHEMA_ID_OFFSET + len(schema_data)
+	var QUERY_ARGS_SAMPLE_DATA_OFFSET = QUERY_ARGS_SAMPLE_ID_OFFSET + len(sample_ids)
+
+	sample_data_count := 0
+	for _, data := range schema_data {
+		sample_data_count += len(data)
+	}
+	if sample_data_count == 0 {
+		return map[sampleDataIdx]uuid.UUID{}, nil
+	}
+
+	args_size := 1 + len(schema_data) + len(sample_ids) + sample_data_count
+	args := make([]any, args_size)
+	args[0] = user_id
+	idx := QUERY_ARGS_SCHEMA_ID_OFFSET
+	for schema_id := range schema_data {
+		args[idx] = schema_id
+		idx += 1
+	}
+	for idx, sample_id := range sample_ids {
+		args[idx+QUERY_ARGS_SAMPLE_ID_OFFSET] = sample_id
+	}
+
+	var sample_data_create_query strings.Builder
+	sample_data_create_query.WriteString(
+		"INSERT INTO sample_data_ (_sample, _schema, _creator, timestamp) VALUES ",
+	)
+
+	sample_data_id_idx := make(map[sampleDataIdx]int, sample_data_count)
+	sample_data_arg_idx := 0
+	for schema_id, sample_data := range schema_data {
+		schema_arg_idx := slices.IndexFunc(args, func(value any) bool {
+			return value == schema_id
+		})
+
+		for _, sample_data_parsed := range sample_data {
+			if sample_data_arg_idx > 0 {
+				sample_data_create_query.WriteString(", ")
+			}
+
+			sample_id_arg_idx := sample_data_parsed.SampleIndex + QUERY_ARGS_SAMPLE_ID_OFFSET
+			timestamp_arg_idx := sample_data_arg_idx + QUERY_ARGS_SAMPLE_DATA_OFFSET
+			args[timestamp_arg_idx] = sample_data_parsed.Timestamp
+			fmt.Fprintf(
+				&sample_data_create_query,
+				"($%d, $%d, $1, $%d)",
+				sample_id_arg_idx+1,
+				schema_arg_idx+1,
+				timestamp_arg_idx+1,
+			)
+
+			data_key := sampleDataIdx{
+				SampleIndex: sample_data_parsed.SampleIndex,
+				DataIndex:   sample_data_parsed.DataIndex,
+			}
+			sample_data_id_idx[data_key] = sample_data_arg_idx
+
+			sample_data_arg_idx += 1
+		}
+	}
+	sample_data_create_query.WriteString(" RETURNING _id")
+
+	rows, err := tx.Query(s.ctx, sample_data_create_query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"query", sample_data_create_query.String(),
+			"args", args,
+		).Error("could not create samples")
+		return nil, err
+	}
+
+	ids, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (uuid.UUID, error) {
+		var id uuid.UUID
+		err := row.Scan(&id)
+		return id, err
+	})
+	if err != nil {
+		s.logger.With("error", err).Error("could not collect user projects")
+		return nil, err
+	}
+
+	sample_data_ids := make(map[sampleDataIdx]uuid.UUID, sample_data_count)
+	for key, id_idx := range sample_data_id_idx {
+		sample_data_ids[key] = ids[id_idx]
+	}
+	return sample_data_ids, nil
+}
+
+func (s *ProjectService) create_project_samples_store_sample_data(
+	tx pgx.Tx,
+	schema_data map[uuid.UUID][]sampleDataParsed,
+	sample_data_ids map[sampleDataIdx]uuid.UUID,
+	data_schemas []DataSchema,
+) error {
+	for schema_id, parsed_data := range schema_data {
+		data_schema_idx := slices.IndexFunc(data_schemas, func(schema DataSchema) bool {
+			return schema.Id == schema_id
+		})
+		if data_schema_idx < 0 {
+			s.logger.With("data schema", schema_id).Error("invalid data schema")
+			panic("invalid data schema")
+		}
+		data_schema := data_schemas[data_schema_idx]
+
+		var err error
+		switch data_schema.Storage {
+		case STORAGE_INTERNAL:
+			err = s.create_project_samples_store_sample_data_internal(
+				tx,
+				data_schema,
+				parsed_data,
+				sample_data_ids,
+			)
+		case STORAGE_FILE:
+			err = s.create_project_samples_store_sample_data_file(
+				tx,
+				data_schema,
+				parsed_data,
+				sample_data_ids,
+			)
+		default:
+			panic("unexpected app.Storage")
+		}
 		if err != nil {
-			s.logger.With("error", err).Error("could not create sample properties")
-			return Ok{}, err
+			return err
 		}
 	}
 
+	return nil
+}
+
+func (s *ProjectService) create_project_samples_store_sample_data_internal(
+	tx pgx.Tx,
+	data_schema DataSchema,
+	parsed_data []sampleDataParsed,
+	sample_data_ids map[sampleDataIdx]uuid.UUID,
+) error {
+	col_labels := make([]string, len(data_schema.Schema))
+	for idx, col := range data_schema.Schema {
+		col_labels[idx] = col.Label
+	}
+
+	var store_data_query strings.Builder
+	fmt.Fprintf(
+		&store_data_query,
+		"INSERT INTO %s (_sample_data, %s) VALUES ",
+		sample_data_table_name_from_schema_id(data_schema.Id),
+		strings.Join(col_labels, ", "),
+	)
+
+	args_per_sample_data := len(data_schema.Schema) + 1
+	args := make([]any, len(parsed_data)*args_per_sample_data)
+	for data_idx, data := range parsed_data {
+		sample_data_id_key := sampleDataIdx{SampleIndex: data.SampleIndex, DataIndex: data.DataIndex}
+		sample_data_id := sample_data_ids[sample_data_id_key]
+		payload := data.Payload.([]ColumnData)
+		if len(payload) != len(data_schema.Schema) {
+			panic("invalid payload")
+		}
+
+		args_offset := data_idx * args_per_sample_data
+		args[args_offset] = sample_data_id
+		for _, col_data := range payload {
+			col_idx := slices.IndexFunc(col_labels, func(label string) bool {
+				return label == col_data.Label
+			})
+			if col_idx < 0 {
+				s.logger.With("column", col_data.Label).Error("invalid column label")
+				panic("invalid column label")
+			}
+
+			data_arg_idx := args_offset + col_idx + 1
+			args[data_arg_idx] = col_data.Data
+		}
+
+		if data_idx > 0 {
+			store_data_query.WriteString(", ")
+		}
+		args_idx := make([]string, len(payload)+1)
+		for idx := 0; idx < len(payload)+1; idx++ {
+			args_idx[idx] = fmt.Sprintf("$%d", idx+args_offset+1)
+		}
+		fmt.Fprintf(
+			&store_data_query,
+			"(%s)",
+			strings.Join(args_idx, ", "),
+		)
+	}
+
+	_, err := tx.Exec(s.ctx, store_data_query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"query", store_data_query.String(),
+			"args", args,
+		).Error("could not insert data")
+		return err
+	}
+
+	return nil
+}
+
+func (s *ProjectService) create_project_samples_store_sample_data_file(
+	tx pgx.Tx,
+	data_schema DataSchema,
+	parsed_data []sampleDataParsed,
+	sample_data_ids map[sampleDataIdx]uuid.UUID,
+) error {
+	const ARGS_PER_SAMPLE_DATA = 2
+	var store_data_query strings.Builder
+	fmt.Fprintf(
+		&store_data_query,
+		"INSERT INTO %s (_sample_data, %s) VALUES ",
+		sample_data_table_name_from_schema_id(data_schema.Id),
+		SAMPLE_DATA_STORAGE_TABLE_FILE_COL_LABEL,
+	)
+
+	args := make([]any, len(parsed_data)*ARGS_PER_SAMPLE_DATA)
+	for data_idx, data := range parsed_data {
+		sample_data_id_key := sampleDataIdx{SampleIndex: data.SampleIndex, DataIndex: data.DataIndex}
+		sample_data_id := sample_data_ids[sample_data_id_key]
+		payload := data.Payload.(string)
+
+		args_offset := data_idx * ARGS_PER_SAMPLE_DATA
+		args[args_offset] = sample_data_id
+		args[args_offset+1] = payload
+
+		if data_idx > 0 {
+			store_data_query.WriteString(", ")
+		}
+		fmt.Fprintf(
+			&store_data_query,
+			"($%d, $%d)",
+			args_offset+1,
+			args_offset+2,
+		)
+	}
+
+	_, err := tx.Exec(s.ctx, store_data_query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"query", store_data_query.String(),
+			"args", args,
+		).Error("could not insert data")
+		return err
+	}
+
+	return nil
+}
+
+func (s *ProjectService) create_project_samples_create_sample_notes(
+	tx pgx.Tx,
+	samples []ProjectSampleCreate,
+	sample_ids []uuid.UUID,
+	project uuid.UUID,
+	user_id uuid.UUID,
+) error {
 	const NUM_NOTE_VALUES = 2
 	num_notes := 0
 	for _, sample := range samples {
 		num_notes += len(sample.Notes)
 	}
-	if num_notes > 0 {
-		note_values := make([]any, num_notes*NUM_NOTE_VALUES)
-		nidx := 0
-		var sample_notes_query strings.Builder
-		sample_notes_query.WriteString("INSERT INTO project_sample_note_ (_project, _sample, timestamp, content) VALUES ")
-		for sidx, sample := range samples {
-			for _, note := range sample.Notes {
-				if nidx > 0 {
-					fmt.Fprint(&sample_notes_query, ", ")
-				}
+	if num_notes == 0 {
+		return nil
+	}
 
-				timestamp_idx := nidx
-				note_idx := timestamp_idx + 1
-				fmt.Fprintf(
-					&sample_notes_query,
-					"('%s', '%s', $%d, $%d)",
-					project,
-					sample_ids[sidx],
-					timestamp_idx+1,
-					note_idx+1,
-				)
-
-				note_values[timestamp_idx] = note.Timestamp
-				note_values[note_idx] = note.Content
-				nidx += NUM_NOTE_VALUES
+	args := make([]any, num_notes*NUM_NOTE_VALUES)
+	arg_idx := 0
+	var sample_notes_query strings.Builder
+	sample_notes_query.WriteString(
+		`INSERT INTO project_sample_note_ 
+			(_project, _sample, _creator, timestamp, content) 
+			VALUES `,
+	)
+	for sample_idx, sample := range samples {
+		for _, note := range sample.Notes {
+			if arg_idx > 0 {
+				sample_notes_query.WriteString(", ")
 			}
-		}
-		_, err = tx.Exec(s.ctx, sample_notes_query.String(), note_values...)
-		if err != nil {
-			s.logger.With("error", err).Error("could not create sample notes")
-			return Ok{}, err
+
+			timestamp_idx := arg_idx
+			note_idx := timestamp_idx + 1
+			fmt.Fprintf(
+				&sample_notes_query,
+				"('%s', '%s', '%s', $%d, $%d)",
+				project,
+				sample_ids[sample_idx],
+				user_id,
+				timestamp_idx+1,
+				note_idx+1,
+			)
+
+			args[timestamp_idx] = note.Timestamp
+			args[note_idx] = note.Content
+			arg_idx += NUM_NOTE_VALUES
 		}
 	}
-
-	err = tx.Commit(s.ctx)
+	_, err := tx.Exec(s.ctx, sample_notes_query.String(), args...)
 	if err != nil {
-		return Ok{}, err
+		s.logger.With(
+			"error", err,
+			"query", sample_notes_query,
+			"args", args,
+		).Error("could not create sample notes")
+		return err
 	}
 
-	return Ok{}, nil
+	return nil
+}
+
+type ParseSampleDataErrors struct {
+	errors []error
+}
+
+func (e *ParseSampleDataErrors) Error() string {
+	msgs := make([]string, len(e.errors))
+	for idx, err := range e.errors {
+		msgs[idx] = err.Error()
+	}
+
+	return fmt.Sprintf("{%s}", strings.Join(msgs, "; "))
 }

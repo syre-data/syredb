@@ -15,6 +15,7 @@ import {
     useState,
 } from "react";
 import * as common from "../common";
+import classNames from "classnames";
 
 interface CommonProjectData {
     project_id: string;
@@ -39,7 +40,7 @@ export default function () {
         );
     } else {
         navigate("/");
-        return <></>;
+        return null;
     }
 }
 
@@ -53,7 +54,7 @@ function ProjectError({ error, resetErrorBoundary }: FallbackProps) {
     if (error === common.USER_NOT_AUTHENTICATED_ERROR) {
         console.error(common.USER_NOT_AUTHENTICATED_ERROR);
         navigate("/");
-        return <></>;
+        return null;
     } else {
         console.error(error);
     }
@@ -131,7 +132,7 @@ function ProjectHeader({ project }: ProjectHeaderProps) {
             >
                 {project.Label}
             </h2>
-            <div className="flex gap-1">
+            <div className="flex gap-1 items-center">
                 {
                     <div>
                         <Link to={`/project/${project.Id}/settings`}>
@@ -177,10 +178,13 @@ function ProjectSampleList({ samples, className }: ProjectSampleListProps) {
             {samples.length == 0 ? (
                 <ProjectSampleListEmpty />
             ) : (
-                <ul>
-                    {samples.map((sample) => (
-                        <li key={sample.Id.toString()}>
-                            <ProjectSampleListItem sample={sample} />
+                <ul className="grid grid-cols-[50px_100px_200px]">
+                    {samples.map((sample, index) => (
+                        <li key={sample.Id.toString()} className="contents">
+                            <ProjectSampleListItem
+                                index={index}
+                                sample={sample}
+                            />
                         </li>
                     ))}
                 </ul>
@@ -206,8 +210,141 @@ function ProjectSampleListEmpty() {
 }
 
 interface ProjectSampleListItemProps {
+    index: number;
     sample: app.ProjectSample;
 }
-function ProjectSampleListItem({ sample }: ProjectSampleListItemProps) {
-    return <div className="px-4">{sample.Label}</div>;
+function ProjectSampleListItem({ index, sample }: ProjectSampleListItemProps) {
+    const ROW_SPAN = 2;
+    const [expanded, setExpanded] = useState(false);
+
+    function toggle_expand(e: MouseEvent<HTMLDivElement>) {
+        if (e.button !== common.MouseButton.Primary) {
+            return;
+        }
+
+        setExpanded(!expanded);
+    }
+
+    const properties = sample.Properties.toSorted((a, b) => {
+        const ka = a.Key.toLowerCase().charCodeAt(0);
+        const kb = b.Key.toLowerCase().charCodeAt(0);
+        return ka - kb;
+    });
+
+    const row_idx = index * ROW_SPAN;
+    const main_row_idx = row_idx + 1;
+    const properties_row_idx = main_row_idx + 1;
+    return (
+        <div className="contents group/sample-row">
+            <div
+                className={classNames({
+                    "col-start-1 pl-4 cursor-pointer": true,
+                    "invisible group-hover/sample-row:visible": !expanded,
+                })}
+                style={{
+                    gridRow: main_row_idx,
+                }}
+                onMouseDown={toggle_expand}
+            >
+                <button
+                    type="button"
+                    className={classNames({
+                        "transition-[rotate]": true,
+                        "-rotate-90": !expanded,
+                    })}
+                >
+                    <icon.CaretDown />
+                </button>
+            </div>
+            <div
+                className="col-start-2 cursor-pointer"
+                style={{ gridRow: main_row_idx }}
+                onMouseDown={toggle_expand}
+            >
+                {sample.Label}
+            </div>
+            <div className="col-start-3" style={{ gridRow: main_row_idx }}>
+                {sample.Tags.length === 0
+                    ? "(no tags)"
+                    : sample.Tags.join(", ")}
+            </div>
+            <div
+                className={classNames({
+                    "col-start-2 -col-end-1 flex gap-2 overflow-y-hidden transition-[height]":
+                        true,
+                    "h-0": !expanded,
+                })}
+                style={{ gridRow: properties_row_idx }}
+            >
+                {properties.length === 0 ? (
+                    <ProjectSamplePropertiesEmpty />
+                ) : (
+                    properties.map((property) => (
+                        <ProjectSampleProperty
+                            key={property.Key}
+                            property={property}
+                        />
+                    ))
+                )}
+            </div>
+        </div>
+    );
+}
+
+function ProjectSamplePropertiesEmpty() {
+    return <div>(no properties)</div>;
+}
+
+interface ProjectSamplePropertyProps {
+    property: app.Property;
+}
+function ProjectSampleProperty({ property }: ProjectSamplePropertyProps) {
+    const title = `${property.Key} (${property.Type})`;
+    return (
+        <div title={title}>
+            <span className="font-bold">{property.Key}</span>:{" "}
+            <span>
+                <ProjectSamplePropertyValue
+                    type={property.Type}
+                    value={property.Value}
+                />
+            </span>
+        </div>
+    );
+}
+
+interface ProjectSamplePropertyValueProps {
+    type: app.PropertyType;
+    value: any;
+}
+function ProjectSamplePropertyValue({
+    type,
+    value,
+}: ProjectSamplePropertyValueProps) {
+    switch (type) {
+        case app.PropertyType.PROPERTY_TYPE_STRING:
+        case app.PropertyType.PROPERTY_TYPE_INT:
+        case app.PropertyType.PROPERTY_TYPE_UINT:
+        case app.PropertyType.PROPERTY_TYPE_FLOAT:
+            return <>value</>;
+        case app.PropertyType.PROPERTY_TYPE_BOOL:
+            switch (value) {
+                case true:
+                    return <>true</>;
+                case false:
+                    return <>false</>;
+                default:
+                    throw new Error("incompatible sample property value");
+            }
+            break;
+        case app.PropertyType.PROPERTY_TYPE_QUANTITY:
+            return (
+                <>
+                    <span>{value.MagnitudeString}</span>{" "}
+                    <span>{value.Unit}</span>
+                </>
+            );
+        case app.PropertyType.PROPERTY_TYPE_TIMESTAMP:
+            return <>value</>;
+    }
 }

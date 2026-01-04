@@ -14,6 +14,14 @@ import (
 	"github.com/wneessen/go-mail"
 )
 
+const (
+	USER_ROLE_OWNER = UserRole("owner")
+	USER_ROLE_ADMIN = UserRole("admin")
+	USER_ROLE_USER  = UserRole("user")
+)
+
+type UserRole string
+
 type UserService struct {
 	ctx       context.Context
 	logger    *slog.Logger
@@ -32,6 +40,20 @@ func NewUserService(
 func (s *UserService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	s.ctx = ctx
 	return nil
+}
+
+func (s *UserService) user_id() uuid.UUID {
+	s.app_state._lock.RLock()
+	defer s.app_state._lock.RUnlock()
+	return s.app_state.user_id
+}
+
+type User struct {
+	Id            uuid.UUID
+	AccountStatus string
+	Email         string
+	Name          string
+	Role          UserRole
 }
 
 type UserCreate struct {
@@ -133,10 +155,7 @@ func (s *UserService) UpdateUser(update User) (Ok, error) {
 }
 
 func (s *UserService) GetUsers() ([]User, error) {
-	s.app_state._lock.RLock()
-	user_id := s.app_state.user_id
-	s.app_state._lock.RUnlock()
-
+	user_id := s.user_id()
 	if user_id == uuid.Nil {
 		return nil, &UserNotAuthenticatedError{}
 	}
@@ -165,11 +184,32 @@ func (s *UserService) GetUsers() ([]User, error) {
 	return users, nil
 }
 
-func (s *UserService) user_has_role(role string) (bool, error) {
-	s.app_state._lock.RLock()
-	user_id := s.app_state.user_id
-	s.app_state._lock.RUnlock()
+func (s *UserService) UserRole() (UserRole, error) {
+	user_id := s.user_id()
+	if user_id == uuid.Nil {
+		return UserRole(""), &UserNotAuthenticatedError{}
+	}
 
+	var user_role UserRole
+	user_role_query := "SELECT role FROM user_ WHERE _id=$1"
+	err := s.db.conn.QueryRow(
+		s.ctx,
+		user_role_query,
+		user_id,
+	).Scan(&user_role)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return UserRole(""), nil
+		} else {
+			return UserRole(""), err
+		}
+	}
+
+	return user_role, nil
+}
+
+func (s *UserService) user_has_role(role string) (bool, error) {
+	user_id := s.user_id()
 	user_role_query := "SELECT 1 FROM user_ WHERE _id=$1 AND role=$2"
 	user_row := s.db.conn.QueryRow(context.Background(), user_role_query, user_id, role)
 	err := user_row.Scan()
@@ -179,7 +219,7 @@ func (s *UserService) user_has_role(role string) (bool, error) {
 
 func (s *UserService) send_mail(to string, subject string, body string) error {
 	app_email_query := fmt.Sprintf(
-		"SELECT key, value FROM _app_data_ WHERE key in ('%s', '%s', '%s', '%s')",
+		"SELECT key, value FROM _app_data_ WHERE key IN ('%s', '%s', '%s', '%s')",
 		APP_EMAIL_URL_KEY,
 		APP_EMAIL_USERNAME_KEY,
 		APP_EMAIL_PASSWORD_KEY,

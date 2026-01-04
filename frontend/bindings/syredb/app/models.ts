@@ -62,6 +62,39 @@ export class AppState {
     }
 }
 
+export class ColumnData {
+    "Label": string;
+    "DType": DataType;
+    "Data": any[];
+
+    /** Creates a new ColumnData instance. */
+    constructor($$source: Partial<ColumnData> = {}) {
+        if (!("Label" in $$source)) {
+            this["Label"] = "";
+        }
+        if (!("DType" in $$source)) {
+            this["DType"] = DataType.$zero;
+        }
+        if (!("Data" in $$source)) {
+            this["Data"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ColumnData instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ColumnData {
+        const $$createField2_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Data" in $$parsedSource) {
+            $$parsedSource["Data"] = $$createField2_0($$parsedSource["Data"]);
+        }
+        return new ColumnData($$parsedSource as Partial<ColumnData>);
+    }
+}
+
 export class ColumnSchema {
     "label": string;
     "dtype": DataType;
@@ -123,7 +156,7 @@ export class DataSchema {
      * Creates a new DataSchema instance from a string or object.
      */
     static createFrom($$source: any = {}): DataSchema {
-        const $$createField2_0 = $$createType1;
+        const $$createField2_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Schema" in $$parsedSource) {
             $$parsedSource["Schema"] = $$createField2_0($$parsedSource["Schema"]);
@@ -160,7 +193,7 @@ export class DataSchemaCreate {
      * Creates a new DataSchemaCreate instance from a string or object.
      */
     static createFrom($$source: any = {}): DataSchemaCreate {
-        const $$createField0_0 = $$createType1;
+        const $$createField0_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Schema" in $$parsedSource) {
             $$parsedSource["Schema"] = $$createField0_0($$parsedSource["Schema"]);
@@ -182,6 +215,38 @@ export enum DataType {
     DATA_TYPE_BOOLEAN = "boolean",
     DATA_TYPE_TIMESTAMP = "timestamp",
 };
+
+export class FileFilter {
+    /**
+     * Filter information EG: "Image Files (*.jpg, *.png)"
+     */
+    "DisplayName": string;
+
+    /**
+     * semicolon separated list of extensions, EG: "*.jpg;*.png"
+     */
+    "Pattern": string;
+
+    /** Creates a new FileFilter instance. */
+    constructor($$source: Partial<FileFilter> = {}) {
+        if (!("DisplayName" in $$source)) {
+            this["DisplayName"] = "";
+        }
+        if (!("Pattern" in $$source)) {
+            this["Pattern"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new FileFilter instance from a string or object.
+     */
+    static createFrom($$source: any = {}): FileFilter {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new FileFilter($$parsedSource as Partial<FileFilter>);
+    }
+}
 
 export type IsoTimestamp = string;
 
@@ -308,11 +373,11 @@ export class ProjectResources {
      * Creates a new ProjectResources instance from a string or object.
      */
     static createFrom($$source: any = {}): ProjectResources {
-        const $$createField0_0 = $$createType2;
-        const $$createField1_0 = $$createType3;
-        const $$createField2_0 = $$createType5;
-        const $$createField3_0 = $$createType7;
-        const $$createField4_0 = $$createType9;
+        const $$createField0_0 = $$createType3;
+        const $$createField1_0 = $$createType4;
+        const $$createField2_0 = $$createType6;
+        const $$createField3_0 = $$createType8;
+        const $$createField4_0 = $$createType10;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Project" in $$parsedSource) {
             $$parsedSource["Project"] = $$createField0_0($$parsedSource["Project"]);
@@ -377,8 +442,8 @@ export class ProjectSample {
      * Creates a new ProjectSample instance from a string or object.
      */
     static createFrom($$source: any = {}): ProjectSample {
-        const $$createField5_0 = $$createType3;
-        const $$createField6_0 = $$createType11;
+        const $$createField5_0 = $$createType4;
+        const $$createField6_0 = $$createType12;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Tags" in $$parsedSource) {
             $$parsedSource["Tags"] = $$createField5_0($$parsedSource["Tags"]);
@@ -394,6 +459,7 @@ export class ProjectSampleCreate {
     "Label": string;
     "Tags": string[];
     "Properties": Property[];
+    "Data": ProjectSampleDataCreate[];
     "Notes": ProjectSampleNoteCreate[];
 
     /** Creates a new ProjectSampleCreate instance. */
@@ -407,6 +473,9 @@ export class ProjectSampleCreate {
         if (!("Properties" in $$source)) {
             this["Properties"] = [];
         }
+        if (!("Data" in $$source)) {
+            this["Data"] = [];
+        }
         if (!("Notes" in $$source)) {
             this["Notes"] = [];
         }
@@ -418,9 +487,10 @@ export class ProjectSampleCreate {
      * Creates a new ProjectSampleCreate instance from a string or object.
      */
     static createFrom($$source: any = {}): ProjectSampleCreate {
-        const $$createField1_0 = $$createType3;
-        const $$createField2_0 = $$createType11;
-        const $$createField3_0 = $$createType13;
+        const $$createField1_0 = $$createType4;
+        const $$createField2_0 = $$createType12;
+        const $$createField3_0 = $$createType14;
+        const $$createField4_0 = $$createType16;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Tags" in $$parsedSource) {
             $$parsedSource["Tags"] = $$createField1_0($$parsedSource["Tags"]);
@@ -428,10 +498,42 @@ export class ProjectSampleCreate {
         if ("Properties" in $$parsedSource) {
             $$parsedSource["Properties"] = $$createField2_0($$parsedSource["Properties"]);
         }
+        if ("Data" in $$parsedSource) {
+            $$parsedSource["Data"] = $$createField3_0($$parsedSource["Data"]);
+        }
         if ("Notes" in $$parsedSource) {
-            $$parsedSource["Notes"] = $$createField3_0($$parsedSource["Notes"]);
+            $$parsedSource["Notes"] = $$createField4_0($$parsedSource["Notes"]);
         }
         return new ProjectSampleCreate($$parsedSource as Partial<ProjectSampleCreate>);
+    }
+}
+
+export class ProjectSampleDataCreate {
+    "Schema": uuid$0.UUID;
+    "FilePath": string;
+    "Timestamp": IsoTimestamp;
+
+    /** Creates a new ProjectSampleDataCreate instance. */
+    constructor($$source: Partial<ProjectSampleDataCreate> = {}) {
+        if (!("Schema" in $$source)) {
+            this["Schema"] = "";
+        }
+        if (!("FilePath" in $$source)) {
+            this["FilePath"] = "";
+        }
+        if (!("Timestamp" in $$source)) {
+            this["Timestamp"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ProjectSampleDataCreate instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ProjectSampleDataCreate {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ProjectSampleDataCreate($$parsedSource as Partial<ProjectSampleDataCreate>);
     }
 }
 
@@ -471,8 +573,8 @@ export class ProjectSampleGroup {
      * Creates a new ProjectSampleGroup instance from a string or object.
      */
     static createFrom($$source: any = {}): ProjectSampleGroup {
-        const $$createField4_0 = $$createType11;
-        const $$createField5_0 = $$createType14;
+        const $$createField4_0 = $$createType12;
+        const $$createField5_0 = $$createType17;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Properties" in $$parsedSource) {
             $$parsedSource["Properties"] = $$createField4_0($$parsedSource["Properties"]);
@@ -762,18 +864,21 @@ export enum UserRole {
 };
 
 // Private type creation functions
-const $$createType0 = ColumnSchema.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = Project.createFrom;
-const $$createType3 = $Create.Array($Create.Any);
-const $$createType4 = ProjectSample.createFrom;
-const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = ProjectSampleGroup.createFrom;
-const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = SampleGroupRelation.createFrom;
-const $$createType9 = $Create.Array($$createType8);
-const $$createType10 = Property.createFrom;
-const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = ProjectSampleNoteCreate.createFrom;
-const $$createType13 = $Create.Array($$createType12);
-const $$createType14 = $Create.Array($Create.Any);
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = ColumnSchema.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = Project.createFrom;
+const $$createType4 = $Create.Array($Create.Any);
+const $$createType5 = ProjectSample.createFrom;
+const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = ProjectSampleGroup.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = SampleGroupRelation.createFrom;
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = Property.createFrom;
+const $$createType12 = $Create.Array($$createType11);
+const $$createType13 = ProjectSampleDataCreate.createFrom;
+const $$createType14 = $Create.Array($$createType13);
+const $$createType15 = ProjectSampleNoteCreate.createFrom;
+const $$createType16 = $Create.Array($$createType15);
+const $$createType17 = $Create.Array($Create.Any);

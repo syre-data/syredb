@@ -30,6 +30,10 @@ interface ColumnSchema {
 }
 
 export default function () {
+    const DEFAULT_STORAGE = app.Storage.STORAGE_INTERNAL;
+    const INVALID_LABEL_ERROR =
+        "label can only contain letters, numbers, and underscores (_)";
+
     const queryClient = useQueryClient();
     const navigate = useNavigate();
     const [error, setError] = useState("");
@@ -71,6 +75,62 @@ export default function () {
         }
     }
 
+    function is_column_label_valid(label: string): boolean {
+        const PATTERN = new RegExp("^[\\w_]+$", "gm");
+        return PATTERN.test(label);
+    }
+
+    function on_label_change(id: number, e: ChangeEvent<HTMLInputElement>) {
+        const LABEL_DUPLICATE_ERROR_KEY = "data-error-label-duplicate";
+
+        const form = document.getElementById("schema-form")! as HTMLFormElement;
+        const input = document.getElementById(
+            `column[${id}][label]`
+        ) as HTMLInputElement;
+        input.setCustomValidity("");
+        const label = input.value.trim();
+        for (const col of cols) {
+            if (col.id === id) {
+                continue;
+            }
+
+            const other = document.getElementById(
+                `column[${col.id}][label]`
+            ) as HTMLInputElement;
+            const other_label = other.value.trim();
+            if (other_label === label) {
+                input.setAttribute(
+                    LABEL_DUPLICATE_ERROR_KEY,
+                    col.id.toString()
+                );
+                other.setAttribute(LABEL_DUPLICATE_ERROR_KEY, id.toString());
+
+                input.setCustomValidity("label must be unique");
+                form.reportValidity();
+                return;
+            } else {
+                const other_dup_id = other.getAttribute(
+                    LABEL_DUPLICATE_ERROR_KEY
+                );
+                if (other_dup_id !== null) {
+                    const other_dup = parseInt(other_dup_id);
+                    if (other_dup === id) {
+                        other.removeAttribute(LABEL_DUPLICATE_ERROR_KEY);
+                        other.setCustomValidity("");
+                    }
+                }
+            }
+        }
+
+        if (!is_column_label_valid(label)) {
+            input.setCustomValidity(INVALID_LABEL_ERROR);
+            form.reportValidity();
+            return;
+        }
+
+        add_column_if_needed(id, e);
+    }
+
     async function create_data_schema(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         setError("");
@@ -104,8 +164,9 @@ export default function () {
 
         const columns = [];
         for (const { id } of cols) {
+            const label_key = `column[${id}][label]`;
             const dtype_key = `column[${id}][dtype]`;
-            const label = data.get(`column[${id}][label]`)!.toString().trim();
+            const label = data.get(label_key)!.toString().trim();
             const dtype_str = data.get(dtype_key)!.toString();
             const dtype = common.data_type_string_to_variant(dtype_str);
             if (!dtype) {
@@ -121,7 +182,17 @@ export default function () {
             if (label.length === 0) {
                 continue;
             }
-            columns.push(new app.ColumnSchema({ label, dtype: dtype }));
+
+            const label_input = document.getElementById(
+                label_key
+            )! as HTMLInputElement;
+            label_input.setCustomValidity("");
+
+            if (!is_column_label_valid(label)) {
+                label_input.setCustomValidity(INVALID_LABEL_ERROR);
+            } else {
+                columns.push(new app.ColumnSchema({ label, dtype: dtype }));
+            }
         }
         if (columns.length === 0) {
             if (cols.length === 0) {
@@ -132,12 +203,12 @@ export default function () {
                     `column[${cols[0].id}][label]`
                 )! as HTMLInputElement;
                 input.setCustomValidity("Schema must have at least one column");
-
                 form.reportValidity();
                 return;
             }
         }
 
+        form.reportValidity();
         const data_schema = new app.DataSchemaCreate({
             Schema: columns,
             Storage: storage,
@@ -180,7 +251,7 @@ export default function () {
                                     id="label"
                                     name="label"
                                     placeholder="Label"
-                                    className="input-basic"
+                                    className="input-basic invalid:ring-red-600"
                                     required
                                 />
                             </label>
@@ -191,11 +262,21 @@ export default function () {
                                 <select
                                     id="storage"
                                     name="storage"
-                                    defaultValue="internal"
-                                    className="input-basic"
+                                    defaultValue={DEFAULT_STORAGE}
+                                    className="input-basic invalid:ring-red-600"
                                 >
-                                    <option value="internal">Internal</option>
-                                    <option value="file">File</option>
+                                    <option
+                                        value={app.Storage.STORAGE_INTERNAL}
+                                        title="Store data as a table in the database"
+                                    >
+                                        Internal
+                                    </option>
+                                    <option
+                                        value={app.Storage.STORAGE_FILE}
+                                        title="Store data as a file"
+                                    >
+                                        File
+                                    </option>
                                 </select>
                             </label>
                         </div>
@@ -234,7 +315,7 @@ export default function () {
                                         <ColumnSchema
                                             schema={col}
                                             onRemove={remove_column}
-                                            onChangeLabel={add_column_if_needed}
+                                            onChangeLabel={on_label_change}
                                         />
                                     </li>
                                 ))}
@@ -305,7 +386,7 @@ function ColumnSchema({ schema, onRemove, onChangeLabel }: ColumnSchemaProps) {
                         name={`column[${schema.id}][label]`}
                         placeholder="Label"
                         title="Column label"
-                        className="input-basic"
+                        className="input-basic invalid:ring-red-600"
                         onChange={on_change_label}
                     />
                 </label>
@@ -318,7 +399,7 @@ function ColumnSchema({ schema, onRemove, onChangeLabel }: ColumnSchemaProps) {
                         name={`column[${schema.id}][dtype]`}
                         title="Column data type"
                         defaultValue="string"
-                        className="input-basic"
+                        className="input-basic invalid:ring-red-600"
                     >
                         <option value="string">String</option>
                         <option value="int">Int</option>

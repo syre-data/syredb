@@ -4,12 +4,14 @@
 import * as AppService from "./appservice.js";
 import * as AuthService from "./authservice.js";
 import * as DataService from "./dataservice.js";
+import * as FsService from "./fsservice.js";
 import * as ProjectService from "./projectservice.js";
 import * as UserService from "./userservice.js";
 export {
     AppService,
     AuthService,
     DataService,
+    FsService,
     ProjectService,
     UserService
 };
@@ -17,16 +19,19 @@ export {
 export {
     AppConfig,
     AppState,
+    ColumnData,
     ColumnSchema,
     DataSchema,
     DataSchemaCreate,
     DataType,
+    FileFilter,
     Ok,
     Project,
     ProjectCreate,
     ProjectResources,
     ProjectSample,
     ProjectSampleCreate,
+    ProjectSampleDataCreate,
     ProjectSampleGroup,
     ProjectSampleNoteCreate,
     ProjectUserPermission,

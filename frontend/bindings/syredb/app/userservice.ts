@@ -35,6 +35,10 @@ export function UpdateUser(update: $models.User): $CancellablePromise<$models.Ok
     });
 }
 
+export function UserRole(): $CancellablePromise<$models.UserRole> {
+    return $Call.ByID(3693950367);
+}
+
 // Private type creation functions
 const $$createType0 = $models.Ok.createFrom;
 const $$createType1 = $models.User.createFrom;
