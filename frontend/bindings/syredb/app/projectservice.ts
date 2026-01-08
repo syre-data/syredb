@@ -29,21 +29,28 @@ export function GetProjectResources(project_id: uuid$0.UUID): $CancellablePromis
     });
 }
 
+export function GetProjectSampleResources(project_id: uuid$0.UUID, sample_id: uuid$0.UUID): $CancellablePromise<$models.ProjectSampleResources> {
+    return $Call.ByID(2454335910, project_id, sample_id).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 export function GetProjectWithUserPermission(project_id: uuid$0.UUID): $CancellablePromise<$models.ProjectWithUserPermission> {
     return $Call.ByID(328045959, project_id).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType3($result);
     });
 }
 
 export function GetUserProjects(): $CancellablePromise<$models.Project[]> {
     return $Call.ByID(2955955071).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType5($result);
     });
 }
 
 // Private type creation functions
 const $$createType0 = $models.Ok.createFrom;
 const $$createType1 = $models.ProjectResources.createFrom;
-const $$createType2 = $models.ProjectWithUserPermission.createFrom;
-const $$createType3 = $models.Project.createFrom;
-const $$createType4 = $Create.Array($$createType3);
+const $$createType2 = $models.ProjectSampleResources.createFrom;
+const $$createType3 = $models.ProjectWithUserPermission.createFrom;
+const $$createType4 = $models.Project.createFrom;
+const $$createType5 = $Create.Array($$createType4);

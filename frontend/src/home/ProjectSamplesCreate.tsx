@@ -538,7 +538,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                             MagnitudeString: property.value.magnitude,
                             MagnitudeValue: magnitude_value,
                             Unit: property.value.unit,
-                        };
+                        } as common.QuantityProperty;
                         break;
                     default:
                         throw new Error(

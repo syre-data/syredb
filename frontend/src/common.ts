@@ -37,9 +37,15 @@ export function is_admin_or_owner(
     );
 }
 
-export interface QuntityValue {
+export interface QuantityValue {
     magnitude: number;
     unit: string;
+}
+
+export interface QuantityProperty {
+    MagnitudeString: string;
+    MagnitudeValue: number;
+    Unit: string;
 }
 
 export function property_type_string_to_variant(

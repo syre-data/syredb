@@ -38,7 +38,7 @@ function Loading() {
 function ProjectSettingsError({ error, resetErrorBoundary }: FallbackProps) {
     const navigate = useNavigate();
 
-    if (error === common.USER_NOT_AUTHENTICATED_ERROR) {
+    if (error.message === common.USER_NOT_AUTHENTICATED_ERROR) {
         console.error(common.USER_NOT_AUTHENTICATED_ERROR);
         navigate("/");
         return null;
@@ -57,7 +57,7 @@ function ProjectSettingsError({ error, resetErrorBoundary }: FallbackProps) {
     return (
         <div className="flex flex-col gap-2 items-center pt-4">
             <div>Could not load project</div>
-            <div>{error}</div>
+            <div>{error.message}</div>
             <div className="flex gap-2 items-center">
                 <div>
                     <Link to="/">

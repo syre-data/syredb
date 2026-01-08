@@ -91,7 +91,7 @@ function UserProjectsError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
     return (
         <div>
             <div>Could not get your projects</div>
-            <div>{error}</div>
+            <div>{error.message}</div>
         </div>
     );
 }
@@ -197,7 +197,7 @@ function DataSchemaError({ error, resetErrorBoundary }: FallbackProps) {
     return (
         <div className="text-center">
             <div>Could not get data schemas</div>
-            <div>{error}</div>
+            <div>{error.message}</div>
         </div>
     );
 }

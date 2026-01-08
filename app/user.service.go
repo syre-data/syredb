@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"errors"
 
@@ -178,6 +179,32 @@ func (s *UserService) GetUsers() ([]User, error) {
 	})
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect users")
+		return nil, err
+	}
+
+	return users, nil
+}
+
+func (s *UserService) GetUsersById(user_ids []uuid.UUID) ([]User, error) {
+	user_ids_str := make([]string, len(user_ids))
+	for idx, id := range user_ids {
+		user_ids_str[idx] = fmt.Sprintf("'%s'", id)
+	}
+
+	users_query := fmt.Sprintf(
+		`SELECT _id, account_status, email, name, role FROM user_
+		WHERE _id IN (%s)`,
+		strings.Join(user_ids_str, ", "),
+	)
+
+	rows, _ := s.db.conn.Query(s.ctx, users_query)
+	users, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (User, error) {
+		var user User
+		err := row.Scan(&user.Id, &user.AccountStatus, &user.Email, &user.Name, &user.Role)
+		return user, err
+	})
+	if err != nil {
+		s.logger.With("error", err, "user ids", user_ids).Error("could not collect users")
 		return nil, err
 	}
 

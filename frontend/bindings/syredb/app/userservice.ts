@@ -29,6 +29,12 @@ export function GetUsers(): $CancellablePromise<$models.User[]> {
     });
 }
 
+export function GetUsersById(user_ids: uuid$0.UUID[]): $CancellablePromise<$models.User[]> {
+    return $Call.ByID(1558772412, user_ids).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 export function UpdateUser(update: $models.User): $CancellablePromise<$models.Ok> {
     return $Call.ByID(2606112134, update).then(($result: any) => {
         return $$createType0($result);

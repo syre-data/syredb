@@ -341,6 +341,8 @@ export class ProjectResources {
     "Project": Project;
     "ProjectTags": string[];
     "Samples": ProjectSample[];
+    "SampleData": SampleData[];
+    "DataSchemas": DataSchema[];
     "SampleGroups": ProjectSampleGroup[];
     "SampleGroupRelations": SampleGroupRelation[];
     "ProjectNoteCount": number;
@@ -356,6 +358,12 @@ export class ProjectResources {
         }
         if (!("Samples" in $$source)) {
             this["Samples"] = [];
+        }
+        if (!("SampleData" in $$source)) {
+            this["SampleData"] = [];
+        }
+        if (!("DataSchemas" in $$source)) {
+            this["DataSchemas"] = [];
         }
         if (!("SampleGroups" in $$source)) {
             this["SampleGroups"] = [];
@@ -382,6 +390,8 @@ export class ProjectResources {
         const $$createField2_0 = $$createType6;
         const $$createField3_0 = $$createType8;
         const $$createField4_0 = $$createType10;
+        const $$createField5_0 = $$createType12;
+        const $$createField6_0 = $$createType14;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Project" in $$parsedSource) {
             $$parsedSource["Project"] = $$createField0_0($$parsedSource["Project"]);
@@ -392,11 +402,17 @@ export class ProjectResources {
         if ("Samples" in $$parsedSource) {
             $$parsedSource["Samples"] = $$createField2_0($$parsedSource["Samples"]);
         }
+        if ("SampleData" in $$parsedSource) {
+            $$parsedSource["SampleData"] = $$createField3_0($$parsedSource["SampleData"]);
+        }
+        if ("DataSchemas" in $$parsedSource) {
+            $$parsedSource["DataSchemas"] = $$createField4_0($$parsedSource["DataSchemas"]);
+        }
         if ("SampleGroups" in $$parsedSource) {
-            $$parsedSource["SampleGroups"] = $$createField3_0($$parsedSource["SampleGroups"]);
+            $$parsedSource["SampleGroups"] = $$createField5_0($$parsedSource["SampleGroups"]);
         }
         if ("SampleGroupRelations" in $$parsedSource) {
-            $$parsedSource["SampleGroupRelations"] = $$createField4_0($$parsedSource["SampleGroupRelations"]);
+            $$parsedSource["SampleGroupRelations"] = $$createField6_0($$parsedSource["SampleGroupRelations"]);
         }
         return new ProjectResources($$parsedSource as Partial<ProjectResources>);
     }
@@ -447,7 +463,7 @@ export class ProjectSample {
      */
     static createFrom($$source: any = {}): ProjectSample {
         const $$createField5_0 = $$createType4;
-        const $$createField6_0 = $$createType12;
+        const $$createField6_0 = $$createType16;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Tags" in $$parsedSource) {
             $$parsedSource["Tags"] = $$createField5_0($$parsedSource["Tags"]);
@@ -492,9 +508,9 @@ export class ProjectSampleCreate {
      */
     static createFrom($$source: any = {}): ProjectSampleCreate {
         const $$createField1_0 = $$createType4;
-        const $$createField2_0 = $$createType12;
-        const $$createField3_0 = $$createType14;
-        const $$createField4_0 = $$createType16;
+        const $$createField2_0 = $$createType16;
+        const $$createField3_0 = $$createType18;
+        const $$createField4_0 = $$createType20;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Tags" in $$parsedSource) {
             $$parsedSource["Tags"] = $$createField1_0($$parsedSource["Tags"]);
@@ -540,7 +556,7 @@ export class ProjectSampleDataCreate {
      * Creates a new ProjectSampleDataCreate instance from a string or object.
      */
     static createFrom($$source: any = {}): ProjectSampleDataCreate {
-        const $$createField3_0 = $$createType18;
+        const $$createField3_0 = $$createType22;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Properties" in $$parsedSource) {
             $$parsedSource["Properties"] = $$createField3_0($$parsedSource["Properties"]);
@@ -618,8 +634,8 @@ export class ProjectSampleGroup {
      * Creates a new ProjectSampleGroup instance from a string or object.
      */
     static createFrom($$source: any = {}): ProjectSampleGroup {
-        const $$createField4_0 = $$createType12;
-        const $$createField5_0 = $$createType19;
+        const $$createField4_0 = $$createType16;
+        const $$createField5_0 = $$createType23;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Properties" in $$parsedSource) {
             $$parsedSource["Properties"] = $$createField4_0($$parsedSource["Properties"]);
@@ -628,6 +644,47 @@ export class ProjectSampleGroup {
             $$parsedSource["Samples"] = $$createField5_0($$parsedSource["Samples"]);
         }
         return new ProjectSampleGroup($$parsedSource as Partial<ProjectSampleGroup>);
+    }
+}
+
+export class ProjectSampleNote {
+    "Id": uuid$0.UUID;
+    "Sample": uuid$0.UUID;
+    "Project": uuid$0.UUID;
+    "Creator": uuid$0.UUID;
+    "Timestamp": time$0.Time;
+    "Content": string;
+
+    /** Creates a new ProjectSampleNote instance. */
+    constructor($$source: Partial<ProjectSampleNote> = {}) {
+        if (!("Id" in $$source)) {
+            this["Id"] = "";
+        }
+        if (!("Sample" in $$source)) {
+            this["Sample"] = "";
+        }
+        if (!("Project" in $$source)) {
+            this["Project"] = "";
+        }
+        if (!("Creator" in $$source)) {
+            this["Creator"] = "";
+        }
+        if (!("Timestamp" in $$source)) {
+            this["Timestamp"] = null;
+        }
+        if (!("Content" in $$source)) {
+            this["Content"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ProjectSampleNote instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ProjectSampleNote {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ProjectSampleNote($$parsedSource as Partial<ProjectSampleNote>);
     }
 }
 
@@ -653,6 +710,79 @@ export class ProjectSampleNoteCreate {
     static createFrom($$source: any = {}): ProjectSampleNoteCreate {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new ProjectSampleNoteCreate($$parsedSource as Partial<ProjectSampleNoteCreate>);
+    }
+}
+
+export class ProjectSampleResources {
+    "Id": uuid$0.UUID;
+    "Creator": uuid$0.UUID;
+    "Properties": Property[];
+    "ProjectTags": string[];
+    "ProjectNotes": ProjectSampleNote[];
+    "Data": SampleData[];
+    "DataSchemas": DataSchema[];
+    "Users": User[];
+
+    /** Creates a new ProjectSampleResources instance. */
+    constructor($$source: Partial<ProjectSampleResources> = {}) {
+        if (!("Id" in $$source)) {
+            this["Id"] = "";
+        }
+        if (!("Creator" in $$source)) {
+            this["Creator"] = "";
+        }
+        if (!("Properties" in $$source)) {
+            this["Properties"] = [];
+        }
+        if (!("ProjectTags" in $$source)) {
+            this["ProjectTags"] = [];
+        }
+        if (!("ProjectNotes" in $$source)) {
+            this["ProjectNotes"] = [];
+        }
+        if (!("Data" in $$source)) {
+            this["Data"] = [];
+        }
+        if (!("DataSchemas" in $$source)) {
+            this["DataSchemas"] = [];
+        }
+        if (!("Users" in $$source)) {
+            this["Users"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ProjectSampleResources instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ProjectSampleResources {
+        const $$createField2_0 = $$createType16;
+        const $$createField3_0 = $$createType4;
+        const $$createField4_0 = $$createType25;
+        const $$createField5_0 = $$createType8;
+        const $$createField6_0 = $$createType10;
+        const $$createField7_0 = $$createType27;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Properties" in $$parsedSource) {
+            $$parsedSource["Properties"] = $$createField2_0($$parsedSource["Properties"]);
+        }
+        if ("ProjectTags" in $$parsedSource) {
+            $$parsedSource["ProjectTags"] = $$createField3_0($$parsedSource["ProjectTags"]);
+        }
+        if ("ProjectNotes" in $$parsedSource) {
+            $$parsedSource["ProjectNotes"] = $$createField4_0($$parsedSource["ProjectNotes"]);
+        }
+        if ("Data" in $$parsedSource) {
+            $$parsedSource["Data"] = $$createField5_0($$parsedSource["Data"]);
+        }
+        if ("DataSchemas" in $$parsedSource) {
+            $$parsedSource["DataSchemas"] = $$createField6_0($$parsedSource["DataSchemas"]);
+        }
+        if ("Users" in $$parsedSource) {
+            $$parsedSource["Users"] = $$createField7_0($$parsedSource["Users"]);
+        }
+        return new ProjectSampleResources($$parsedSource as Partial<ProjectSampleResources>);
     }
 }
 
@@ -766,6 +896,43 @@ export enum PropertyType {
     PROPERTY_TYPE_QUANTITY = "quantity",
     PROPERTY_TYPE_TIMESTAMP = "timestamp",
 };
+
+export class SampleData {
+    "Id": uuid$0.UUID;
+    "Sample": uuid$0.UUID;
+    "Schema": uuid$0.UUID;
+    "Creator": uuid$0.UUID;
+    "Timestamp": IsoTimestamp;
+
+    /** Creates a new SampleData instance. */
+    constructor($$source: Partial<SampleData> = {}) {
+        if (!("Id" in $$source)) {
+            this["Id"] = "";
+        }
+        if (!("Sample" in $$source)) {
+            this["Sample"] = "";
+        }
+        if (!("Schema" in $$source)) {
+            this["Schema"] = "";
+        }
+        if (!("Creator" in $$source)) {
+            this["Creator"] = "";
+        }
+        if (!("Timestamp" in $$source)) {
+            this["Timestamp"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SampleData instance from a string or object.
+     */
+    static createFrom($$source: any = {}): SampleData {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new SampleData($$parsedSource as Partial<SampleData>);
+    }
+}
 
 export class SampleGroupRelation {
     "Parent": uuid$0.UUID;
@@ -916,16 +1083,24 @@ const $$createType3 = Project.createFrom;
 const $$createType4 = $Create.Array($Create.Any);
 const $$createType5 = ProjectSample.createFrom;
 const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = ProjectSampleGroup.createFrom;
+const $$createType7 = SampleData.createFrom;
 const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = SampleGroupRelation.createFrom;
+const $$createType9 = DataSchema.createFrom;
 const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = Property.createFrom;
+const $$createType11 = ProjectSampleGroup.createFrom;
 const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = ProjectSampleDataCreate.createFrom;
+const $$createType13 = SampleGroupRelation.createFrom;
 const $$createType14 = $Create.Array($$createType13);
-const $$createType15 = ProjectSampleNoteCreate.createFrom;
+const $$createType15 = Property.createFrom;
 const $$createType16 = $Create.Array($$createType15);
-const $$createType17 = ProjectSampleDataPropertyCreate.createFrom;
+const $$createType17 = ProjectSampleDataCreate.createFrom;
 const $$createType18 = $Create.Array($$createType17);
-const $$createType19 = $Create.Array($Create.Any);
+const $$createType19 = ProjectSampleNoteCreate.createFrom;
+const $$createType20 = $Create.Array($$createType19);
+const $$createType21 = ProjectSampleDataPropertyCreate.createFrom;
+const $$createType22 = $Create.Array($$createType21);
+const $$createType23 = $Create.Array($Create.Any);
+const $$createType24 = ProjectSampleNote.createFrom;
+const $$createType25 = $Create.Array($$createType24);
+const $$createType26 = User.createFrom;
+const $$createType27 = $Create.Array($$createType26);

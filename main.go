@@ -72,7 +72,7 @@ func main() {
 	auth_service := sdb.NewAuthService(logger, db, config_dir_path, app_service.AppState())
 	user_service := sdb.NewUserService(logger, db, app_service.AppState())
 	data_service := sdb.NewDataService(logger, db, app_service.AppState(), user_service)
-	project_service := sdb.NewProjectService(logger, db, app_service.AppState(), data_service)
+	project_service := sdb.NewProjectService(logger, db, app_service.AppState(), user_service, data_service)
 
 	app.RegisterService(application.NewService(fs_service))
 	app.RegisterService(application.NewService(app_service))

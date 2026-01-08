@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,6 +41,7 @@ type ProjectService struct {
 	logger       *slog.Logger
 	db           *DbConnection
 	app_state    *AppState
+	user_service *UserService
 	data_service *DataService
 }
 
@@ -47,9 +49,16 @@ func NewProjectService(
 	logger *slog.Logger,
 	db *DbConnection,
 	app_state *AppState,
+	user_service *UserService,
 	data_service *DataService,
 ) *ProjectService {
-	return &ProjectService{logger: logger, db: db, app_state: app_state, data_service: data_service}
+	return &ProjectService{
+		logger:       logger,
+		db:           db,
+		app_state:    app_state,
+		user_service: user_service,
+		data_service: data_service,
+	}
 }
 
 func (s *ProjectService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
@@ -161,6 +170,7 @@ type ProjectSampleNote struct {
 	Id        uuid.UUID
 	Sample    uuid.UUID
 	Project   uuid.UUID
+	Creator   uuid.UUID
 	Timestamp time.Time
 	Content   string
 }
@@ -174,6 +184,14 @@ type ProjectSample struct {
 	Tags              []string
 	Properties        []Property
 	NoteCount         uint
+}
+
+type SampleData struct {
+	Id        uuid.UUID
+	Sample    uuid.UUID
+	Schema    uuid.UUID
+	Creator   uuid.UUID
+	Timestamp IsoTimestamp
 }
 
 type ProjectSampleGroup struct {
@@ -194,6 +212,8 @@ type ProjectResources struct {
 	Project               Project
 	ProjectTags           []string
 	Samples               []ProjectSample
+	SampleData            []SampleData
+	DataSchemas           []DataSchema
 	SampleGroups          []ProjectSampleGroup
 	SampleGroupRelations  []SampleGroupRelation
 	ProjectNoteCount      uint
@@ -274,6 +294,7 @@ func (s *ProjectService) GetProjectResources(project_id uuid.UUID) (ProjectResou
 		project_resources.Samples = []ProjectSample{}
 	}
 
+	var samples_err error
 	sample_tags_query := "SELECT _tag FROM project_sample_tag_ WHERE _project=$1 AND _sample=$2"
 	sample_properties_query := "SELECT _key, _type, value FROM sample_property_ WHERE _sample=$1"
 	sample_note_count_query := "SELECT COUNT(*) FROM project_sample_note_ WHERE _sample=$1"
@@ -287,6 +308,7 @@ func (s *ProjectService) GetProjectResources(project_id uuid.UUID) (ProjectResou
 		})
 		if err != nil {
 			s.logger.With("project", project_id, "sample", sample_id, "error", err).Error("could not get project sample tags in project")
+			samples_err = err
 		}
 
 		sample_properties_rows, _ := s.db.conn.Query(s.ctx, sample_properties_query, sample_id)
@@ -303,6 +325,42 @@ func (s *ProjectService) GetProjectResources(project_id uuid.UUID) (ProjectResou
 		if err != nil {
 			s.logger.With("sample", sample_id, "error", err).Error("could not get sample properties")
 		}
+
+	}
+	if samples_err != nil {
+		return ProjectResources{}, samples_err
+	}
+
+	sample_ids := make([]string, len(project_resources.Samples))
+	for idx, sample := range project_resources.Samples {
+		sample_ids[idx] = fmt.Sprintf("'%s'", sample.Id)
+	}
+	sample_data_query := fmt.Sprintf(
+		"SELECT _id, _sample, _schema, _creator, timestamp FROM sample_data_ WHERE _sample IN (%s)",
+		strings.Join(sample_ids, ", "),
+	)
+	sample_data_rows, _ := s.db.conn.Query(s.ctx, sample_data_query)
+	project_resources.SampleData, err = pgx.CollectRows(sample_data_rows, func(row pgx.CollectableRow) (SampleData, error) {
+		var sample_data SampleData
+		var timestamp time.Time
+		err := row.Scan(&sample_data.Id, &sample_data.Sample, &sample_data.Schema, &sample_data.Creator, &timestamp)
+		sample_data.Timestamp = IsoTimestamp(timestamp.UTC().Format(time.RFC3339))
+		return sample_data, err
+	})
+	if err != nil {
+		s.logger.With("error", err, "query", sample_data_query).Error("could not get sample data")
+		return ProjectResources{}, err
+	}
+
+	data_schema_ids := []uuid.UUID{}
+	for _, sample_data := range project_resources.SampleData {
+		if !slices.Contains(data_schema_ids, sample_data.Schema) {
+			data_schema_ids = append(data_schema_ids, sample_data.Schema)
+		}
+	}
+	project_resources.DataSchemas, err = s.data_service.GetDataSchemasById(data_schema_ids)
+	if err != nil {
+		return ProjectResources{}, err
 	}
 
 	return project_resources, nil
@@ -546,7 +604,7 @@ func (s *ProjectService) create_project_samples_parse_sample_data_to_schema(
 			ext := filepath.Ext(data.FilePath)
 			data_parsed, err := parse_data_file_to_schema(ext, file, data_schema)
 			if err != nil {
-				s.logger.With("error", err, "sample", sample.Label, "data_idx", data_idx).Error("invalid smaple data")
+				s.logger.With("error", err, "sample", sample.Label, "data_idx", data_idx).Error("invalid sample data")
 				errs.errors = append(errs.errors, err)
 				continue
 			}
@@ -1180,4 +1238,177 @@ func (e *ParseSampleDataErrors) Error() string {
 	}
 
 	return fmt.Sprintf("{%s}", strings.Join(msgs, "; "))
+}
+
+type ProjectSampleResources struct {
+	Id           uuid.UUID
+	Creator      uuid.UUID
+	Properties   []Property
+	ProjectTags  []string
+	ProjectNotes []ProjectSampleNote
+	Data         []SampleData
+	DataSchemas  []DataSchema
+	Users        []User
+}
+
+func (s *ProjectService) GetProjectSampleResources(project_id uuid.UUID, sample_id uuid.UUID) (ProjectSampleResources, error) {
+	var err error
+	resources := ProjectSampleResources{
+		Id: sample_id,
+	}
+
+	resources.Creator, err = s.get_project_sample_resources_sample_creator(resources.Id)
+	if err != nil {
+		return ProjectSampleResources{}, nil
+	}
+
+	resources.Properties, err = s.get_project_sample_resources_sample_properties(resources.Id)
+	if err != nil {
+		return ProjectSampleResources{}, nil
+	}
+
+	resources.ProjectTags, err = s.get_project_sample_resources_sample_tags(project_id, resources.Id)
+	if err != nil {
+		return ProjectSampleResources{}, nil
+	}
+
+	resources.ProjectNotes, err = s.get_project_sample_resources_sample_notes(project_id, resources.Id)
+	if err != nil {
+		return ProjectSampleResources{}, nil
+	}
+
+	resources.Data, err = s.get_project_sample_resources_sample_data(resources.Id)
+	if err != nil {
+		return ProjectSampleResources{}, nil
+	}
+
+	data_schema_ids := []uuid.UUID{}
+	for _, data := range resources.Data {
+		data_schema_ids = append(data_schema_ids, data.Schema)
+	}
+	resources.DataSchemas, err = s.data_service.GetDataSchemasById(data_schema_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data schemas", data_schema_ids,
+		).Error("could not get data schemas for sample data")
+		return ProjectSampleResources{}, err
+	}
+
+	user_ids := []uuid.UUID{resources.Creator}
+	for _, note := range resources.ProjectNotes {
+		user_ids = append(user_ids, note.Creator)
+	}
+	for _, data := range resources.Data {
+		user_ids = append(user_ids, data.Creator)
+	}
+	resources.Users, err = s.user_service.GetUsersById(user_ids)
+	if err != nil {
+		return ProjectSampleResources{}, err
+	}
+
+	return resources, nil
+}
+
+func (s *ProjectService) get_project_sample_resources_sample_creator(sample_id uuid.UUID) (uuid.UUID, error) {
+	var sample_creator_id uuid.UUID
+	creator_query := "SELECT _creator FROM sample_ WHERE _id=$1"
+	err := s.db.conn.QueryRow(s.ctx, creator_query, sample_id).Scan(&sample_creator_id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			s.logger.With("sample id", sample_id).Debug("sample not found")
+			return uuid.Nil, &RecordNotFoundError{}
+		} else {
+			s.logger.With("error", err, "query", creator_query).Error("could not get sample creator")
+			return uuid.Nil, err
+		}
+	}
+
+	return sample_creator_id, nil
+
+	// var user User
+	// user_query := "SELECT _id, account_status, email, name, role FROM user_ WHERE _id=$1"
+	// err = s.db.conn.QueryRow(s.ctx, user_query, sample_creator_id).Scan(&user)
+	// if err!= nil {
+	// 	s.logger.With("error", err, "query", user_query).Error("could not get user")
+	// 	return User{}, err
+	// }
+
+	// return user, nil
+}
+
+func (s *ProjectService) get_project_sample_resources_sample_properties(sample_id uuid.UUID) ([]Property, error) {
+	properties_query := "SELECT _key, _type, value FROM sample_property_ WHERE _sample=$1"
+	rows, _ := s.db.conn.Query(s.ctx, properties_query, sample_id)
+	properties, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Property, error) {
+		var property Property
+		err := row.Scan(&property.Key, &property.Type, &property.Value)
+		return property, err
+	})
+	if err != nil {
+		s.logger.With("error", err, "query", properties_query).Error("could not get sample properties")
+		return nil, err
+	}
+
+	return properties, nil
+}
+
+func (s *ProjectService) get_project_sample_resources_sample_tags(project_id uuid.UUID, sample_id uuid.UUID) ([]string, error) {
+	tags_query := "SELECT _tag FROM project_sample_tag_ WHERE _project=$1 AND _sample=$2"
+	rows, _ := s.db.conn.Query(s.ctx, tags_query, project_id, sample_id)
+	tags, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (string, error) {
+		var tag string
+		err := row.Scan(&tag)
+		return tag, err
+	})
+	if err != nil {
+		s.logger.With("error", err, "query", tags_query).Error("could not get project sample tags")
+		return nil, err
+	}
+
+	return tags, nil
+}
+
+func (s *ProjectService) get_project_sample_resources_sample_notes(project_id uuid.UUID, sample_id uuid.UUID) ([]ProjectSampleNote, error) {
+	notes_query :=
+		`SELECT _id, _sample, _project, _creator, timestamp, content
+	FROM project_sample_note_ WHERE _project=$1 AND _sample=$2`
+	rows, _ := s.db.conn.Query(s.ctx, notes_query, project_id, sample_id)
+	notes, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ProjectSampleNote, error) {
+		var note ProjectSampleNote
+		err := row.Scan(
+			&note.Id,
+			&note.Sample,
+			&note.Project,
+			&note.Creator,
+			&note.Timestamp,
+			&note.Content,
+		)
+		return note, err
+	})
+	if err != nil {
+		s.logger.With("error", err, "query", notes_query).Error("could not get project sampel notes")
+		return nil, err
+	}
+
+	return notes, nil
+}
+
+func (s *ProjectService) get_project_sample_resources_sample_data(sample_id uuid.UUID) ([]SampleData, error) {
+	data_query := "SELECT _id, _sample, _schema, _creator, timestamp FROM sample_data_ WHERE _sample=$1"
+	rows, _ := s.db.conn.Query(s.ctx, data_query, sample_id)
+	data, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleData, error) {
+		var data SampleData
+		var timestamp time.Time
+		err := row.Scan(&data.Id, &data.Sample, &data.Schema, &data.Creator, &timestamp)
+
+		data.Timestamp = IsoTimestamp(timestamp.UTC().Format(time.RFC3339))
+		return data, err
+	})
+	if err != nil {
+		s.logger.With("error", err, "query", data_query).Error("could not get sample data")
+		return nil, err
+	}
+
+	return data, nil
 }
