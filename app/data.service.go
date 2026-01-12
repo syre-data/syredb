@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ type DataService struct {
 	logger       *slog.Logger
 	db           *DbConnection
 	app_state    *AppState
+	fs_service   *FsService
 	user_service *UserService
 }
 
@@ -42,9 +44,16 @@ func NewDataService(
 	logger *slog.Logger,
 	db *DbConnection,
 	app_state *AppState,
+	fs_service *FsService,
 	user_service *UserService,
 ) *DataService {
-	return &DataService{logger: logger, db: db, app_state: app_state, user_service: user_service}
+	return &DataService{
+		logger:       logger,
+		db:           db,
+		app_state:    app_state,
+		fs_service:   fs_service,
+		user_service: user_service,
+	}
 }
 
 func (s *DataService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
@@ -64,17 +73,17 @@ type ColumnSchema struct {
 }
 
 const (
-	STORAGE_INTERNAL = Storage("internal")
-	STORAGE_FILE     = Storage("file")
+	DATA_STORAGE_INTERNAL = DataStorage("internal")
+	DATA_STORAGE_FILE     = DataStorage("file")
 )
 
-type Storage string
+type DataStorage string
 
 type DataSchema struct {
 	Id          uuid.UUID
 	Creator     uuid.UUID
 	Schema      []ColumnSchema
-	Storage     Storage
+	Storage     DataStorage
 	Label       string
 	Description string
 }
@@ -179,7 +188,7 @@ func is_valid_table_column_label(label string) bool {
 
 type DataSchemaCreate struct {
 	Schema      []ColumnSchema
-	Storage     Storage
+	Storage     DataStorage
 	Label       string
 	Description string
 }
@@ -206,12 +215,12 @@ func (s *DataService) DataSchemaCreate(data_schema DataSchemaCreate) (Ok, error)
 	}
 
 	switch data_schema.Storage {
-	case STORAGE_INTERNAL:
+	case DATA_STORAGE_INTERNAL:
 		err = s.data_schema_storage_table_internal_create(schema_id, data_schema.Schema)
 		if err != nil {
 			return Ok{}, err
 		}
-	case STORAGE_FILE:
+	case DATA_STORAGE_FILE:
 		err = s.data_schema_storage_table_file_create(schema_id)
 		if err != nil {
 			return Ok{}, err
@@ -547,4 +556,231 @@ func parse_data_file_to_schema_csv(file *os.File, schema DataSchema) ([]ColumnDa
 	}
 
 	return data, nil
+}
+
+// StoredData represents teh actual data stored for a sample data.
+// Data is []ColumnData if Storage is `internal`.
+// Data is a string if Storage is `file`.
+type StoredData struct {
+	Storage DataStorage
+	Data    any
+}
+
+// GetSampleDataStored gets the actual data associated with a sample data entry.
+func (s *DataService) GetSampleDataStoredById(sample_data_id uuid.UUID) (StoredData, error) {
+	var schema_id uuid.UUID
+	err := s.db.conn.QueryRow(
+		s.ctx,
+		"SELECT _schema FROM sample_data_ WHERE _id=$1",
+		sample_data_id,
+	).Scan(&schema_id)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"sample data", sample_data_id,
+		).Error("could not get sample data schema")
+
+		return StoredData{}, err
+	}
+
+	var data_storage DataStorage
+	var data_schema []ColumnSchema
+	err = s.db.conn.QueryRow(
+		s.ctx,
+		"SELECT _storage, _schema FROM data_schema_ WHERE _id=$1",
+		schema_id,
+	).Scan(&data_storage, &data_schema)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data schema", schema_id,
+		).Error("could not get data schema")
+
+		return StoredData{}, err
+	}
+
+	var data any
+	switch data_storage {
+	case DATA_STORAGE_FILE:
+		data, err = s.get_sample_data_stored_by_id_storage_file_data(sample_data_id, schema_id)
+		if err != nil {
+			return StoredData{}, err
+		}
+	case DATA_STORAGE_INTERNAL:
+		data, err = s.get_sample_data_stored_by_id_storage_internal_data(sample_data_id, schema_id, data_schema)
+		if err != nil {
+			return StoredData{}, err
+		}
+	}
+
+	stored_data := StoredData{
+		Storage: data_storage,
+		Data:    data,
+	}
+	return stored_data, nil
+}
+
+// get_sample_data_stored_by_id_storage_file_data gets the file path of a sample data
+// with file storage
+func (s *DataService) get_sample_data_stored_by_id_storage_file_data(
+	sample_data_id uuid.UUID,
+	data_schema_id uuid.UUID,
+) (string, error) {
+	var file_path string
+	data_query := fmt.Sprintf(
+		"SELECT %s FROM %s WHERE _sample_data=$1",
+		SAMPLE_DATA_STORAGE_TABLE_FILE_COL_LABEL,
+		sample_data_table_name_from_schema_id(data_schema_id),
+	)
+	err := s.db.conn.QueryRow(
+		s.ctx,
+		data_query,
+		sample_data_id,
+	).Scan(file_path)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"query", data_query,
+			"sample data", sample_data_id,
+		).Error("could not get stored data")
+		return "", err
+	}
+
+	return file_path, nil
+}
+
+func (s *DataService) get_sample_data_stored_by_id_storage_internal_data(
+	sample_data_id uuid.UUID,
+	data_schema_id uuid.UUID,
+	data_schema []ColumnSchema,
+) ([]ColumnData, error) {
+	column_labels := make([]string, len(data_schema))
+	for idx, col := range data_schema {
+		column_labels[idx] = col.Label
+	}
+
+	data_query := fmt.Sprintf(
+		"SELECT %s FROM %s WHERE _sample_data=$1",
+		strings.Join(column_labels, ", "),
+		sample_data_table_name_from_schema_id(data_schema_id),
+	)
+	rows, err := s.db.conn.Query(
+		s.ctx,
+		data_query,
+		sample_data_id,
+	)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"query", data_query,
+			"sample data", sample_data_id,
+		).Error("could not get stored data")
+		return nil, err
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		s.logger.With(
+			"query", data_query,
+			"sample data", sample_data_id,
+		).Error("sample data not found")
+		return nil, pgx.ErrNoRows
+	}
+
+	field_descs := rows.FieldDescriptions()
+	if len(data_schema) != len(field_descs) {
+		s.logger.With(
+			"data schema", data_schema,
+			"field descriptions", field_descs,
+		).Error("stored data incompatible with data schema")
+		panic("stored data incompatible with data schema")
+	}
+
+	col_data := make([]any, len(data_schema))
+	scan_target := make([]any, len(data_schema))
+	for idx := range col_data {
+		scan_target[idx] = &col_data[idx]
+	}
+	err = rows.Scan(scan_target...)
+	if err != nil {
+		s.logger.With("error", err).Error("could not collect sample data")
+		return nil, err
+	}
+
+	col_names := make([]string, len(field_descs))
+	for idx, field := range field_descs {
+		col_names[idx] = field.Name
+	}
+
+	data := make([]ColumnData, len(data_schema))
+	for idx, col := range data_schema {
+		col_data_idx := slices.Index(col_names, col.Label)
+		if col_data_idx < 0 {
+			s.logger.With(
+				"data schema", data_schema,
+				"field description", field_descs,
+			).Error("field description incompatible with data schema")
+			panic("field description incompatible with data schema")
+		}
+		data[idx].Label = col.Label
+		data[idx].DType = col.DType
+		data[idx].Data = col_data[col_data_idx].([]any)
+	}
+
+	return data, nil
+}
+
+// SaveSampleDataSingle saves a single data to the user's disk.
+// Returns the path the user selected.
+func (s *DataService) SaveSampleDataSingle(sample_data_id uuid.UUID) (string, error) {
+	stored_data, err := s.GetSampleDataStoredById(sample_data_id)
+	if err != nil {
+		return "", err
+	}
+
+	switch stored_data.Storage {
+	case DATA_STORAGE_FILE:
+		return s.save_sample_data_single_data_storage_file(stored_data.Data.(string))
+	case DATA_STORAGE_INTERNAL:
+		return s.save_sample_data_single_data_storage_internal(stored_data.Data.([]ColumnData))
+	default:
+		panic(fmt.Sprintf("unexpected app.DataStorage: %#v", stored_data.Storage))
+	}
+}
+
+func (s *DataService) save_sample_data_single_data_storage_internal(data []ColumnData) (string, error) {
+	records := make([][]string, len(data[0].Data))
+	for row_idx := range records {
+		row := make([]string, len(data))
+		for col_idx := range row {
+			entry := data[col_idx].Data[row_idx]
+			row[col_idx] = fmt.Sprintf("%v", entry)
+		}
+		records[row_idx] = row
+	}
+
+	var data_bytes strings.Builder
+	csv_builder := csv.NewWriter(&data_bytes)
+	err := csv_builder.WriteAll(records)
+	if err != nil {
+		s.logger.With("error", err).Error("could not write data to csv")
+		return "", err
+	}
+
+	return s.fs_service.SaveFileSingle([]byte(data_bytes.String()), "Save data", []FileFilter{})
+}
+
+func (s *DataService) save_sample_data_single_data_storage_file(file_path string) (string, error) {
+	data, err := os.ReadFile(file_path)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"file path", file_path,
+		).Error("could not read file data")
+
+		return "", err
+	}
+
+	s.logger.Debug("", "data", data)
+	return "", nil
 }

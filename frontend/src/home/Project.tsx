@@ -5,8 +5,10 @@ import icon from "../icon";
 import { ErrorBoundary, FallbackProps } from "react-error-boundary";
 import {
     ActionDispatch,
+    ChangeEvent,
     createContext,
     FormEvent,
+    InputEvent,
     MouseEvent,
     Suspense,
     useContext,
@@ -115,11 +117,11 @@ function Project({ id }: ProjectProps) {
                 user_permission: project_resources.ProjectUserPermission,
             }}
         >
-            <div>
+            <div className="h-full flex flex-col">
                 <ProjectHeader project={project_resources.Project} />
                 <ResourceBrowser
                     project_resources={project_resources}
-                    className="pt-2"
+                    className="grow pt-2"
                 />
             </div>
         </CommonProjectDataCtx>
@@ -134,7 +136,9 @@ function ProjectHeader({ project, className }: ProjectHeaderProps) {
     const project_info = useContext(CommonProjectDataCtx);
 
     return (
-        <div className={`flex gap-2 pt-1 pb-2 px-4 border-b ${className}`}>
+        <div
+            className={`flex gap-2 pt-1 pb-2 px-4 border-b ${className ?? ""}`}
+        >
             <div className="flex gap-2 grow">
                 <h2 className={`font-bold`}>{project.Label}</h2>
                 {common.is_admin_or_owner(project_info.user_permission) ? (
@@ -218,8 +222,8 @@ function ResourceBrowser({
     }
 
     return (
-        <div className={className}>
-            <div>
+        <div className={`flex flex-col ${className ?? ""}`}>
+            <div className="pb-2">
                 <form onSubmit={query_resources} className="flex gap-2 px-4">
                     <div className="flex gap-2">
                         <div>
@@ -251,11 +255,15 @@ function ResourceBrowser({
                             <ResourceBrowserSamples
                                 project_resources={project_resources}
                                 samples={queryResults}
+                                className="grow"
                             />
                         );
                     case PrimaryResourceType.Data:
                         return (
-                            <ResourceBrowserSampleData data={queryResults} />
+                            <ResourceBrowserSampleData
+                                data={queryResults}
+                                className="grow"
+                            />
                         );
                     default:
                         throw new Error("invalid primary resource type");
@@ -348,10 +356,12 @@ const SampleBrowserStateDispatchCtx = createContext<
 interface ResourceBrowserSamplesProps {
     project_resources: app.ProjectResources;
     samples: UUID[];
+    className?: string;
 }
 function ResourceBrowserSamples({
     project_resources,
     samples,
+    className,
 }: ResourceBrowserSamplesProps) {
     const [state, stateDispatch] = useImmerReducer(
         sample_browser_state_reducer,
@@ -361,11 +371,11 @@ function ResourceBrowserSamples({
     return (
         <SampleBrowserStateCtx value={state}>
             <SampleBrowserStateDispatchCtx value={stateDispatch}>
-                <div className="relative">
-                    <ResourceBrowserSamplesHeader />
-                    <div>
+                <div className={`flex ${className ?? ""}`}>
+                    <div className="grow">
+                        <ResourceBrowserSamplesHeader />
                         <ol
-                            className="grid"
+                            className="grow grid"
                             style={{
                                 gridTemplateColumns:
                                     state.grid_template_columns(),
@@ -379,23 +389,23 @@ function ResourceBrowserSamples({
                                 />
                             ))}
                         </ol>
-                        {state.active_sample ? (
-                            <SampleDetail
-                                sample={
-                                    state.samples.find(
-                                        (sample) =>
-                                            sample.Id === state.active_sample
-                                    )!
-                                }
-                                onClose={() =>
-                                    stateDispatch({
-                                        type: "clear_active_sample",
-                                    })
-                                }
-                                className="absolute top-0 right-0 h-full border-l"
-                            />
-                        ) : null}
                     </div>
+                    {state.active_sample ? (
+                        <SampleDetail
+                            sample={
+                                state.samples.find(
+                                    (sample) =>
+                                        sample.Id === state.active_sample
+                                )!
+                            }
+                            onClose={() =>
+                                stateDispatch({
+                                    type: "clear_active_sample",
+                                })
+                            }
+                            className="h-full border-l min-w-[20%]"
+                        />
+                    ) : null}
                 </div>
             </SampleBrowserStateDispatchCtx>
         </SampleBrowserStateCtx>
@@ -405,13 +415,17 @@ function ResourceBrowserSamples({
 const SAMPLE_BROWSER_LABEL_COL = 1;
 const SAMPLE_BROWSER_PROPERTIES_COL_OFFSET = 1;
 
-interface ResourceBrowserSamplesHeaderProps {}
-function ResourceBrowserSamplesHeader({}: ResourceBrowserSamplesHeaderProps) {
+interface ResourceBrowserSamplesHeaderProps {
+    className?: string;
+}
+function ResourceBrowserSamplesHeader({
+    className,
+}: ResourceBrowserSamplesHeaderProps) {
     const state = useContext(SampleBrowserStateCtx);
 
     return (
         <div
-            className="grid"
+            className={`grid ${className ?? ""}`}
             style={{
                 gridTemplateColumns: state.grid_template_columns(),
             }}
@@ -554,7 +568,14 @@ interface SampleDetailProps {
 function SampleDetail({ sample, onClose, className }: SampleDetailProps) {
     return (
         <ErrorBoundary FallbackComponent={SampleDetailError}>
-            <Suspense fallback={<SampleDetailLoading />}>
+            <Suspense
+                fallback={
+                    <SampleDetailLoading
+                        sample={sample}
+                        className={className}
+                    />
+                }
+            >
                 <SampleDetailInner
                     sample={sample}
                     onClose={onClose}
@@ -574,8 +595,17 @@ function SampleDetailError({ error, resetErrorBoundary }: FallbackProps) {
     );
 }
 
-function SampleDetailLoading() {
-    return <div>Loading</div>;
+interface SampleDetailLoadingProps {
+    sample: app.ProjectSample;
+    className?: string;
+}
+function SampleDetailLoading({ sample, className }: SampleDetailLoadingProps) {
+    return (
+        <div className={className ?? ""}>
+            <h3 className="grow text-xl font-bold">{sample.Label}</h3>
+            <div className="text-center">Loading</div>
+        </div>
+    );
 }
 
 interface SampleDetailInnerProps {
@@ -601,6 +631,7 @@ function SampleDetailInner({
     const [expandedProperties, setExpandedProperties] = useState(true);
     const [expandedData, setExpandedData] = useState(false);
     const [expandedNotes, setExpandedNotes] = useState(false);
+    const [dataSelected, setDataSelected] = useState<UUID[]>([]);
 
     function close(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
@@ -634,9 +665,30 @@ function SampleDetailInner({
         setExpandedNotes(!expandedNotes);
     }
 
+    function set_selected_data(data: UUID, selected: boolean) {
+        if (selected) {
+            setDataSelected([...dataSelected, data]);
+        } else {
+            const selected = dataSelected.filter(
+                (selected) => selected !== data
+            );
+            setDataSelected(selected);
+        }
+    }
+
+    function download_selected_data(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== common.MouseButton.Primary) {
+            return;
+        }
+        e.stopPropagation();
+
+        console.debug("download", dataSelected);
+        // TODO
+    }
+
     return (
-        <div className={className}>
-            <div className="flex gap-2">
+        <div className={`bg-white dark:bg-black ${className ?? ""}`}>
+            <div className="flex gap-2 px-2">
                 <h3 className="grow text-xl font-bold">{sample.Label}</h3>
                 <div>
                     <button
@@ -669,11 +721,16 @@ function SampleDetailInner({
                         className={classNames({
                             "overflow-hidden": true,
                             "h-0": !expandedProperties,
+                            "pb-2": expandedProperties,
                         })}
                     >
-                        <SampleDetailProperties
-                            properties={sample.Properties}
-                        />
+                        {sample.Properties.length > 0 ? (
+                            <SampleDetailProperties
+                                properties={sample.Properties}
+                            />
+                        ) : (
+                            <div className="px-2">(no properties)</div>
+                        )}
                     </div>
                 </div>
                 <div className="border-b">
@@ -691,11 +748,25 @@ function SampleDetailInner({
                             <icon.CaretDown />
                         </button>
                         <h4>Data ({sample_resources.Data.length})</h4>
+                        <div
+                            className={classNames({
+                                hidden: dataSelected.length === 0,
+                            })}
+                        >
+                            <button
+                                type="button"
+                                className="btn-cmd"
+                                onMouseDown={download_selected_data}
+                            >
+                                <icon.Download />
+                            </button>
+                        </div>
                     </div>
                     <div
                         className={classNames({
                             "overflow-hidden": true,
                             "h-0": !expandedData,
+                            "pb-2": expandedData,
                         })}
                     >
                         {sample_resources.Data.length > 0 ? (
@@ -703,9 +774,10 @@ function SampleDetailInner({
                                 data={sample_resources.Data}
                                 data_schemas={sample_resources.DataSchemas}
                                 users={sample_resources.Users}
+                                onDataSelectionChange={set_selected_data}
                             />
                         ) : (
-                            "No sample data"
+                            <div className="px-2">(no sample data)</div>
                         )}
                     </div>
                 </div>
@@ -729,6 +801,7 @@ function SampleDetailInner({
                         className={classNames({
                             "overflow-hidden": true,
                             "h-0": !expandedNotes,
+                            "pb-2": expandedNotes,
                         })}
                     >
                         {sample_resources.ProjectNotes.length > 0 ? (
@@ -737,7 +810,7 @@ function SampleDetailInner({
                                 users={sample_resources.Users}
                             />
                         ) : (
-                            "No notes"
+                            <div className="px-2">(no notes)</div>
                         )}
                     </div>
                 </div>
@@ -750,9 +823,19 @@ interface SampleDetailPropertiesProps {
     properties: app.Property[];
 }
 function SampleDetailProperties({ properties }: SampleDetailPropertiesProps) {
+    const properties_sorted = properties.toSorted((a, b) => {
+        if (a.Key < b.Key) {
+            return -1;
+        } else if (a.Key > b.Key) {
+            return 0;
+        } else {
+            console.error(`duplicate property key ${a.Key}`);
+            return 0;
+        }
+    });
     return (
-        <ol className="grid grid-cols-[2rem_auto_auto]">
-            {properties.map((property, index) => {
+        <ol className="grid grid-cols-[auto_auto]">
+            {properties_sorted.map((property, index) => {
                 return (
                     <li
                         key={property.Key}
@@ -761,9 +844,8 @@ function SampleDetailProperties({ properties }: SampleDetailPropertiesProps) {
                             gridRow: index,
                         }}
                     >
-                        <div className="col-1">{index + 1}.</div>
-                        <div className="col-2">{property.Key}</div>
-                        <div className="col-3">
+                        <div className="col-1 pl-2">{property.Key}</div>
+                        <div className="col-2 pr-2">
                             <SamplePropertyValue
                                 type={property.Type}
                                 value={property.Value}
@@ -780,11 +862,13 @@ interface SampleDetailDataProps {
     data: app.SampleData[];
     data_schemas: app.DataSchema[];
     users: app.User[];
+    onDataSelectionChange: (data: UUID, selected: boolean) => void;
 }
 function SampleDetailData({
     data,
     data_schemas,
     users,
+    onDataSelectionChange,
 }: SampleDetailDataProps) {
     return (
         <ol>
@@ -810,6 +894,7 @@ function SampleDetailData({
                         data={datum}
                         data_schema={data_schemas[data_schema_idx]}
                         creator={users[creator_idx]}
+                        onSelectionChange={onDataSelectionChange}
                     />
                 );
             })}
@@ -822,21 +907,65 @@ interface SampleDetailDataListItemProps {
     data: app.SampleData;
     data_schema: app.DataSchema;
     creator: app.User;
+    onSelectionChange: (data: UUID, selected: boolean) => void;
 }
 function SampleDetailDataListItem({
     data,
     data_schema,
     creator,
+    onSelectionChange,
 }: SampleDetailDataListItemProps) {
     const app_state = useContext(appStateCtx.Context);
+    const timestamp = new Date(data.Timestamp);
+
+    function on_selected(e: ChangeEvent<HTMLInputElement>) {
+        const target = e.target as HTMLInputElement;
+        onSelectionChange(data.Id, target.checked);
+    }
+
+    async function download(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== common.MouseButton.Primary) {
+            return;
+        }
+
+        await app.DataService.SaveSampleDataSingle(data.Id)
+            .then((path) => console.info(`data ${data.Id} saved to ${path}`))
+            .catch((err) => {
+                if (err.message === "CANCELLED_BY_USER") {
+                    return;
+                }
+
+                console.error(err);
+            });
+    }
 
     return (
-        <li>
-            <div>{data_schema.Label}</div>
-            <div>{data.Timestamp}</div>
-            <div>
-                {data.Creator === app_state.user.Id ? "you" : creator.Name}
+        <li className="px-2 flex gap-2">
+            <div className="flex gap-2">
+                <div>
+                    <label>
+                        <span className="hidden">Select data</span>
+                        <input
+                            type="checkbox"
+                            id={`data[${data.Id}][select]`}
+                            name={`data[${data.Id}][select]`}
+                            onChange={on_selected}
+                        />
+                    </label>
+                </div>
+                <div>
+                    <button
+                        type="button"
+                        onMouseDown={download}
+                        className="btn-cmd"
+                    >
+                        <icon.Download />
+                    </button>
+                </div>
             </div>
+            <div>{data_schema.Label}</div>
+            <div>{timestamp.toLocaleString()}</div>
+            <div>({creator.Name})</div>
         </li>
     );
 }
@@ -896,8 +1025,12 @@ function SampleDetailProjectNoteListItem({
 
 interface ResourceBrowserSampleDataProps {
     data: UUID[];
+    className?: string;
 }
-function ResourceBrowserSampleData({ data }: ResourceBrowserSampleDataProps) {
+function ResourceBrowserSampleData({
+    data,
+    className,
+}: ResourceBrowserSampleDataProps) {
     console.debug(data);
     return <div>data results</div>;
 }

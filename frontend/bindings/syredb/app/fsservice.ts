@@ -12,3 +12,12 @@ import * as $models from "./models.js";
 export function OpenFileDialogSingle(title: string, filters: $models.FileFilter[]): $CancellablePromise<string> {
     return $Call.ByID(3186687502, title, filters);
 }
+
+/**
+ * SaveFileSingle prompts a user for a save path for the given data.
+ * If a file already exists at the chosen path, they are prompted to confirm they wish to overwrite the existing data.
+ * Returns the path the user selected.
+ */
+export function SaveFileSingle(data: string, title: string, filters: $models.FileFilter[]): $CancellablePromise<string> {
+    return $Call.ByID(53312859, data, title, filters);
+}

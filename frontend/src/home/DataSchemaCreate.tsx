@@ -5,12 +5,12 @@ import icon from "../icon";
 import * as app from "../../bindings/syredb/app";
 import { useQueryClient } from "@tanstack/react-query";
 
-function storage_string_to_variant(value: string): app.Storage | undefined {
+function storage_string_to_variant(value: string): app.DataStorage | undefined {
     switch (value) {
         case "internal":
-            return app.Storage.STORAGE_INTERNAL;
+            return app.DataStorage.DATA_STORAGE_INTERNAL;
         case "file":
-            return app.Storage.STORAGE_FILE;
+            return app.DataStorage.DATA_STORAGE_FILE;
         default:
             return undefined;
     }
@@ -30,7 +30,7 @@ interface ColumnSchema {
 }
 
 export default function () {
-    const DEFAULT_STORAGE = app.Storage.STORAGE_INTERNAL;
+    const DEFAULT_STORAGE = app.DataStorage.DATA_STORAGE_INTERNAL;
     const INVALID_LABEL_ERROR =
         "label can only contain letters, numbers, and underscores (_)";
 
@@ -266,13 +266,18 @@ export default function () {
                                     className="input-basic invalid:ring-red-600"
                                 >
                                     <option
-                                        value={app.Storage.STORAGE_INTERNAL}
+                                        value={
+                                            app.DataStorage
+                                                .DATA_STORAGE_INTERNAL
+                                        }
                                         title="Store data as a table in the database"
                                     >
                                         Internal
                                     </option>
                                     <option
-                                        value={app.Storage.STORAGE_FILE}
+                                        value={
+                                            app.DataStorage.DATA_STORAGE_FILE
+                                        }
                                         title="Store data as a file"
                                     >
                                         File

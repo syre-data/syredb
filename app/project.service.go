@@ -18,8 +18,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-type IsoTimestamp string
-
 const (
 	PROJECT_USER_PERMISSION_READ       = ProjectUserPermission("read")
 	PROJECT_USER_PERMISSION_READ_WRITE = ProjectUserPermission("read_write")
@@ -191,7 +189,7 @@ type SampleData struct {
 	Sample    uuid.UUID
 	Schema    uuid.UUID
 	Creator   uuid.UUID
-	Timestamp IsoTimestamp
+	Timestamp time.Time
 }
 
 type ProjectSampleGroup struct {
@@ -342,9 +340,7 @@ func (s *ProjectService) GetProjectResources(project_id uuid.UUID) (ProjectResou
 	sample_data_rows, _ := s.db.conn.Query(s.ctx, sample_data_query)
 	project_resources.SampleData, err = pgx.CollectRows(sample_data_rows, func(row pgx.CollectableRow) (SampleData, error) {
 		var sample_data SampleData
-		var timestamp time.Time
-		err := row.Scan(&sample_data.Id, &sample_data.Sample, &sample_data.Schema, &sample_data.Creator, &timestamp)
-		sample_data.Timestamp = IsoTimestamp(timestamp.UTC().Format(time.RFC3339))
+		err := row.Scan(&sample_data.Id, &sample_data.Sample, &sample_data.Schema, &sample_data.Creator, &sample_data.Timestamp)
 		return sample_data, err
 	})
 	if err != nil {
@@ -412,7 +408,7 @@ func (s *ProjectService) GetProjectWithUserPermission(project_id uuid.UUID) (Pro
 type ProjectSampleDataCreate struct {
 	Schema     uuid.UUID
 	FilePath   string
-	Timestamp  IsoTimestamp
+	Timestamp  time.Time
 	Properties []ProjectSampleDataPropertyCreate
 }
 
@@ -425,12 +421,12 @@ type ProjectSampleDataPropertyCreate struct {
 type sampleDataParsed struct {
 	SampleIndex int
 	DataIndex   int
-	Timestamp   IsoTimestamp
+	Timestamp   time.Time
 	Payload     any
 }
 
 type ProjectSampleNoteCreate struct {
-	Timestamp IsoTimestamp
+	Timestamp time.Time
 	Content   string
 }
 
@@ -611,9 +607,9 @@ func (s *ProjectService) create_project_samples_parse_sample_data_to_schema(
 
 			var payload any
 			switch data_schema.Storage {
-			case STORAGE_INTERNAL:
+			case DATA_STORAGE_INTERNAL:
 				payload = data_parsed
-			case STORAGE_FILE:
+			case DATA_STORAGE_FILE:
 				payload = data.FilePath
 			default:
 				s.logger.With("data_schema", data.Schema, "storage", data_schema.Storage).Error("invalid storage type")
@@ -934,14 +930,14 @@ func (s *ProjectService) create_project_samples_store_sample_data(
 
 		var err error
 		switch data_schema.Storage {
-		case STORAGE_INTERNAL:
+		case DATA_STORAGE_INTERNAL:
 			err = s.create_project_samples_store_sample_data_internal(
 				tx,
 				data_schema,
 				parsed_data,
 				sample_data_ids,
 			)
-		case STORAGE_FILE:
+		case DATA_STORAGE_FILE:
 			err = s.create_project_samples_store_sample_data_file(
 				tx,
 				data_schema,
@@ -1091,6 +1087,9 @@ func (s *ProjectService) create_project_samples_create_sample_data_properties(
 		for _, data := range sample.Data {
 			properties_count += len(data.Properties)
 		}
+	}
+	if properties_count == 0 {
+		return nil
 	}
 
 	var query strings.Builder
@@ -1399,10 +1398,7 @@ func (s *ProjectService) get_project_sample_resources_sample_data(sample_id uuid
 	rows, _ := s.db.conn.Query(s.ctx, data_query, sample_id)
 	data, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleData, error) {
 		var data SampleData
-		var timestamp time.Time
-		err := row.Scan(&data.Id, &data.Sample, &data.Schema, &data.Creator, &timestamp)
-
-		data.Timestamp = IsoTimestamp(timestamp.UTC().Format(time.RFC3339))
+		err := row.Scan(&data.Id, &data.Sample, &data.Schema, &data.Creator, &data.Timestamp)
 		return data, err
 	})
 	if err != nil {

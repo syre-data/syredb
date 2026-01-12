@@ -23,6 +23,7 @@ export {
     ColumnSchema,
     DataSchema,
     DataSchemaCreate,
+    DataStorage,
     DataType,
     FileFilter,
     Ok,
@@ -44,13 +45,9 @@ export {
     PropertyType,
     SampleData,
     SampleGroupRelation,
-    Storage,
+    StoredData,
     User,
     UserCreate,
     UserCredentials,
     UserRole
-} from "./models.js";
-
-export type {
-    IsoTimestamp
 } from "./models.js";

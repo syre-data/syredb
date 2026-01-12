@@ -124,7 +124,7 @@ export class DataSchema {
     "Id": uuid$0.UUID;
     "Creator": uuid$0.UUID;
     "Schema": ColumnSchema[];
-    "Storage": Storage;
+    "Storage": DataStorage;
     "Label": string;
     "Description": string;
 
@@ -140,7 +140,7 @@ export class DataSchema {
             this["Schema"] = [];
         }
         if (!("Storage" in $$source)) {
-            this["Storage"] = Storage.$zero;
+            this["Storage"] = DataStorage.$zero;
         }
         if (!("Label" in $$source)) {
             this["Label"] = "";
@@ -167,7 +167,7 @@ export class DataSchema {
 
 export class DataSchemaCreate {
     "Schema": ColumnSchema[];
-    "Storage": Storage;
+    "Storage": DataStorage;
     "Label": string;
     "Description": string;
 
@@ -177,7 +177,7 @@ export class DataSchemaCreate {
             this["Schema"] = [];
         }
         if (!("Storage" in $$source)) {
-            this["Storage"] = Storage.$zero;
+            this["Storage"] = DataStorage.$zero;
         }
         if (!("Label" in $$source)) {
             this["Label"] = "";
@@ -201,6 +201,16 @@ export class DataSchemaCreate {
         return new DataSchemaCreate($$parsedSource as Partial<DataSchemaCreate>);
     }
 }
+
+export enum DataStorage {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    DATA_STORAGE_INTERNAL = "internal",
+    DATA_STORAGE_FILE = "file",
+};
 
 export enum DataType {
     /**
@@ -251,8 +261,6 @@ export class FileFilter {
         return new FileFilter($$parsedSource as Partial<FileFilter>);
     }
 }
-
-export type IsoTimestamp = string;
 
 export class Ok {
 
@@ -531,7 +539,7 @@ export class ProjectSampleCreate {
 export class ProjectSampleDataCreate {
     "Schema": uuid$0.UUID;
     "FilePath": string;
-    "Timestamp": IsoTimestamp;
+    "Timestamp": time$0.Time;
     "Properties": ProjectSampleDataPropertyCreate[];
 
     /** Creates a new ProjectSampleDataCreate instance. */
@@ -543,7 +551,7 @@ export class ProjectSampleDataCreate {
             this["FilePath"] = "";
         }
         if (!("Timestamp" in $$source)) {
-            this["Timestamp"] = "";
+            this["Timestamp"] = null;
         }
         if (!("Properties" in $$source)) {
             this["Properties"] = [];
@@ -689,13 +697,13 @@ export class ProjectSampleNote {
 }
 
 export class ProjectSampleNoteCreate {
-    "Timestamp": IsoTimestamp;
+    "Timestamp": time$0.Time;
     "Content": string;
 
     /** Creates a new ProjectSampleNoteCreate instance. */
     constructor($$source: Partial<ProjectSampleNoteCreate> = {}) {
         if (!("Timestamp" in $$source)) {
-            this["Timestamp"] = "";
+            this["Timestamp"] = null;
         }
         if (!("Content" in $$source)) {
             this["Content"] = "";
@@ -902,7 +910,7 @@ export class SampleData {
     "Sample": uuid$0.UUID;
     "Schema": uuid$0.UUID;
     "Creator": uuid$0.UUID;
-    "Timestamp": IsoTimestamp;
+    "Timestamp": time$0.Time;
 
     /** Creates a new SampleData instance. */
     constructor($$source: Partial<SampleData> = {}) {
@@ -919,7 +927,7 @@ export class SampleData {
             this["Creator"] = "";
         }
         if (!("Timestamp" in $$source)) {
-            this["Timestamp"] = "";
+            this["Timestamp"] = null;
         }
 
         Object.assign(this, $$source);
@@ -959,15 +967,35 @@ export class SampleGroupRelation {
     }
 }
 
-export enum Storage {
-    /**
-     * The Go zero value for the underlying type of the enum.
-     */
-    $zero = "",
+/**
+ * StoredData represents teh actual data stored for a sample data.
+ * Data is []ColumnData if Storage is `internal`.
+ * Data is a string if Storage is `file`.
+ */
+export class StoredData {
+    "Storage": DataStorage;
+    "Data": any;
 
-    STORAGE_INTERNAL = "internal",
-    STORAGE_FILE = "file",
-};
+    /** Creates a new StoredData instance. */
+    constructor($$source: Partial<StoredData> = {}) {
+        if (!("Storage" in $$source)) {
+            this["Storage"] = DataStorage.$zero;
+        }
+        if (!("Data" in $$source)) {
+            this["Data"] = null;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new StoredData instance from a string or object.
+     */
+    static createFrom($$source: any = {}): StoredData {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new StoredData($$parsedSource as Partial<StoredData>);
+    }
+}
 
 export class User {
     "Id": uuid$0.UUID;

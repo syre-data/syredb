@@ -1,4 +1,4 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useParams, useNavigate, data } from "react-router";
 import * as app from "../../bindings/syredb/app";
 import * as common from "../common";
@@ -379,6 +379,7 @@ interface ProjectSamplesCreateProps {
     project_id: string;
 }
 function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
+    const queryClient = useQueryClient();
     const navigate = useNavigate();
     const { data: project } = useSuspenseQuery({
         queryKey: ["project", project_id],
@@ -617,6 +618,10 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
         const samples = [...sample_data_filtered.map(([_, sample]) => sample)];
         await app.ProjectService.CreateProjectSamples(project_id, samples)
             .then(() => {
+                // FIXME: when navigated back to previous page as project home, new samples are not included
+                queryClient.invalidateQueries({
+                    queryKey: ["project_resources", project_id],
+                });
                 navigate(-1);
             })
             .catch((err) => {

@@ -31,15 +31,33 @@ export function GetDataSchemasById(schema_ids: uuid$0.UUID[]): $CancellablePromi
     });
 }
 
+/**
+ * GetSampleDataStored gets the actual data associated with a sample data entry.
+ */
+export function GetSampleDataStoredById(sample_data_id: uuid$0.UUID): $CancellablePromise<$models.StoredData> {
+    return $Call.ByID(4081438280, sample_data_id).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
 export function ParseDataFileToSchema(file_path: string, schema_id: uuid$0.UUID): $CancellablePromise<$models.ColumnData[]> {
     return $Call.ByID(3004645630, file_path, schema_id).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType5($result);
     });
+}
+
+/**
+ * SaveSampleDataSingle saves a single data to the user's disk.
+ * Returns the path the user selected.
+ */
+export function SaveSampleDataSingle(sample_data_id: uuid$0.UUID): $CancellablePromise<string> {
+    return $Call.ByID(2970033972, sample_data_id);
 }
 
 // Private type creation functions
 const $$createType0 = $models.Ok.createFrom;
 const $$createType1 = $models.DataSchema.createFrom;
 const $$createType2 = $Create.Array($$createType1);
-const $$createType3 = $models.ColumnData.createFrom;
-const $$createType4 = $Create.Array($$createType3);
+const $$createType3 = $models.StoredData.createFrom;
+const $$createType4 = $models.ColumnData.createFrom;
+const $$createType5 = $Create.Array($$createType4);
