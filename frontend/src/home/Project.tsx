@@ -633,6 +633,13 @@ function SampleDetailInner({
     const [expandedNotes, setExpandedNotes] = useState(false);
     const [dataSelected, setDataSelected] = useState<UUID[]>([]);
 
+    useEffect(() => {
+        setExpandedProperties(true);
+        setExpandedData(false);
+        setExpandedNotes(false);
+        setDataSelected([]);
+    }, [sample.Id]);
+
     function close(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
             return;
@@ -676,14 +683,33 @@ function SampleDetailInner({
         }
     }
 
-    function download_selected_data(e: MouseEvent<HTMLButtonElement>) {
+    async function download_selected_data(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== common.MouseButton.Primary) {
             return;
         }
         e.stopPropagation();
 
-        console.debug("download", dataSelected);
-        // TODO
+        if (dataSelected.length === 0) {
+            console.error("attempted to download 0 data resources");
+        } else if (dataSelected.length === 1) {
+            await app.DataService.SaveSampleDataSingle(dataSelected[0])
+                .then((path) => {
+                    console.info(`data ${dataSelected[0]} saved to ${path}`);
+                    setDataSelected([]);
+                })
+                .catch((err) => {
+                    console.error(err);
+                });
+        } else {
+            await app.DataService.SaveSampleDataMultiple(dataSelected)
+                .then((path) => {
+                    console.info(`data ${dataSelected} saved to ${path}`);
+                    setDataSelected([]);
+                })
+                .catch((err) => {
+                    console.error(err);
+                });
+        }
     }
 
     return (
@@ -774,6 +800,7 @@ function SampleDetailInner({
                                 data={sample_resources.Data}
                                 data_schemas={sample_resources.DataSchemas}
                                 users={sample_resources.Users}
+                                selectedData={dataSelected}
                                 onDataSelectionChange={set_selected_data}
                             />
                         ) : (
@@ -862,12 +889,14 @@ interface SampleDetailDataProps {
     data: app.SampleData[];
     data_schemas: app.DataSchema[];
     users: app.User[];
+    selectedData: UUID[];
     onDataSelectionChange: (data: UUID, selected: boolean) => void;
 }
 function SampleDetailData({
     data,
     data_schemas,
     users,
+    selectedData,
     onDataSelectionChange,
 }: SampleDetailDataProps) {
     return (
@@ -894,6 +923,7 @@ function SampleDetailData({
                         data={datum}
                         data_schema={data_schemas[data_schema_idx]}
                         creator={users[creator_idx]}
+                        selected={selectedData.includes(datum.Id)}
                         onSelectionChange={onDataSelectionChange}
                     />
                 );
@@ -907,12 +937,14 @@ interface SampleDetailDataListItemProps {
     data: app.SampleData;
     data_schema: app.DataSchema;
     creator: app.User;
+    selected: boolean;
     onSelectionChange: (data: UUID, selected: boolean) => void;
 }
 function SampleDetailDataListItem({
     data,
     data_schema,
     creator,
+    selected,
     onSelectionChange,
 }: SampleDetailDataListItemProps) {
     const app_state = useContext(appStateCtx.Context);
@@ -950,6 +982,7 @@ function SampleDetailDataListItem({
                             id={`data[${data.Id}][select]`}
                             name={`data[${data.Id}][select]`}
                             onChange={on_selected}
+                            checked={selected}
                         />
                     </label>
                 </div>

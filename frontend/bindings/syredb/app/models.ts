@@ -973,11 +973,15 @@ export class SampleGroupRelation {
  * Data is a string if Storage is `file`.
  */
 export class StoredData {
+    "SampleData": uuid$0.UUID;
     "Storage": DataStorage;
     "Data": any;
 
     /** Creates a new StoredData instance. */
     constructor($$source: Partial<StoredData> = {}) {
+        if (!("SampleData" in $$source)) {
+            this["SampleData"] = "";
+        }
         if (!("Storage" in $$source)) {
             this["Storage"] = DataStorage.$zero;
         }

@@ -1,6 +1,8 @@
 package app
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/csv"
 	"errors"
@@ -562,61 +564,118 @@ func parse_data_file_to_schema_csv(file *os.File, schema DataSchema) ([]ColumnDa
 // Data is []ColumnData if Storage is `internal`.
 // Data is a string if Storage is `file`.
 type StoredData struct {
-	Storage DataStorage
-	Data    any
+	SampleData uuid.UUID
+	Storage    DataStorage
+	Data       any
 }
 
-// GetSampleDataStored gets the actual data associated with a sample data entry.
-func (s *DataService) GetSampleDataStoredById(sample_data_id uuid.UUID) (StoredData, error) {
-	var schema_id uuid.UUID
-	err := s.db.conn.QueryRow(
+// GetSampleDataStored gets the data associated with sample data entries.
+func (s *DataService) GetSampleDataStoredById(sample_data_ids []uuid.UUID) ([]StoredData, error) {
+	if len(sample_data_ids) == 0 {
+		return []StoredData{}, nil
+	}
+
+	type SampleDataSchema struct {
+		SampleData uuid.UUID
+		DataSchema uuid.UUID
+	}
+	rows, _ := s.db.conn.Query(
 		s.ctx,
-		"SELECT _schema FROM sample_data_ WHERE _id=$1",
-		sample_data_id,
-	).Scan(&schema_id)
+		"SELECT _id, _schema FROM sample_data_ WHERE _id=ANY($1)",
+		sample_data_ids,
+	)
+	sample_data_schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleDataSchema, error) {
+		var record SampleDataSchema
+		err := row.Scan(&record.SampleData, &record.DataSchema)
+		return record, err
+	})
+
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"sample data", sample_data_id,
-		).Error("could not get sample data schema")
+			"sample data", sample_data_ids,
+		).Error("could not get sample data schemas")
 
-		return StoredData{}, err
+		return nil, err
 	}
 
-	var data_storage DataStorage
-	var data_schema []ColumnSchema
-	err = s.db.conn.QueryRow(
+	data_schema_ids := make([]uuid.UUID, len(sample_data_ids))
+	for _, record := range sample_data_schemas {
+		if slices.Index(data_schema_ids, record.DataSchema) < 0 {
+			data_schema_ids = append(data_schema_ids, record.DataSchema)
+		}
+	}
+
+	type DataSchemaRecord struct {
+		Id      uuid.UUID
+		Storage DataStorage
+		Schema  []ColumnSchema
+	}
+
+	rows, err = s.db.conn.Query(
 		s.ctx,
-		"SELECT _storage, _schema FROM data_schema_ WHERE _id=$1",
-		schema_id,
-	).Scan(&data_storage, &data_schema)
+		"SELECT _id, _storage, _schema FROM data_schema_ WHERE _id=ANY($1)",
+		data_schema_ids,
+	)
+
+	data_schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaRecord, error) {
+		var record DataSchemaRecord
+		err := row.Scan(&record.Id, &record.Storage, &record.Schema)
+		return record, err
+	})
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"data schema", schema_id,
-		).Error("could not get data schema")
+			"data schemas", data_schema_ids,
+		).Error("could not get data schemas")
 
-		return StoredData{}, err
+		return nil, err
 	}
 
-	var data any
-	switch data_storage {
-	case DATA_STORAGE_FILE:
-		data, err = s.get_sample_data_stored_by_id_storage_file_data(sample_data_id, schema_id)
-		if err != nil {
-			return StoredData{}, err
+	stored_data := make([]StoredData, len(sample_data_schemas))
+	for idx, sample_data_schema := range sample_data_schemas {
+		data_schema_idx := slices.IndexFunc(data_schemas, func(data_schema DataSchemaRecord) bool {
+			return data_schema.Id == sample_data_schema.DataSchema
+		})
+
+		data_schema := data_schemas[data_schema_idx]
+		var data any
+		switch data_schema.Storage {
+		case DATA_STORAGE_FILE:
+			data, err = s.get_sample_data_stored_by_id_storage_file_data(
+				sample_data_schema.SampleData,
+				sample_data_schema.DataSchema,
+			)
+			if err != nil {
+				s.logger.With(
+					"error", err,
+					"sample data", sample_data_schema.SampleData,
+					"data schema", data_schema,
+				).Error("could not get stored sample data")
+				return nil, err
+			}
+		case DATA_STORAGE_INTERNAL:
+			data, err = s.get_sample_data_stored_by_id_storage_internal_data(
+				sample_data_schema.SampleData,
+				sample_data_schema.DataSchema,
+				data_schema.Schema,
+			)
+			if err != nil {
+				s.logger.With(
+					"error", err,
+					"sample data", sample_data_schema.SampleData,
+					"data schema", data_schema,
+				).Error("could not get stored sample data")
+				return nil, err
+			}
 		}
-	case DATA_STORAGE_INTERNAL:
-		data, err = s.get_sample_data_stored_by_id_storage_internal_data(sample_data_id, schema_id, data_schema)
-		if err != nil {
-			return StoredData{}, err
+		stored_data[idx] = StoredData{
+			SampleData: sample_data_schema.SampleData,
+			Storage:    data_schema.Storage,
+			Data:       data,
 		}
 	}
 
-	stored_data := StoredData{
-		Storage: data_storage,
-		Data:    data,
-	}
 	return stored_data, nil
 }
 
@@ -733,22 +792,38 @@ func (s *DataService) get_sample_data_stored_by_id_storage_internal_data(
 // SaveSampleDataSingle saves a single data to the user's disk.
 // Returns the path the user selected.
 func (s *DataService) SaveSampleDataSingle(sample_data_id uuid.UUID) (string, error) {
-	stored_data, err := s.GetSampleDataStoredById(sample_data_id)
+	stored_datas, err := s.GetSampleDataStoredById([]uuid.UUID{sample_data_id})
 	if err != nil {
 		return "", err
 	}
+	if len(stored_datas) != 1 {
+		s.logger.With("sample data", sample_data_id, "stored data", stored_datas).Error("multiple data found")
+		panic("unexpectedly found multiple data")
+	}
+	stored_data := stored_datas[0]
 
+	var data []byte
 	switch stored_data.Storage {
 	case DATA_STORAGE_FILE:
-		return s.save_sample_data_single_data_storage_file(stored_data.Data.(string))
+		data, err = s.save_sample_data_single_data_storage_file_get_data(stored_data.Data.(string))
+		if err != nil {
+			s.logger.With("stored data", stored_data).Error("could not get stored sample data")
+			return "", err
+		}
 	case DATA_STORAGE_INTERNAL:
-		return s.save_sample_data_single_data_storage_internal(stored_data.Data.([]ColumnData))
+		data, err = s.save_sample_data_single_data_storage_internal_get_data(stored_data.Data.([]ColumnData))
+		if err != nil {
+			s.logger.With("stored data", stored_data).Error("could not get stored sample data")
+			return "", err
+		}
 	default:
 		panic(fmt.Sprintf("unexpected app.DataStorage: %#v", stored_data.Storage))
 	}
+
+	return s.fs_service.SaveFileSingle(data, "Save data", []FileFilter{})
 }
 
-func (s *DataService) save_sample_data_single_data_storage_internal(data []ColumnData) (string, error) {
+func (s *DataService) save_sample_data_single_data_storage_internal_get_data(data []ColumnData) ([]byte, error) {
 	records := make([][]string, len(data[0].Data))
 	for row_idx := range records {
 		row := make([]string, len(data))
@@ -764,13 +839,13 @@ func (s *DataService) save_sample_data_single_data_storage_internal(data []Colum
 	err := csv_builder.WriteAll(records)
 	if err != nil {
 		s.logger.With("error", err).Error("could not write data to csv")
-		return "", err
+		return nil, err
 	}
 
-	return s.fs_service.SaveFileSingle([]byte(data_bytes.String()), "Save data", []FileFilter{})
+	return []byte(data_bytes.String()), nil
 }
 
-func (s *DataService) save_sample_data_single_data_storage_file(file_path string) (string, error) {
+func (s *DataService) save_sample_data_single_data_storage_file_get_data(file_path string) ([]byte, error) {
 	data, err := os.ReadFile(file_path)
 	if err != nil {
 		s.logger.With(
@@ -778,9 +853,76 @@ func (s *DataService) save_sample_data_single_data_storage_file(file_path string
 			"file path", file_path,
 		).Error("could not read file data")
 
-		return "", err
+		return nil, err
 	}
 
-	s.logger.Debug("", "data", data)
-	return "", nil
+	return data, nil
+}
+
+// SaveSampleDataMultiple saves multiple data into a zip archive.
+// It returns the path of the save location.
+func (s *DataService) SaveSampleDataMultiple(sample_data []uuid.UUID) (string, error) {
+	if len(sample_data) == 0 {
+		return "", nil
+	}
+
+	stored_data, err := s.GetSampleDataStoredById(sample_data)
+	if err != nil {
+		return "", err
+	}
+	if len(stored_data) != len(sample_data) {
+		s.logger.With("sample data", sample_data, "stored data", stored_data).Error("incompatible number of data found")
+		panic("found invalid number of data")
+	}
+
+	buf := new(bytes.Buffer)
+	archive := zip.NewWriter(buf)
+	for _, stored := range stored_data {
+		file, err := archive.Create(stored.SampleData.String())
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"sample data", stored.SampleData,
+			).Error("could not create archive file")
+			return "", err
+		}
+
+		var data []byte
+		switch stored.Storage {
+		case DATA_STORAGE_FILE:
+			data, err = s.save_sample_data_single_data_storage_file_get_data(stored.Data.(string))
+			if err != nil {
+				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
+				return "", err
+			}
+		case DATA_STORAGE_INTERNAL:
+			data, err = s.save_sample_data_single_data_storage_internal_get_data(stored.Data.([]ColumnData))
+			if err != nil {
+				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
+				return "", err
+			}
+		default:
+			panic(fmt.Sprintf("unexpected app.DataStorage: %#v", stored.Storage))
+		}
+
+		_, err = file.Write(data)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"stored data", stored,
+			).Error("could not write data to archive file")
+		}
+	}
+
+	err = archive.Close()
+	if err != nil {
+		s.logger.With("error", err).Error("could not close archive")
+		return "", nil
+	}
+
+	save_filter := FileFilter{
+		DisplayName: "ZIP archive",
+		Pattern:     "*.zip",
+	}
+	return s.fs_service.SaveFileSingle(buf.Bytes(), "Save data", []FileFilter{save_filter})
 }

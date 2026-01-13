@@ -32,18 +32,26 @@ export function GetDataSchemasById(schema_ids: uuid$0.UUID[]): $CancellablePromi
 }
 
 /**
- * GetSampleDataStored gets the actual data associated with a sample data entry.
+ * GetSampleDataStored gets the data associated with sample data entries.
  */
-export function GetSampleDataStoredById(sample_data_id: uuid$0.UUID): $CancellablePromise<$models.StoredData> {
-    return $Call.ByID(4081438280, sample_data_id).then(($result: any) => {
-        return $$createType3($result);
+export function GetSampleDataStoredById(sample_data_ids: uuid$0.UUID[]): $CancellablePromise<$models.StoredData[]> {
+    return $Call.ByID(4081438280, sample_data_ids).then(($result: any) => {
+        return $$createType4($result);
     });
 }
 
 export function ParseDataFileToSchema(file_path: string, schema_id: uuid$0.UUID): $CancellablePromise<$models.ColumnData[]> {
     return $Call.ByID(3004645630, file_path, schema_id).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType6($result);
     });
+}
+
+/**
+ * SaveSampleDataMultiple saves multiple data into a zip archive.
+ * It returns the path of the save location.
+ */
+export function SaveSampleDataMultiple(sample_data: uuid$0.UUID[]): $CancellablePromise<string> {
+    return $Call.ByID(1884880828, sample_data);
 }
 
 /**
@@ -59,5 +67,6 @@ const $$createType0 = $models.Ok.createFrom;
 const $$createType1 = $models.DataSchema.createFrom;
 const $$createType2 = $Create.Array($$createType1);
 const $$createType3 = $models.StoredData.createFrom;
-const $$createType4 = $models.ColumnData.createFrom;
-const $$createType5 = $Create.Array($$createType4);
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $models.ColumnData.createFrom;
+const $$createType6 = $Create.Array($$createType5);
