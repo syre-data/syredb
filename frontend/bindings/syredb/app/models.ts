@@ -967,6 +967,16 @@ export class SampleGroupRelation {
     }
 }
 
+export enum SaveDataHierarchy {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    SAVE_DATA_HIERARCHY_DATA_SCHEMA = "data_schema",
+    SAVE_DATA_HIERARCHY_SAMPLE = "sample",
+};
+
 /**
  * StoredData represents teh actual data stored for a sample data.
  * Data is []ColumnData if Storage is `internal`.

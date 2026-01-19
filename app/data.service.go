@@ -22,6 +22,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
+type DataType string
+
 const (
 	DATA_TYPE_STRING    = DataType("string")
 	DATA_TYPE_INT       = DataType("int")
@@ -31,7 +33,12 @@ const (
 	DATA_TYPE_TIMESTAMP = DataType("timestamp")
 )
 
-type DataType string
+type SaveDataHierarchy string
+
+const (
+	SAVE_DATA_HIERARCHY_DATA_SCHEMA = SaveDataHierarchy("data_schema")
+	SAVE_DATA_HIERARCHY_SAMPLE      = SaveDataHierarchy("sample")
+)
 
 type DataService struct {
 	ctx          context.Context
@@ -74,12 +81,12 @@ type ColumnSchema struct {
 	DType DataType `json:"dtype"`
 }
 
+type DataStorage string
+
 const (
 	DATA_STORAGE_INTERNAL = DataStorage("internal")
 	DATA_STORAGE_FILE     = DataStorage("file")
 )
-
-type DataStorage string
 
 type DataSchema struct {
 	Id          uuid.UUID
@@ -805,13 +812,13 @@ func (s *DataService) SaveSampleDataSingle(sample_data_id uuid.UUID) (string, er
 	var data []byte
 	switch stored_data.Storage {
 	case DATA_STORAGE_FILE:
-		data, err = s.save_sample_data_single_data_storage_file_get_data(stored_data.Data.(string))
+		data, err = s.data_storage_file_get_data(stored_data.Data.(string))
 		if err != nil {
 			s.logger.With("stored data", stored_data).Error("could not get stored sample data")
 			return "", err
 		}
 	case DATA_STORAGE_INTERNAL:
-		data, err = s.save_sample_data_single_data_storage_internal_get_data(stored_data.Data.([]ColumnData))
+		data, err = s.data_storage_internal_get_data(stored_data.Data.([]ColumnData))
 		if err != nil {
 			s.logger.With("stored data", stored_data).Error("could not get stored sample data")
 			return "", err
@@ -823,7 +830,7 @@ func (s *DataService) SaveSampleDataSingle(sample_data_id uuid.UUID) (string, er
 	return s.fs_service.SaveFileSingle(data, "Save data", []FileFilter{})
 }
 
-func (s *DataService) save_sample_data_single_data_storage_internal_get_data(data []ColumnData) ([]byte, error) {
+func (s *DataService) data_storage_internal_get_data(data []ColumnData) ([]byte, error) {
 	records := make([][]string, len(data[0].Data))
 	for row_idx := range records {
 		row := make([]string, len(data))
@@ -845,7 +852,7 @@ func (s *DataService) save_sample_data_single_data_storage_internal_get_data(dat
 	return []byte(data_bytes.String()), nil
 }
 
-func (s *DataService) save_sample_data_single_data_storage_file_get_data(file_path string) ([]byte, error) {
+func (s *DataService) data_storage_file_get_data(file_path string) ([]byte, error) {
 	data, err := os.ReadFile(file_path)
 	if err != nil {
 		s.logger.With(
@@ -861,7 +868,11 @@ func (s *DataService) save_sample_data_single_data_storage_file_get_data(file_pa
 
 // SaveSampleDataMultiple saves multiple data into a zip archive.
 // It returns the path of the save location.
-func (s *DataService) SaveSampleDataMultiple(sample_data []uuid.UUID) (string, error) {
+func (s *DataService) SaveSampleDataMultiple(
+	sample_data []uuid.UUID,
+	project uuid.UUID,
+	data_hierarchy []SaveDataHierarchy,
+) (string, error) {
 	if len(sample_data) == 0 {
 		return "", nil
 	}
@@ -875,34 +886,140 @@ func (s *DataService) SaveSampleDataMultiple(sample_data []uuid.UUID) (string, e
 		panic("found invalid number of data")
 	}
 
+	type SampleDataInfo struct {
+		SampleData uuid.UUID
+		Sample     uuid.UUID
+		DataSchema uuid.UUID
+		Timestamp  time.Time
+	}
+	data_sample_query := "SELECT _id, _sample, _schema, timestamp FROM sample_data_ WHERE _id=ANY($1)"
+	rows, _ := s.db.conn.Query(s.ctx, data_sample_query, sample_data)
+	sample_data_info, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleDataInfo, error) {
+		var record SampleDataInfo
+		err := row.Scan(&record.SampleData, &record.Sample, &record.DataSchema, &record.Timestamp)
+		return record, err
+	})
+	if err != nil {
+		s.logger.With("error", err).Error("could not retrive data samples")
+		return "", err
+	}
+
+	type SampleInfo struct {
+		Id    uuid.UUID
+		Label string
+	}
+	var sample_ids []uuid.UUID
+	for _, data_sample := range sample_data_info {
+		if !slices.Contains(sample_ids, data_sample.Sample) {
+			sample_ids = append(sample_ids, data_sample.Sample)
+		}
+	}
+	sample_label_query := "SELECT _sample, label FROM project_sample_membership_ where _project=$1 AND _sample=ANY($2)"
+	rows, err = s.db.conn.Query(s.ctx, sample_label_query, project, sample_ids)
+	if err != nil {
+		s.logger.With("error", err).Error("could not get sample labels")
+		return "", err
+	}
+	sample_info, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleInfo, error) {
+		var info SampleInfo
+		err = rows.Scan(&info.Id, &info.Label)
+		return info, err
+	})
+	if err != nil {
+		s.logger.With("error", err, "samples", sample_ids).Error("could not get sample info")
+	}
+
+	type DataSchemaRecord struct {
+		Id    uuid.UUID
+		Label string
+	}
+	data_schema_ids := []uuid.UUID{}
+	for _, data := range sample_data_info {
+		if !slices.Contains(data_schema_ids, data.DataSchema) {
+			data_schema_ids = append(data_schema_ids, data.DataSchema)
+		}
+	}
+	schema_query := "SELECT _id, label FROM data_schema_ WHERE _id=ANY($1)"
+	rows, _ = s.db.conn.Query(s.ctx, schema_query, data_schema_ids)
+	data_schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaRecord, error) {
+		var record DataSchemaRecord
+		err := row.Scan(&record.Id, &record.Label)
+		return record, err
+	})
+	if err != nil {
+		s.logger.With("error", err).Error("could not get project data schemas")
+		return "", err
+	}
+
 	buf := new(bytes.Buffer)
 	archive := zip.NewWriter(buf)
 	for _, stored := range stored_data {
-		file, err := archive.Create(stored.SampleData.String())
-		if err != nil {
-			s.logger.With(
-				"error", err,
-				"sample data", stored.SampleData,
-			).Error("could not create archive file")
-			return "", err
+		data_sample_idx := slices.IndexFunc(sample_data_info, func(info SampleDataInfo) bool {
+			return info.SampleData == stored.SampleData
+		})
+		if data_sample_idx < 0 {
+			s.logger.With("sample data", stored.SampleData).Error("could not find sample data label record")
+			panic("could not find sample data label record")
 		}
+		data_info := sample_data_info[data_sample_idx]
 
+		sample_info_idx := slices.IndexFunc(sample_info, func(info SampleInfo) bool {
+			return info.Id == data_info.Sample
+		})
+		sample_info := sample_info[sample_info_idx]
+
+		data_schema_idx := slices.IndexFunc(data_schemas, func(record DataSchemaRecord) bool {
+			return record.Id == data_info.DataSchema
+		})
+		data_schema := data_schemas[data_schema_idx]
+
+		var file_name string
 		var data []byte
 		switch stored.Storage {
 		case DATA_STORAGE_FILE:
-			data, err = s.save_sample_data_single_data_storage_file_get_data(stored.Data.(string))
+			file_path := stored.Data.(string)
+			base := filepath.Base(file_path)
+			ext := filepath.Ext(base)
+			fname := base[:-(len(ext) + 1)]
+			file_name = fmt.Sprintf(
+				"%s.%s.%s",
+				fname,
+				stored.SampleData.String(),
+				ext,
+			)
+			data, err = s.data_storage_file_get_data(file_path)
 			if err != nil {
 				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
 				return "", err
 			}
 		case DATA_STORAGE_INTERNAL:
-			data, err = s.save_sample_data_single_data_storage_internal_get_data(stored.Data.([]ColumnData))
+			file_name = fmt.Sprintf(
+				"%s-%s.%s.csv",
+				data_info.Timestamp.Format(time.DateOnly),
+				data_info.Timestamp.Format(time.TimeOnly),
+				stored.SampleData.String(),
+			)
+			data, err = s.data_storage_internal_get_data(stored.Data.([]ColumnData))
 			if err != nil {
 				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
 				return "", err
 			}
 		default:
 			panic(fmt.Sprintf("unexpected app.DataStorage: %#v", stored.Storage))
+		}
+
+		file_path, err := s.save_data_file_path(data_hierarchy, file_name, sample_info.Label, data_schema.Label)
+		if err != nil {
+			return "", err
+		}
+
+		file, err := archive.Create(file_path)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"sample data", stored.SampleData,
+			).Error("could not create archive file")
+			return "", err
 		}
 
 		_, err = file.Write(data)
@@ -925,4 +1042,380 @@ func (s *DataService) SaveSampleDataMultiple(sample_data []uuid.UUID) (string, e
 		Pattern:     "*.zip",
 	}
 	return s.fs_service.SaveFileSingle(buf.Bytes(), "Save data", []FileFilter{save_filter})
+}
+
+// SaveSampleDataMultiple saves multiple data into a zip archive.
+// It returns the path of the save location.
+func (s *DataService) SaveDataSchemaSampleDataAll(
+	data_schema uuid.UUID,
+	project uuid.UUID,
+	data_hierarchy []SaveDataHierarchy,
+) (string, error) {
+	type SampleRecord struct {
+		Sample     uuid.UUID
+		SampleData uuid.UUID
+		Label      string
+		Timestamp  time.Time
+	}
+	sample_query :=
+		`SELECT sample_._sample, data_._id, sample_.label, data_.timestamp
+		FROM project_sample_membership_ as sample_ 
+		JOIN sample_data_ as data_ 
+		ON sample_._sample=data_._sample
+		WHERE sample_._project=$1 AND data_._schema=$2`
+	rows, _ := s.db.conn.Query(s.ctx, sample_query, project, data_schema)
+	samples, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleRecord, error) {
+		var record SampleRecord
+		err := row.Scan(&record.Sample, &record.SampleData, &record.Label, &record.Timestamp)
+		return record, err
+	})
+	if err != nil {
+		s.logger.With("error", err).Error("could not get project data schema samples")
+		return "", err
+	}
+	if len(samples) == 0 {
+		return "", nil
+	}
+
+	sample_data_ids := make([]uuid.UUID, len(samples))
+	for idx, data := range samples {
+		sample_data_ids[idx] = data.SampleData
+	}
+	stored_data, err := s.GetSampleDataStoredById(sample_data_ids)
+	if err != nil {
+		return "", err
+	}
+	if len(stored_data) != len(sample_data_ids) {
+		s.logger.With(
+			"sample data", sample_data_ids,
+			"stored data", stored_data,
+		).Error("incompatible number of data found")
+		panic("found invalid number of data")
+	}
+
+	buf := new(bytes.Buffer)
+	archive := zip.NewWriter(buf)
+	for _, stored := range stored_data {
+		sample_idx := slices.IndexFunc(samples, func(record SampleRecord) bool {
+			return record.SampleData == stored.SampleData
+		})
+		if sample_idx < 0 {
+			s.logger.With("sample data", stored.SampleData).Error("could not find sample data label record")
+			panic("could not find sample data label record")
+		}
+		sample_info := samples[sample_idx]
+
+		var file_name string
+		var data []byte
+		switch stored.Storage {
+		case DATA_STORAGE_FILE:
+			file_path := stored.Data.(string)
+			base := filepath.Base(file_path)
+			ext := filepath.Ext(base)
+			fname := base[:-(len(ext) + 1)]
+			file_name = fmt.Sprintf(
+				"%s.%s.%s",
+				fname,
+				stored.SampleData.String(),
+				ext,
+			)
+			data, err = s.data_storage_file_get_data(file_path)
+			if err != nil {
+				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
+				return "", err
+			}
+		case DATA_STORAGE_INTERNAL:
+			file_name = fmt.Sprintf(
+				"%s-%s.%s.csv",
+				sample_info.Timestamp.Format(time.DateOnly),
+				sample_info.Timestamp.Format(time.TimeOnly),
+				stored.SampleData.String(),
+			)
+			data, err = s.data_storage_internal_get_data(stored.Data.([]ColumnData))
+			if err != nil {
+				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
+				return "", err
+			}
+		default:
+			panic(fmt.Sprintf("unexpected app.DataStorage: %#v", stored.Storage))
+		}
+
+		file_path, err := s.save_data_schema_sample_data_file_path(data_hierarchy, file_name, sample_info.Label)
+		if err != nil {
+			return "", err
+		}
+
+		file, err := archive.Create(file_path)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"sample data", stored.SampleData,
+			).Error("could not create archive file")
+			return "", err
+		}
+
+		_, err = file.Write(data)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"stored data", stored,
+			).Error("could not write data to archive file")
+		}
+	}
+
+	err = archive.Close()
+	if err != nil {
+		s.logger.With("error", err).Error("could not close archive")
+		return "", nil
+	}
+
+	save_filter := FileFilter{
+		DisplayName: "ZIP archive",
+		Pattern:     "*.zip",
+	}
+	return s.fs_service.SaveFileSingle(buf.Bytes(), "Save data", []FileFilter{save_filter})
+}
+
+func (s *DataService) save_data_schema_sample_data_file_path(
+	hierarchy []SaveDataHierarchy,
+	file_name_base string,
+	sample_label string,
+) (string, error) {
+	hierarchy_components := map[SaveDataHierarchy]string{
+		SAVE_DATA_HIERARCHY_SAMPLE: sample_label,
+	}
+	var file_path strings.Builder
+	for _, level := range hierarchy {
+		component, present := hierarchy_components[level]
+		if !present {
+			s.logger.With("levels", hierarchy).Error("repeated save data hierarchy level")
+			return "", errors.New("invalid save data hierarchy, repeated level")
+		}
+		file_path.WriteString(component)
+		file_path.WriteString("/")
+		delete(hierarchy_components, level)
+	}
+
+	sample_label, file_name_sample := hierarchy_components[SAVE_DATA_HIERARCHY_SAMPLE]
+	if file_name_sample {
+		file_path.WriteString(sample_label)
+		file_path.WriteString(".")
+	}
+	schema_label, file_name_schema := hierarchy_components[SAVE_DATA_HIERARCHY_DATA_SCHEMA]
+	if file_name_schema {
+		file_path.WriteString(schema_label)
+		file_path.WriteString(".")
+	}
+	file_path.WriteString(file_name_base)
+
+	return file_path.String(), nil
+}
+
+// SaveProjectDataAll saves all sample data in a project into a zip archive.
+// It returns the path of the save location.
+func (s *DataService) SaveProjectDataAll(project uuid.UUID, hierarchy []SaveDataHierarchy) (string, error) {
+	type ProjectSampleRecord struct {
+		Sample uuid.UUID
+		Label  string
+	}
+	sample_query := "SELECT _sample, label FROM project_sample_membership_ WHERE _project=$1"
+	rows, _ := s.db.conn.Query(s.ctx, sample_query, project)
+	project_samples, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ProjectSampleRecord, error) {
+		var record ProjectSampleRecord
+		err := row.Scan(&record.Sample, &record.Label)
+		return record, err
+	})
+	if err != nil {
+		s.logger.With("error", err).Error("could not get project samples")
+		return "", err
+	}
+	if len(project_samples) == 0 {
+		return "", nil
+	}
+
+	type SampleDataRecord struct {
+		Id         uuid.UUID
+		Sample     uuid.UUID
+		DataSchema uuid.UUID
+		Timestamp  time.Time
+	}
+	sample_ids := make([]uuid.UUID, len(project_samples))
+	for idx, sample := range project_samples {
+		sample_ids[idx] = sample.Sample
+	}
+	data_query := "SELECT _id, _sample, _schema, timestamp FROM sample_data_ WHERE _sample=ANY($1)"
+	rows, _ = s.db.conn.Query(s.ctx, data_query, sample_ids)
+	sample_data, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleDataRecord, error) {
+		var record SampleDataRecord
+		err := row.Scan(&record.Id, &record.Sample, &record.DataSchema, &record.Timestamp)
+		return record, err
+	})
+	if err != nil {
+		s.logger.With("error", err).Error("could not get project sample data")
+		return "", err
+	}
+
+	type DataSchemaRecord struct {
+		Id    uuid.UUID
+		Label string
+	}
+	data_schema_ids := []uuid.UUID{}
+	for _, data := range sample_data {
+		if !slices.Contains(data_schema_ids, data.DataSchema) {
+			data_schema_ids = append(data_schema_ids, data.DataSchema)
+		}
+	}
+	schema_query := "SELECT _id, label FROM data_schema_ WHERE _id=ANY($1)"
+	rows, _ = s.db.conn.Query(s.ctx, schema_query, data_schema_ids)
+	data_schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaRecord, error) {
+		var record DataSchemaRecord
+		err := row.Scan(&record.Id, &record.Label)
+		return record, err
+	})
+	if err != nil {
+		s.logger.With("error", err).Error("could not get project data schemas")
+		return "", err
+	}
+
+	sample_data_ids := make([]uuid.UUID, len(sample_data))
+	for idx, data := range sample_data {
+		sample_data_ids[idx] = data.Id
+	}
+	stored_data, err := s.GetSampleDataStoredById(sample_data_ids)
+	if err != nil {
+		return "", err
+	}
+	if len(stored_data) != len(sample_data) {
+		s.logger.With("sample data", sample_data, "stored data", stored_data).Error("incompatible number of data found")
+		panic("found invalid number of data")
+	}
+
+	buf := new(bytes.Buffer)
+	archive := zip.NewWriter(buf)
+	for _, stored := range stored_data {
+		data_sample_idx := slices.IndexFunc(sample_data, func(record SampleDataRecord) bool {
+			return record.Id == stored.SampleData
+		})
+		if data_sample_idx < 0 {
+			s.logger.With("sample data", stored.SampleData).Error("could not find sample data label record")
+			panic("could not find sample data label record")
+		}
+		data_info := sample_data[data_sample_idx]
+
+		project_sample_idx := slices.IndexFunc(project_samples, func(record ProjectSampleRecord) bool {
+			return record.Sample == data_info.Sample
+		})
+		project_sample := project_samples[project_sample_idx]
+
+		data_schema_idx := slices.IndexFunc(data_schemas, func(record DataSchemaRecord) bool {
+			return record.Id == data_info.DataSchema
+		})
+		data_schema := data_schemas[data_schema_idx]
+
+		var file_name string
+		var data []byte
+		switch stored.Storage {
+		case DATA_STORAGE_FILE:
+			file_path := stored.Data.(string)
+			base := filepath.Base(file_path)
+			ext := filepath.Ext(base)
+			fname := base[:-(len(ext) + 1)]
+			file_name = fmt.Sprintf(
+				"%s.%s.%s",
+				fname,
+				stored.SampleData.String(),
+				ext,
+			)
+			data, err = s.data_storage_file_get_data(file_path)
+			if err != nil {
+				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
+				return "", err
+			}
+		case DATA_STORAGE_INTERNAL:
+			file_name = fmt.Sprintf(
+				"%s-%s.%s.csv",
+				data_info.Timestamp.Format(time.DateOnly),
+				data_info.Timestamp.Format(time.TimeOnly),
+				stored.SampleData.String(),
+			)
+			data, err = s.data_storage_internal_get_data(stored.Data.([]ColumnData))
+			if err != nil {
+				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
+				return "", err
+			}
+		default:
+			panic(fmt.Sprintf("unexpected app.DataStorage: %#v", stored.Storage))
+		}
+
+		file_path, err := s.save_data_file_path(hierarchy, file_name, project_sample.Label, data_schema.Label)
+		if err != nil {
+			return "", err
+		}
+
+		file, err := archive.Create(file_path)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"sample data", stored.SampleData,
+			).Error("could not create archive file")
+			return "", err
+		}
+
+		_, err = file.Write(data)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"stored data", stored,
+			).Error("could not write data to archive file")
+		}
+	}
+
+	err = archive.Close()
+	if err != nil {
+		s.logger.With("error", err).Error("could not close archive")
+		return "", nil
+	}
+
+	save_filter := FileFilter{
+		DisplayName: "ZIP archive",
+		Pattern:     "*.zip",
+	}
+	return s.fs_service.SaveFileSingle(buf.Bytes(), "Save data", []FileFilter{save_filter})
+}
+
+func (s *DataService) save_data_file_path(
+	hierarchy []SaveDataHierarchy,
+	file_name_base string,
+	sample_label string,
+	data_schema_label string,
+) (string, error) {
+	hierarchy_components := map[SaveDataHierarchy]string{
+		SAVE_DATA_HIERARCHY_DATA_SCHEMA: data_schema_label,
+		SAVE_DATA_HIERARCHY_SAMPLE:      sample_label,
+	}
+	var file_path strings.Builder
+	for _, level := range hierarchy {
+		component, present := hierarchy_components[level]
+		if !present {
+			s.logger.With("levels", hierarchy).Error("repeated save data hierarchy level")
+			return "", errors.New("invalid save data hierarchy, repeated level")
+		}
+		file_path.WriteString(component)
+		file_path.WriteString("/")
+		delete(hierarchy_components, level)
+	}
+
+	sample_label, file_name_sample := hierarchy_components[SAVE_DATA_HIERARCHY_SAMPLE]
+	if file_name_sample {
+		file_path.WriteString(sample_label)
+		file_path.WriteString(".")
+	}
+	schema_label, file_name_schema := hierarchy_components[SAVE_DATA_HIERARCHY_DATA_SCHEMA]
+	if file_name_schema {
+		file_path.WriteString(schema_label)
+		file_path.WriteString(".")
+	}
+	file_path.WriteString(file_name_base)
+
+	return file_path.String(), nil
 }

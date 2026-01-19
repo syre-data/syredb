@@ -50,8 +50,24 @@ export function ParseDataFileToSchema(file_path: string, schema_id: uuid$0.UUID)
  * SaveSampleDataMultiple saves multiple data into a zip archive.
  * It returns the path of the save location.
  */
-export function SaveSampleDataMultiple(sample_data: uuid$0.UUID[]): $CancellablePromise<string> {
-    return $Call.ByID(1884880828, sample_data);
+export function SaveDataSchemaSampleDataAll(data_schema: uuid$0.UUID, project: uuid$0.UUID, data_hierarchy: $models.SaveDataHierarchy[]): $CancellablePromise<string> {
+    return $Call.ByID(3972808746, data_schema, project, data_hierarchy);
+}
+
+/**
+ * SaveProjectDataAll saves all sample data in a project into a zip archive.
+ * It returns the path of the save location.
+ */
+export function SaveProjectDataAll(project: uuid$0.UUID, hierarchy: $models.SaveDataHierarchy[]): $CancellablePromise<string> {
+    return $Call.ByID(3739119110, project, hierarchy);
+}
+
+/**
+ * SaveSampleDataMultiple saves multiple data into a zip archive.
+ * It returns the path of the save location.
+ */
+export function SaveSampleDataMultiple(sample_data: uuid$0.UUID[], project: uuid$0.UUID, data_hierarchy: $models.SaveDataHierarchy[]): $CancellablePromise<string> {
+    return $Call.ByID(1884880828, sample_data, project, data_hierarchy);
 }
 
 /**

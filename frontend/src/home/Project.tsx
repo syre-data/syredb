@@ -221,10 +221,28 @@ function ResourceBrowser({
         e.preventDefault();
     }
 
+    async function download_all_project_data(
+        hierarchy: app.SaveDataHierarchy[]
+    ) {
+        await app.DataService.SaveProjectDataAll(
+            project_resources.Project.Id,
+            hierarchy
+        )
+            .then((path) => {
+                console.info(`saved all project data to ${path}`);
+            })
+            .catch((err) => {
+                console.error("could not save project data", err);
+            });
+    }
+
     return (
         <div className={`flex flex-col ${className ?? ""}`}>
-            <div className="pb-2">
-                <form onSubmit={query_resources} className="flex gap-2 px-4">
+            <div className="pb-2 flex">
+                <form
+                    onSubmit={query_resources}
+                    className="grow flex gap-2 px-4"
+                >
                     <div className="flex gap-2">
                         <div>
                             <label>
@@ -247,6 +265,12 @@ function ResourceBrowser({
                         </button>
                     </div>
                 </form>
+                <div className="flex gap-1 pr-1">
+                    <ResourceBrowserDownloadDataBtn
+                        onDownload={download_all_project_data}
+                        disabled={project_resources.SampleData.length === 0}
+                    />
+                </div>
             </div>
             {(() => {
                 switch (primaryResourceType) {
@@ -254,14 +278,15 @@ function ResourceBrowser({
                         return (
                             <ResourceBrowserSamples
                                 project_resources={project_resources}
-                                samples={queryResults}
+                                filter={queryResults}
                                 className="grow"
                             />
                         );
                     case PrimaryResourceType.Data:
                         return (
                             <ResourceBrowserSampleData
-                                data={queryResults}
+                                project_resources={project_resources}
+                                filter={queryResults}
                                 className="grow"
                             />
                         );
@@ -269,6 +294,153 @@ function ResourceBrowser({
                         throw new Error("invalid primary resource type");
                 }
             })()}
+        </div>
+    );
+}
+
+interface ResourceBrowserDownloadDataBtnProps {
+    onDownload: (hierarchy: app.SaveDataHierarchy[]) => Promise<void>;
+    disabled: boolean;
+}
+function ResourceBrowserDownloadDataBtn({
+    onDownload,
+    disabled,
+}: ResourceBrowserDownloadDataBtnProps) {
+    const [align, setAlign] = useState<"left" | "right">("left");
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useLayoutEffect(() => {
+        const menu = menuRef.current;
+        if (!menu) return;
+
+        const rect = menu.getBoundingClientRect();
+        const viewportWidth = window.innerWidth;
+
+        if (rect.right > viewportWidth) {
+            setAlign("right");
+        } else if (rect.left < 0) {
+            setAlign("left");
+        }
+    }, []);
+
+    function on_download(
+        e: MouseEvent<HTMLButtonElement>,
+        hierarchy: app.SaveDataHierarchy[]
+    ) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        onDownload(hierarchy);
+    }
+
+    const MENU_LIST_ITEM_CLASS =
+        "hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer";
+    const MENU_LIST_ITEM_BTN_CLASS =
+        "w-full h-full px-4 py-2 text-left cursor-pointer whitespace-nowrap";
+    return (
+        <div className="flex gap-1 cursor-pointer">
+            <button
+                type="button"
+                className="cursor-pointer"
+                title="Download all project data"
+                disabled={disabled}
+                onMouseDown={(e) => on_download(e, [])}
+            >
+                <icon.Download />
+            </button>
+            <div className="relative group/menu">
+                <button type="button" className="align-middle cursor-pointer">
+                    <icon.CaretDown />
+                </button>
+                <div
+                    ref={menuRef}
+                    className={classNames({
+                        "invisible absolute top-full border bg-white dark:bg-black \
+                        transition-[visibility] delay-200": true,
+                        "group-hover/menu:visible": !disabled,
+                        "left-0": align === "left",
+                        "right-0": align === "right",
+                    })}
+                >
+                    <ol>
+                        <li className={MENU_LIST_ITEM_CLASS}>
+                            <button
+                                type="button"
+                                className={MENU_LIST_ITEM_BTN_CLASS}
+                                title="Download all project data in the same folder"
+                                onMouseDown={(e) => on_download(e, [])}
+                            >
+                                Flat
+                            </button>
+                        </li>
+                        <li className={MENU_LIST_ITEM_CLASS}>
+                            <button
+                                type="button"
+                                className={MENU_LIST_ITEM_BTN_CLASS}
+                                title="Download all project data organized by sample"
+                                onMouseDown={(e) =>
+                                    on_download(e, [
+                                        app.SaveDataHierarchy
+                                            .SAVE_DATA_HIERARCHY_SAMPLE,
+                                    ])
+                                }
+                            >
+                                Sample
+                            </button>
+                        </li>
+                        <li className={MENU_LIST_ITEM_CLASS}>
+                            <button
+                                type="button"
+                                className={MENU_LIST_ITEM_BTN_CLASS}
+                                title="Download all project data organized by data schema"
+                                onMouseDown={(e) =>
+                                    on_download(e, [
+                                        app.SaveDataHierarchy
+                                            .SAVE_DATA_HIERARCHY_DATA_SCHEMA,
+                                    ])
+                                }
+                            >
+                                Data schema
+                            </button>
+                        </li>
+                        <li className={MENU_LIST_ITEM_CLASS}>
+                            <button
+                                type="button"
+                                className={MENU_LIST_ITEM_BTN_CLASS}
+                                title="Download all project data organized by sample then data schema"
+                                onMouseDown={(e) =>
+                                    on_download(e, [
+                                        app.SaveDataHierarchy
+                                            .SAVE_DATA_HIERARCHY_SAMPLE,
+                                        app.SaveDataHierarchy
+                                            .SAVE_DATA_HIERARCHY_DATA_SCHEMA,
+                                    ])
+                                }
+                            >
+                                Sample &gt; Data schema
+                            </button>
+                        </li>
+                        <li className={MENU_LIST_ITEM_CLASS}>
+                            <button
+                                type="button"
+                                className={MENU_LIST_ITEM_BTN_CLASS}
+                                title="Download all project data organized by data schema then sample"
+                                onMouseDown={(e) =>
+                                    on_download(e, [
+                                        app.SaveDataHierarchy
+                                            .SAVE_DATA_HIERARCHY_DATA_SCHEMA,
+                                        app.SaveDataHierarchy
+                                            .SAVE_DATA_HIERARCHY_SAMPLE,
+                                    ])
+                                }
+                            >
+                                Data schema &gt; Sample
+                            </button>
+                        </li>
+                    </ol>
+                </div>
+            </div>
         </div>
     );
 }
@@ -298,9 +470,9 @@ class SampleBrowserState {
     }
 
     grid_template_columns(): string {
-        const cols = ["auto"];
+        const cols = ["min-content"];
         for (const col of this.sample_property_keys) {
-            cols.push("auto");
+            cols.push("min-content");
         }
 
         return cols.join(" ");
@@ -355,32 +527,33 @@ const SampleBrowserStateDispatchCtx = createContext<
 
 interface ResourceBrowserSamplesProps {
     project_resources: app.ProjectResources;
-    samples: UUID[];
+    filter: UUID[];
     className?: string;
 }
 function ResourceBrowserSamples({
     project_resources,
-    samples,
+    filter,
     className,
 }: ResourceBrowserSamplesProps) {
     const [state, stateDispatch] = useImmerReducer(
         sample_browser_state_reducer,
-        new SampleBrowserState(project_resources, samples)
+        new SampleBrowserState(project_resources, filter)
     );
 
     return (
         <SampleBrowserStateCtx value={state}>
             <SampleBrowserStateDispatchCtx value={stateDispatch}>
                 <div className={`flex ${className ?? ""}`}>
-                    <div className="grow">
-                        <ResourceBrowserSamplesHeader />
-                        <ol
-                            className="grow grid"
-                            style={{
-                                gridTemplateColumns:
-                                    state.grid_template_columns(),
-                            }}
-                        >
+                    <div
+                        className="grow grid gap-x-4"
+                        style={{
+                            gridTemplateColumns:
+                                state.grid_template_columns() + " auto",
+                            gridTemplateRows: "min-content min-content",
+                        }}
+                    >
+                        <ResourceBrowserSamplesHeader className="row-1" />
+                        <ol className="row-2 col-span-full grid grid-cols-subgrid">
                             {state.samples.map((sample, idx) => (
                                 <ResourceBrowserSamplesListitem
                                     key={sample.Id}
@@ -425,13 +598,12 @@ function ResourceBrowserSamplesHeader({
 
     return (
         <div
-            className={`grid ${className ?? ""}`}
-            style={{
-                gridTemplateColumns: state.grid_template_columns(),
-            }}
+            className={`col-span-full grid grid-cols-subgrid ${
+                className ?? ""
+            }`}
         >
             <div
-                className="grid-row-1"
+                className="row-1"
                 style={{
                     gridColumnStart: SAMPLE_BROWSER_PROPERTIES_COL_OFFSET + 1,
                     gridColumnEnd:
@@ -445,7 +617,7 @@ function ResourceBrowserSamplesHeader({
             {state.sample_property_keys.map((key, idx) => (
                 <div
                     key={key}
-                    className="grid-row-2"
+                    className="row-2"
                     style={{
                         gridColumn:
                             idx + SAMPLE_BROWSER_PROPERTIES_COL_OFFSET + 1,
@@ -508,6 +680,7 @@ function ResourceBrowserSamplesListitem({
                     return (
                         <div
                             key={property}
+                            className="whitespace-nowrap"
                             style={{
                                 gridColumn:
                                     idx +
@@ -701,9 +874,13 @@ function SampleDetailInner({
                     console.error(err);
                 });
         } else {
-            await app.DataService.SaveSampleDataMultiple(dataSelected)
+            await app.DataService.SaveSampleDataMultiple(
+                dataSelected,
+                project_data.project_id,
+                []
+            )
                 .then((path) => {
-                    console.info(`data ${dataSelected} saved to ${path}`);
+                    console.info(`data saved to ${path}`, dataSelected);
                     setDataSelected([]);
                 })
                 .catch((err) => {
@@ -782,6 +959,7 @@ function SampleDetailInner({
                             <button
                                 type="button"
                                 className="btn-cmd"
+                                title="Download selected sample data"
                                 onMouseDown={download_selected_data}
                             >
                                 <icon.Download />
@@ -861,7 +1039,7 @@ function SampleDetailProperties({ properties }: SampleDetailPropertiesProps) {
         }
     });
     return (
-        <ol className="grid grid-cols-[auto_auto]">
+        <ol className="grid grid-cols-[min-content_min-content]">
             {properties_sorted.map((property, index) => {
                 return (
                     <li
@@ -989,15 +1167,18 @@ function SampleDetailDataListItem({
                 <div>
                     <button
                         type="button"
-                        onMouseDown={download}
                         className="btn-cmd"
+                        title="Download sample data"
+                        onMouseDown={download}
                     >
                         <icon.Download />
                     </button>
                 </div>
             </div>
             <div>{data_schema.Label}</div>
-            <div>{timestamp.toLocaleString()}</div>
+            <div className="whitespace-nowrap">
+                {timestamp.toLocaleString()}
+            </div>
             <div>({creator.Name})</div>
         </li>
     );
@@ -1047,9 +1228,7 @@ function SampleDetailProjectNoteListItem({
         <li>
             <div>
                 <div>{note.Timestamp}</div>
-                <div>
-                    {appState.user.Id === creator.Id ? "you" : creator.Name}
-                </div>
+                <div>{creator.Name}</div>
             </div>
             <div>{note.Content}</div>
         </li>
@@ -1057,67 +1236,276 @@ function SampleDetailProjectNoteListItem({
 }
 
 interface ResourceBrowserSampleDataProps {
-    data: UUID[];
+    project_resources: app.ProjectResources;
+    filter: UUID[];
     className?: string;
 }
 function ResourceBrowserSampleData({
-    data,
+    project_resources,
+    filter,
     className,
 }: ResourceBrowserSampleDataProps) {
-    console.debug(data);
-    return <div>data results</div>;
-}
+    const [dataSelected, setDataSelected] = useState<UUID[]>([]);
+    const data_schema_sample_data = new Map<UUID, app.SampleData[]>();
+    for (const sample_data of project_resources.SampleData) {
+        const schema_datas = data_schema_sample_data.get(sample_data.Schema);
+        if (schema_datas === undefined) {
+            data_schema_sample_data.set(sample_data.Schema, [sample_data]);
+        } else {
+            schema_datas.push(sample_data);
+        }
+    }
 
-interface ProjectSamplePropertyProps {
-    property: app.Property;
-}
-function ProjectSampleProperty({ property }: ProjectSamplePropertyProps) {
-    const title = `${property.Key} (${property.Type})`;
+    function toggle_data_selection(sample_data: UUID, selected: boolean) {
+        if (selected && !dataSelected.includes(sample_data)) {
+            setDataSelected([...dataSelected, sample_data]);
+        } else if (!selected && dataSelected.includes(sample_data)) {
+            const filtered = dataSelected.filter((id) => id !== sample_data);
+            setDataSelected(filtered);
+        }
+    }
+
+    const sample_data_arr = Array.from(data_schema_sample_data.entries());
     return (
-        <div title={title}>
-            <span className="font-bold">{property.Key}</span>:{" "}
-            <span>
-                <ProjectSamplePropertyValue
-                    type={property.Type}
-                    value={property.Value}
-                />
-            </span>
+        <div className={className ?? ""}>
+            {sample_data_arr.map(([data_schema_id, schema_sample_data]) => {
+                const data_schema = project_resources.DataSchemas.find(
+                    (schema) => schema.Id === data_schema_id
+                )!;
+                return (
+                    <ResourceBrowserSampleDataSchemaGroup
+                        project_resources={project_resources}
+                        key={data_schema_id}
+                        data_schema={data_schema}
+                        sample_data={schema_sample_data}
+                        selected_data={dataSelected}
+                        onSelectionToggle={toggle_data_selection}
+                    />
+                );
+            })}
         </div>
     );
 }
 
-interface ProjectSamplePropertyValueProps {
-    type: app.PropertyType;
-    value: any;
+interface ResourceBrowserSampleDataSchemaGroupProps {
+    project_resources: app.ProjectResources;
+    data_schema: app.DataSchema;
+    sample_data: app.SampleData[];
+    selected_data: UUID[];
+    onSelectionToggle: (sample_data: UUID, selected: boolean) => void;
 }
-function ProjectSamplePropertyValue({
-    type,
-    value,
-}: ProjectSamplePropertyValueProps) {
-    switch (type) {
-        case app.PropertyType.PROPERTY_TYPE_STRING:
-        case app.PropertyType.PROPERTY_TYPE_INT:
-        case app.PropertyType.PROPERTY_TYPE_UINT:
-        case app.PropertyType.PROPERTY_TYPE_FLOAT:
-            return <>value</>;
-        case app.PropertyType.PROPERTY_TYPE_BOOL:
-            switch (value) {
-                case true:
-                    return <>true</>;
-                case false:
-                    return <>false</>;
-                default:
-                    throw new Error("incompatible sample property value");
-            }
-            break;
-        case app.PropertyType.PROPERTY_TYPE_QUANTITY:
-            return (
-                <>
-                    <span>{value.MagnitudeString}</span>{" "}
-                    <span>{value.Unit}</span>
-                </>
-            );
-        case app.PropertyType.PROPERTY_TYPE_TIMESTAMP:
-            return <>value</>;
+function ResourceBrowserSampleDataSchemaGroup({
+    project_resources,
+    data_schema,
+    sample_data,
+    selected_data,
+    onSelectionToggle,
+}: ResourceBrowserSampleDataSchemaGroupProps) {
+    const project_data = useContext(CommonProjectDataCtx);
+
+    async function download_all_schema_data(
+        hierarchy: app.SaveDataHierarchy[]
+    ) {
+        const sample_data_ids = sample_data.map((data) => data.Id);
+        await app.DataService.SaveDataSchemaSampleDataAll(
+            data_schema.Id,
+            project_data.project_id,
+            hierarchy
+        )
+            .then((path) => {
+                console.info(`data saved to ${path}`, sample_data_ids);
+            })
+            .catch((err) => {
+                console.error("could not download data", err);
+            });
     }
+
+    return (
+        <div>
+            <div className="px-4 flex gap-2">
+                <h4 className="text-lg font-bold">{data_schema.Label}</h4>
+                <div>
+                    <ResourceBrowserSampleDataSchemaGroupDownloadDataBtn
+                        onDownload={download_all_schema_data}
+                    />
+                </div>
+            </div>
+            <ol
+                className="grid gap-x-4"
+                style={{
+                    gridTemplateColumns: "repeat(3, min-content) auto",
+                }}
+            >
+                {sample_data.map((data, idx) => {
+                    const sample = project_resources.Samples.find(
+                        (sample) => sample.Id === data.Sample
+                    )!;
+
+                    const selected = selected_data.includes(data.Id);
+                    return (
+                        <ResourceBrowserSampleDataSchemaGroupListItem
+                            key={data.Id}
+                            index={idx}
+                            sample={sample}
+                            sample_data={data}
+                            selected={selected}
+                            onSelectionToggle={onSelectionToggle}
+                        />
+                    );
+                })}
+            </ol>
+        </div>
+    );
+}
+
+interface ResourceBrowserSampleDataSchemaGroupDownloadDataBtnProps {
+    onDownload: (hierarchy: app.SaveDataHierarchy[]) => Promise<void>;
+}
+function ResourceBrowserSampleDataSchemaGroupDownloadDataBtn({
+    onDownload,
+}: ResourceBrowserSampleDataSchemaGroupDownloadDataBtnProps) {
+    const [align, setAlign] = useState<"left" | "right">("left");
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useLayoutEffect(() => {
+        const menu = menuRef.current;
+        if (!menu) return;
+
+        const rect = menu.getBoundingClientRect();
+        const viewportWidth = window.innerWidth;
+
+        if (rect.right > viewportWidth) {
+            setAlign("right");
+        } else if (rect.left < 0) {
+            setAlign("left");
+        }
+    }, []);
+
+    function on_download(
+        e: MouseEvent<HTMLButtonElement>,
+        hierarchy: app.SaveDataHierarchy[]
+    ) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        onDownload(hierarchy);
+    }
+
+    const MENU_LIST_ITEM_CLASS =
+        "hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer";
+    const MENU_LIST_ITEM_BTN_CLASS =
+        "w-full h-full px-4 py-2 text-left cursor-pointer whitespace-nowrap";
+    return (
+        <div className="flex gap-1 cursor-pointer">
+            <button
+                type="button"
+                className="cursor-pointer"
+                title="Download all schema data"
+                onMouseDown={(e) => on_download(e, [])}
+            >
+                <icon.Download />
+            </button>
+            <div className="relative group/menu">
+                <button type="button" className="align-middle cursor-pointer">
+                    <icon.CaretDown />
+                </button>
+                <div
+                    ref={menuRef}
+                    className={classNames({
+                        "invisible group-hover/menu:visible absolute top-full border \
+                        bg-white dark:bg-black transition-[visibility] delay-200":
+                            true,
+                        "left-0": align === "left",
+                        "right-0": align === "right",
+                    })}
+                >
+                    <ol>
+                        <li className={MENU_LIST_ITEM_CLASS}>
+                            <button
+                                type="button"
+                                className={MENU_LIST_ITEM_BTN_CLASS}
+                                title="Download all project data in the same folder"
+                                onMouseDown={(e) => on_download(e, [])}
+                            >
+                                Flat
+                            </button>
+                        </li>
+                        <li className={MENU_LIST_ITEM_CLASS}>
+                            <button
+                                type="button"
+                                className={MENU_LIST_ITEM_BTN_CLASS}
+                                title="Download all project data organized by sample"
+                                onMouseDown={(e) =>
+                                    on_download(e, [
+                                        app.SaveDataHierarchy
+                                            .SAVE_DATA_HIERARCHY_SAMPLE,
+                                    ])
+                                }
+                            >
+                                Sample
+                            </button>
+                        </li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+interface ResourceBrowserSampleDataSchemaGroupListItemProps {
+    index: number;
+    sample: app.ProjectSample;
+    sample_data: app.SampleData;
+    selected: boolean;
+    onSelectionToggle: (sample_data: UUID, selected: boolean) => void;
+}
+function ResourceBrowserSampleDataSchemaGroupListItem({
+    index,
+    sample,
+    sample_data,
+    selected,
+    onSelectionToggle,
+}: ResourceBrowserSampleDataSchemaGroupListItemProps) {
+    const timestamp = new Date(sample_data.Timestamp);
+
+    function on_selection_change(e: ChangeEvent<HTMLInputElement>) {
+        const input = e.target as HTMLInputElement;
+        onSelectionToggle(sample_data.Id, input.checked);
+    }
+
+    return (
+        <li
+            className={classNames({
+                "px-2 grid grid-cols-subgrid col-span-full cursor-pointer \
+                group/sample-data-row \
+                hover:bg-gray-50 dark:hover:bg-gray-900": true,
+                "bg-gray-50 dark:bg-gray-900": selected,
+            })}
+            style={{
+                gridRow: index + 1,
+            }}
+        >
+            <div className="row-1 col-1">{sample.Label}</div>
+            <div className="row-1 col-2 whitespace-nowrap">
+                {timestamp.toLocaleString()}
+            </div>
+            <div
+                className={classNames({
+                    "flex gap-1 group-hover/sample-data-row:visible -col-1":
+                        true,
+                    invisible: !selected,
+                })}
+            >
+                <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={on_selection_change}
+                />
+                <button type="button" className="btn-cmd" title="Download data">
+                    <icon.Download />
+                </button>
+            </div>
+        </li>
+    );
 }

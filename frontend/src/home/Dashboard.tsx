@@ -150,9 +150,9 @@ interface ProjectCardProps {
 }
 function ProjectCard({ project }: ProjectCardProps) {
     return (
-        <div className="border rounded-sm px-2 py-1">
+        <div className="border rounded-sm">
             <Link to={`/project/${project.Id}`}>
-                <div>
+                <div className="px-2 py-1">
                     <h4 className="font-bold">{project.Label}</h4>
                     <div>{project.Description}</div>
                 </div>

@@ -45,6 +45,7 @@ export {
     PropertyType,
     SampleData,
     SampleGroupRelation,
+    SaveDataHierarchy,
     StoredData,
     User,
     UserCreate,
