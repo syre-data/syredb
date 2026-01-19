@@ -13,3 +13,7 @@
 @utility btn-submit {
   @apply cursor-pointer px-1 py-0.5 rounded-xs border
 }
+
+.dark select option {
+  background-color: black;
+}
