@@ -1,5 +1,5 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { useParams, useNavigate, data } from "react-router";
+import { useParams, useNavigate, data, useSearchParams } from "react-router";
 import * as app from "../../bindings/syredb/app";
 import * as common from "../common";
 import { ErrorBoundary, FallbackProps } from "react-error-boundary";
@@ -17,6 +17,7 @@ import {
     SetStateAction,
     Suspense,
     useContext,
+    useDebugValue,
     useEffect,
     useLayoutEffect,
     useReducer,
@@ -26,6 +27,8 @@ import {
 import { immerable } from "immer";
 import icon from "../icon";
 import classNames from "classnames";
+import * as property from "../components/Property";
+import { SelectPropertyType, InputPropertyValue } from "../components/Property";
 
 export default function () {
     const { id: project_id } = useParams();
@@ -52,11 +55,12 @@ function ProjectSamplesCreateError({
     error,
     resetErrorBoundary,
 }: FallbackProps) {
-    console.error(error);
+    const err = error as common.BackendError;
+    console.error(err);
     return (
         <div>
             <div>Could not load project data</div>
-            <div>{error.message}</div>
+            <div>{err.message}</div>
         </div>
     );
 }
@@ -262,7 +266,7 @@ function stateReducer(draft: State, action: StateAction) {
             break;
         case "remove_sample":
             idx = draft.samples.findIndex(
-                (sample) => sample.id === action.payload.id
+                (sample) => sample.id === action.payload.id,
             );
             if (idx > -1) {
                 draft.samples.splice(idx, 1);
@@ -270,7 +274,7 @@ function stateReducer(draft: State, action: StateAction) {
             break;
         case "set_sample_label":
             maybe_sample = draft.samples.find(
-                (sample) => sample.id === action.payload.id
+                (sample) => sample.id === action.payload.id,
             );
             if (maybe_sample === undefined) {
                 console.error(`invalid sample id: ${action.payload.id}`);
@@ -282,11 +286,11 @@ function stateReducer(draft: State, action: StateAction) {
         case "add_property":
             if (
                 draft.properties.find(
-                    (property) => property.key === action.payload.property.key
+                    (property) => property.key === action.payload.property.key,
                 )
             ) {
                 console.error(
-                    `property ${action.payload.property.key} already exists`
+                    `property ${action.payload.property.key} already exists`,
                 );
                 return;
             }
@@ -298,7 +302,7 @@ function stateReducer(draft: State, action: StateAction) {
             break;
         case "remove_property":
             idx = draft.properties.findIndex(
-                (property) => property.key === action.payload.key
+                (property) => property.key === action.payload.key,
             );
             if (idx < 0) {
                 console.debug(`property ${action.payload.key} not found`);
@@ -315,11 +319,11 @@ function stateReducer(draft: State, action: StateAction) {
         case "expand_sample_row":
             const ok = draft.display.rows.setExpanded(
                 action.payload.sample_id,
-                action.payload.expand
+                action.payload.expand,
             );
             if (!ok) {
                 console.error(
-                    `sample ${action.payload.sample_id} not found in display state rows`
+                    `sample ${action.payload.sample_id} not found in display state rows`,
                 );
             }
             return;
@@ -334,7 +338,7 @@ const StateCtx = createContext(new State([]));
 const StateDispatchCtx = createContext<ActionDispatch<[StateAction]>>(() => {});
 
 function project_sample_create_is_empty(
-    sample: app.ProjectSampleCreate
+    sample: app.ProjectSampleCreate,
 ): boolean {
     const label_empty = !sample.Label || sample.Label.length === 0;
     const tags_empty = !sample.Tags || sample.Tags.length === 0;
@@ -381,6 +385,7 @@ interface ProjectSamplesCreateProps {
 function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
+    const [searchParams, _] = useSearchParams();
     const { data: project } = useSuspenseQuery({
         queryKey: ["project", project_id],
         queryFn: () =>
@@ -397,7 +402,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
 
     const [error, setError] = useState("");
     const user_permission = common.project_user_permission_string_to_variant(
-        project.UserPermission
+        project.UserPermission,
     );
     if (user_permission === undefined) {
         console.error(`invalid user permission: ${project.UserPermission}`);
@@ -411,11 +416,11 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
     }
 
     const project_sample_labels = project_resources.Samples.map(
-        (sample) => sample.Label
+        (sample) => sample.Label,
     );
     const [state, stateDispatch] = useImmerReducer(
         stateReducer,
-        new State(project_sample_labels)
+        new State(project_sample_labels),
     );
 
     function cancel(e: MouseEvent<HTMLButtonElement>) {
@@ -423,41 +428,88 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
             return;
         }
 
+        const form = document.getElementById(
+            "create-samples-form",
+        )! as HTMLFormElement;
+        const data = new FormData(form);
+        let empty = true;
+        for (const [key, value] of data.entries()) {
+            const value_str = value.toString();
+            let input = document.getElementById(key)!;
+            let default_value = null;
+            if (input.tagName === "INPUT") {
+                default_value = (input as HTMLInputElement).defaultValue;
+            }
+            if (default_value !== null && value_str !== default_value) {
+                empty = false;
+                break;
+            }
+            if (default_value === null && value_str) {
+                empty = false;
+                break;
+            }
+        }
+        if (!empty) {
+            const proceed = window.confirm(
+                "You have entered data. Are you sure you want to cancel?",
+            );
+            if (!proceed) {
+                return;
+            }
+        }
+
         navigate(-1);
     }
 
-    async function create_samples(e: FormEvent<HTMLFormElement>) {
+    function submit_create_samples_form(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== common.MouseButton.Primary) {
+            return;
+        }
+        e.stopPropagation();
         e.preventDefault();
+
+        const form = document.getElementById(
+            "create-samples-form",
+        )! as HTMLFormElement;
+        create_samples(form);
+    }
+
+    async function trigger_create_samples(e: FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        const form = e.target as HTMLFormElement;
+        await create_samples(form);
+    }
+
+    async function create_samples(form: HTMLFormElement) {
         setError("");
 
         const submitBtn = document.getElementById(
-            "btn-submit"
+            "btn-submit",
         )! as HTMLButtonElement;
         submitBtn.disabled = true;
 
-        const data = new FormData(e.target as HTMLFormElement);
+        const data = new FormData(form);
         for (const [key, _] of data.entries()) {
             const input = document.getElementById(key)! as HTMLInputElement;
             input.setCustomValidity("");
         }
 
-        let sample_info, sample_data, sample_notes;
         try {
-            [sample_info, sample_data, sample_notes] =
+            var [sample_info, sample_data, sample_notes] =
                 project_samples_create_parse_form_data(data, state.properties);
         } catch (err) {
             console.error(err);
+            submitBtn.disabled = false;
             return;
         }
 
-        const form = e.target as HTMLFormElement;
         for (const data of sample_data.values()) {
             if (!data.file) {
                 continue;
             }
             if (!data.schema) {
                 const input = document.getElementById(
-                    `sample[${data.sample_id}][data][${data.id}][schema]`
+                    `sample[${data.sample_id}][data][${data.id}][schema]`,
                 )! as HTMLInputElement;
                 input.setCustomValidity("data schema must be set");
                 continue;
@@ -467,6 +519,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
             for (const property of data.properties.values()) {
                 if (!property.key || !property.type) {
                     console.error(`invalid sample data property`, property);
+                    submitBtn.disabled = false;
                     return;
                 }
 
@@ -489,8 +542,9 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                                 break;
                             default:
                                 console.error(
-                                    `invalid sample data property value: ${property.value}`
+                                    `invalid sample data property value: ${property.value}`,
                                 );
+                                submitBtn.disabled = false;
                                 return;
                         }
                         break;
@@ -501,10 +555,10 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                         value = parseInt(property.value);
                         if (value < 0) {
                             const input = document.getElementById(
-                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value]`
+                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value]`,
                             )! as HTMLInputElement;
                             input.setCustomValidity(
-                                "invalid value, must be non-negative"
+                                "invalid value, must be non-negative",
                             );
                         }
                         break;
@@ -520,30 +574,30 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                         }
                         if (!property.value.magnitude) {
                             const input = document.getElementById(
-                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value][magnitude]`
+                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value][magnitude]`,
                             )! as HTMLInputElement;
                             input.setCustomValidity(
-                                "magnitude can not be empty"
+                                "magnitude can not be empty",
                             );
                         } else if (!property.value.unit) {
                             const input = document.getElementById(
-                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value][magnitude]`
+                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value][magnitude]`,
                             )! as HTMLInputElement;
                             input.setCustomValidity("unit can not be empty");
                         }
 
                         const magnitude_value = parseFloat(
-                            property.value.magnitude
+                            property.value.magnitude,
                         );
                         value = {
                             MagnitudeString: property.value.magnitude,
                             MagnitudeValue: magnitude_value,
                             Unit: property.value.unit,
-                        } as common.QuantityProperty;
+                        } as property.QuantityProperty;
                         break;
                     default:
                         throw new Error(
-                            `invalid property type: ${property.type}`
+                            `invalid property type: ${property.type}`,
                         );
                 }
 
@@ -552,7 +606,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                         Key: property.key,
                         Type: property.type,
                         Value: value,
-                    })
+                    }),
                 );
             }
 
@@ -563,7 +617,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                     FilePath: data.file!,
                     Timestamp: data.timestamp?.toISOString(),
                     Properties: data_properties,
-                })
+                }),
             );
         }
 
@@ -573,7 +627,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
             }
             if (!note.timestamp) {
                 const input = document.getElementById(
-                    `sample[${note.sample_id}][note][${note.id}][timestamp]`
+                    `sample[${note.sample_id}][note][${note.id}][timestamp]`,
                 )! as HTMLInputElement;
                 input.setCustomValidity("timestamp must be set");
                 continue;
@@ -584,10 +638,11 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                 new app.ProjectSampleNoteCreate({
                     Timestamp: note.timestamp!.toISOString(),
                     Content: note.content,
-                })
+                }),
             );
         }
         if (!form.reportValidity()) {
+            submitBtn.disabled = false;
             return;
         }
 
@@ -595,37 +650,38 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
             ...sample_info
                 .entries()
                 .filter(
-                    ([_, sample]) => !project_sample_create_is_empty(sample)
+                    ([_, sample]) => !project_sample_create_is_empty(sample),
                 ),
         ];
         if (sample_data_filtered.length === 0) {
-            setError("All samples are empty");
+            setError("No samples have information");
+            submitBtn.disabled = false;
             return;
         }
 
         for (const [sample_id, sample] of sample_data_filtered) {
             if (sample.Label.length === 0) {
                 const input = document.getElementById(
-                    `sample[${sample_id}][label]`
+                    `sample[${sample_id}][label]`,
                 )! as HTMLInputElement;
                 input.setCustomValidity("label can not be empty");
             }
         }
         if (!form.reportValidity()) {
+            submitBtn.disabled = false;
             return;
         }
 
         const samples = [...sample_data_filtered.map(([_, sample]) => sample)];
         await app.ProjectService.CreateProjectSamples(project_id, samples)
             .then(() => {
-                // FIXME: when navigated back to previous page as project home, new samples are not included
                 queryClient.invalidateQueries({
                     queryKey: ["project_resources", project_id],
                 });
                 navigate(-1);
             })
-            .catch((err) => {
-                setError(err);
+            .catch((err: common.BackendError) => {
+                setError(err.message);
                 submitBtn.disabled = false;
             });
     }
@@ -641,7 +697,8 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                 <StateDispatchCtx value={stateDispatch}>
                     <ProjectSamplesFormHeader />
                     <form
-                        onSubmit={create_samples}
+                        id="create-samples-form"
+                        onSubmit={trigger_create_samples}
                         className="flex flex-col gap-2 pt-2"
                     >
                         <ProjectSamplesFormList data_schemas={data_schemas} />
@@ -651,8 +708,9 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                                     type="submit"
                                     id="btn-submit"
                                     className="btn-submit"
+                                    onMouseDown={submit_create_samples_form}
                                 >
-                                    Save
+                                    Create samples
                                 </button>
                             </div>
                             <div>
@@ -668,7 +726,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                     </form>
                 </StateDispatchCtx>
             </StateCtx>
-            <div>{error}</div>
+            <div className="pt-2 text-center text-red-600">{error}</div>
         </div>
     );
 }
@@ -681,11 +739,11 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
  */
 function project_samples_create_parse_form_data(
     data: FormData,
-    properties: PropertyInfo[]
+    properties: PropertyInfo[],
 ): [
     Map<string, app.ProjectSampleCreate>,
     Map<string, SampleDataCreate>,
-    Map<string, SampleNoteCreate>
+    Map<string, SampleNoteCreate>,
 ] {
     const SAMPLE_FORM_KEY_PATTERN = /sample\[(\d+?)\]\[(\w+?)\]/;
     const SAMPLE_PROPERTY_PATTERN = /sample\[\d+?\]\[property\]\[(\w+?)\]/;
@@ -713,7 +771,7 @@ function project_samples_create_parse_form_data(
                     Tags: [],
                     Properties: [],
                     Notes: [],
-                })
+                }),
             );
         }
         const sample = sample_info.get(sample_id)!;
@@ -739,7 +797,7 @@ function project_samples_create_parse_form_data(
                 const property_key = property_matches[1];
 
                 const property_data = properties.find(
-                    (property) => property.key === property_key
+                    (property) => property.key === property_key,
                 );
                 if (property_data === undefined) {
                     throw new Error(`invalid property key: ${property_key}`);
@@ -765,7 +823,7 @@ function project_samples_create_parse_form_data(
                         property_value = parseInt(property_value);
                         if (isNaN(property_value)) {
                             const input = document.getElementById(
-                                key
+                                key,
                             )! as HTMLInputElement;
                             input.setCustomValidity("invalid integer");
                             continue;
@@ -780,7 +838,7 @@ function project_samples_create_parse_form_data(
                         property_value = parseInt(property_value);
                         if (isNaN(property_value) || property_value < 0) {
                             const input = document.getElementById(
-                                key
+                                key,
                             )! as HTMLInputElement;
                             input.setCustomValidity("invalid unsigned integer");
                             continue;
@@ -795,10 +853,10 @@ function project_samples_create_parse_form_data(
                         property_value = parseFloat(property_value);
                         if (isNaN(property_value)) {
                             const input = document.getElementById(
-                                key
+                                key,
                             )! as HTMLInputElement;
                             input.setCustomValidity(
-                                "could not parse as a number"
+                                "could not parse as a number",
                             );
                             continue;
                         }
@@ -811,7 +869,7 @@ function project_samples_create_parse_form_data(
                         }
                         if (key !== magnitude_key) {
                             throw new Error(
-                                `invalid sample property quantity form key: ${key}`
+                                `invalid sample property quantity form key: ${key}`,
                             );
                         }
 
@@ -833,11 +891,11 @@ function project_samples_create_parse_form_data(
                             unit.length !== 0
                         ) {
                             const input = document.getElementById(
-                                magnitude_key
+                                magnitude_key,
                             )! as HTMLInputElement;
 
                             input.setCustomValidity(
-                                "magnitude can not be empty"
+                                "magnitude can not be empty",
                             );
                             continue;
                         }
@@ -845,11 +903,11 @@ function project_samples_create_parse_form_data(
                         const magnitude_value = parseFloat(magnitude_string);
                         if (isNaN(magnitude_value)) {
                             const input = document.getElementById(
-                                magnitude_key
+                                magnitude_key,
                             )! as HTMLInputElement;
 
                             input.setCustomValidity(
-                                "could not parse as a number"
+                                "could not parse as a number",
                             );
                             continue;
                         }
@@ -859,7 +917,7 @@ function project_samples_create_parse_form_data(
                             magnitude_string.length !== 0
                         ) {
                             const input = document.getElementById(
-                                unit_key
+                                unit_key,
                             )! as HTMLInputElement;
 
                             input.setCustomValidity("unit can not be empty");
@@ -877,16 +935,16 @@ function project_samples_create_parse_form_data(
                         throw new Error("TODO");
                     default:
                         throw new Error(
-                            `invalid sample property type key: ${key}`
+                            `invalid sample property type key: ${key}`,
                         );
                 }
 
-                const property = new app.Property({
+                const prop = new app.Property({
                     Key: property_key,
                     Type: property_data.type,
                     Value: property_value,
                 });
-                sample.Properties.push(property);
+                sample.Properties.push(prop);
                 break;
             case "data":
                 const data_matches = key.match(SAMPLE_DATA_PATTERN);
@@ -919,11 +977,11 @@ function project_samples_create_parse_form_data(
                         break;
                     case "property":
                         const data_property_matches = key.match(
-                            SAMPLE_DATA_PROPERTY_PATTERN
+                            SAMPLE_DATA_PROPERTY_PATTERN,
                         );
                         if (data_property_matches === null) {
                             throw new Error(
-                                `invalid sample data form key: ${key}`
+                                `invalid sample data form key: ${key}`,
                             );
                         }
                         const data_property_id = data_property_matches[1];
@@ -945,8 +1003,8 @@ function project_samples_create_parse_form_data(
                                 break;
                             case "type":
                                 datum_property.type =
-                                    common.property_type_string_to_variant(
-                                        value.toString()
+                                    property.type_string_to_variant(
+                                        value.toString(),
                                     );
                                 break;
                             case "value":
@@ -972,7 +1030,7 @@ function project_samples_create_parse_form_data(
                                 break;
                             default:
                                 throw new Error(
-                                    `invalid sample data property form key: ${key}`
+                                    `invalid sample data property form key: ${key}`,
                                 );
                         }
                         break;
@@ -1081,8 +1139,8 @@ function ProjectSamplesFormHeader() {
             return;
         }
 
-        const type = common.property_type_string_to_variant(
-            newPropertyTypeNode.current.value
+        const type = property.type_string_to_variant(
+            newPropertyTypeNode.current.value,
         );
         if (type === undefined) {
             console.error(`invalid property type ${type}`);
@@ -1226,7 +1284,7 @@ function ProjectSamplesFormList({ data_schemas }: ProjectSamplesFormListProps) {
         >
             {state.samples.map((sample, idx) => {
                 const expanded = state.display.rows.rows.find(
-                    (row) => row.sample_id === sample.id
+                    (row) => row.sample_id === sample.id,
                 )?.expanded;
 
                 return (
@@ -1234,8 +1292,7 @@ function ProjectSamplesFormList({ data_schemas }: ProjectSamplesFormListProps) {
                         key={sample.id.toString()}
                         id={`sample[${sample.id}]`}
                         className={classNames({
-                            "px-4 col-span-full grid grid-cols-subgrid grid-rows-subgrid border-l":
-                                true,
+                            "px-4 col-span-full grid grid-cols-subgrid grid-rows-subgrid border-l": true,
                             "border-l-transparent": !expanded,
                             "pb-2": expanded,
                         })}
@@ -1301,20 +1358,20 @@ function SamplesFormListItem({
         }
 
         const matching_label_idx = state.samples.findIndex(
-            (sample, idx) => sample.label === value && idx !== index
+            (sample, idx) => sample.label === value && idx !== index,
         );
         if (matching_label_idx > -1) {
             input.setCustomValidity(
                 `Labels must be unique, matches sample ${
                     matching_label_idx + 1
-                }`
+                }`,
             );
             input.reportValidity();
             return;
         }
         if (state._project_sample_labels.includes(value)) {
             input.setCustomValidity(
-                "A sample with this label already exists in this project"
+                "A sample with this label already exists in this project",
             );
             input.reportValidity();
             return;
@@ -1342,7 +1399,7 @@ function SamplesFormListItem({
     }
 
     const expanded = state.display.rows.rows.find(
-        (row) => row.sample_id === sample.id
+        (row) => row.sample_id === sample.id,
     )?.expanded;
 
     function toggle_expand(e: MouseEvent<HTMLButtonElement>) {
@@ -1558,7 +1615,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
     }, [inputNode]);
 
     const colIdx = state.display.columns.findColumnIndex(
-        `property.${property.key}`
+        `property.${property.key}`,
     );
     if (colIdx < 0) {
         console.error("invalid column index");
@@ -1566,12 +1623,24 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
     }
 
     const style = { gridRow, gridColumn: colIdx + 1 };
+    return (
+        <InputPropertyValue
+            type={property.type}
+            id={`sample[${sample.id}][property][${property.key}]`}
+            name={`sample[${sample.id}][property][${property.key}]`}
+            className="input-basic"
+            quantity_magnitude_props={{
+                className: "input-basic min-w-0 shrink",
+            }}
+            quantity_unit_props={{ className: "input-basic min-w-0 shrink-2" }}
+        />
+    );
     switch (property.type) {
         case app.PropertyType.PROPERTY_TYPE_STRING:
             return (
                 <div style={style}>
                     <input
-                        type="string"
+                        type="text"
                         id={`sample[${sample.id}][property][${property.key}]`}
                         name={`sample[${sample.id}][property][${property.key}]`}
                         className="input-basic"
@@ -1647,7 +1716,7 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
                         placeholder="Magnitude"
                     />
                     <input
-                        type="string"
+                        type="text"
                         id={`sample[${sample.id}][property][${property.key}][unit]`}
                         name={`sample[${sample.id}][property][${property.key}][unit]`}
                         className="input-basic min-w-0 shrink-2"
@@ -1686,8 +1755,7 @@ function SampleDataListItem({
         <li
             key={data.id}
             className={classNames({
-                "col-span-full grid grid-cols-subgrid group/data-list-item border-l":
-                    true,
+                "col-span-full grid grid-cols-subgrid group/data-list-item border-l": true,
                 "border-l-transparent": !expanded,
             })}
         >
@@ -1780,11 +1848,11 @@ function SampleData({
 
     async function try_parse_data() {
         const file_input = document.getElementById(
-            `sample[${sample.id}][data][${id}][file]`
+            `sample[${sample.id}][data][${id}][file]`,
         )! as HTMLInputElement;
 
         const schema_input = document.getElementById(
-            `sample[${sample.id}][data][${id}][schema]`
+            `sample[${sample.id}][data][${id}][schema]`,
         )! as HTMLSelectElement;
 
         const file = file_input.value.trim();
@@ -1805,11 +1873,11 @@ function SampleData({
                         file_input.setCustomValidity("invalid file extension");
                     case "INCOMAPTIBLE_DATA_SIZE":
                         file_input.setCustomValidity(
-                            "data file column length does not match schema"
+                            "data file column length does not match schema",
                         );
                     default:
                         file_input.setCustomValidity(
-                            "data incompatible with schema"
+                            "data incompatible with schema",
                         );
                 }
                 file_input.reportValidity();
@@ -1988,7 +2056,7 @@ function SampleDataProperties({
             return;
         }
 
-        const type = common.property_type_string_to_variant(type_input.value);
+        const type = property.type_string_to_variant(type_input.value);
         if (type === undefined) {
             type_input.setCustomValidity("invalid type");
             type_input.reportValidity();
@@ -2165,7 +2233,7 @@ function SampleDataPropertyValue({
             return (
                 <div className={className}>
                     <input
-                        type="string"
+                        type="text"
                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
                         className="input-basic"
@@ -2241,7 +2309,7 @@ function SampleDataPropertyValue({
                         placeholder="Magnitude"
                     />
                     <input
-                        type="string"
+                        type="text"
                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][unit]`}
                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][unit]`}
                         className="input-basic min-w-0 shrink-2"
@@ -2317,38 +2385,10 @@ function SampleNote({
     );
 }
 
-type SelectPropertyTypeProps = ComponentPropsWithoutRef<"select"> & {
-    ref?: React.Ref<HTMLSelectElement>;
-};
-function SelectPropertyType({ ref, ...props }: SelectPropertyTypeProps) {
-    return (
-        <select ref={ref} {...props}>
-            <option value="string" title="Text">
-                String
-            </option>
-            <option value="int" title="Integer">
-                Int
-            </option>
-            <option value="uint" title="Unsigned integer (counting numbers)">
-                UInt
-            </option>
-            <option value="float" title="Decimal number">
-                Float
-            </option>
-            <option value="boolean" title="True/False">
-                Boolean
-            </option>
-            <option value="quantity" title="Measured value (e.g. 10.0 cm)">
-                Quantity
-            </option>
-        </select>
-    );
-}
-
 function nowLocalISOString() {
     let now = new Date();
     now = new Date(Date.now() - now.getTimezoneOffset() * 60 * 1000);
     now.setSeconds(0);
     now.setMilliseconds(0);
-    return now.toISOString().slice(0, -1);
+    return now.toISOString().slice(0, -8); // YYYY-MM-DDTHH:mm
 }

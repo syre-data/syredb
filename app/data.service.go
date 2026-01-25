@@ -85,7 +85,7 @@ type DataStorage string
 
 const (
 	DATA_STORAGE_INTERNAL = DataStorage("internal")
-	DATA_STORAGE_FILE     = DataStorage("file")
+	DATA_STORAGE_EXTERNAL = DataStorage("external")
 )
 
 type DataSchema struct {
@@ -229,8 +229,8 @@ func (s *DataService) DataSchemaCreate(data_schema DataSchemaCreate) (Ok, error)
 		if err != nil {
 			return Ok{}, err
 		}
-	case DATA_STORAGE_FILE:
-		err = s.data_schema_storage_table_file_create(schema_id)
+	case DATA_STORAGE_EXTERNAL:
+		err = s.data_schema_storage_table_external_create(schema_id)
 		if err != nil {
 			return Ok{}, err
 		}
@@ -345,15 +345,15 @@ func (s *DataService) data_schema_storage_table_internal_create(schema_id uuid.U
 	return nil
 }
 
-const SAMPLE_DATA_STORAGE_TABLE_FILE_COL_LABEL = "file_path"
+const SAMPLE_DATA_STORAGE_TABLE_EXTERNAL_COL_LABEL = "path"
 
-func (s *DataService) data_schema_storage_table_file_create(schema_id uuid.UUID) error {
+func (s *DataService) data_schema_storage_table_external_create(schema_id uuid.UUID) error {
 	create_table_query := fmt.Sprintf(
 		`CREATE TABLE $1 (
 			_sample_data UUID REFERENCES sample_data_(_id),
 			%s VARCHAR(4096)
 		)`,
-		SAMPLE_DATA_STORAGE_TABLE_FILE_COL_LABEL,
+		SAMPLE_DATA_STORAGE_TABLE_EXTERNAL_COL_LABEL,
 	)
 
 	_, err := s.db.conn.Exec(
@@ -648,8 +648,8 @@ func (s *DataService) GetSampleDataStoredById(sample_data_ids []uuid.UUID) ([]St
 		data_schema := data_schemas[data_schema_idx]
 		var data any
 		switch data_schema.Storage {
-		case DATA_STORAGE_FILE:
-			data, err = s.get_sample_data_stored_by_id_storage_file_data(
+		case DATA_STORAGE_EXTERNAL:
+			data, err = s.get_sample_data_stored_by_id_storage_external_data(
 				sample_data_schema.SampleData,
 				sample_data_schema.DataSchema,
 			)
@@ -686,16 +686,16 @@ func (s *DataService) GetSampleDataStoredById(sample_data_ids []uuid.UUID) ([]St
 	return stored_data, nil
 }
 
-// get_sample_data_stored_by_id_storage_file_data gets the file path of a sample data
+// get_sample_data_stored_by_id_storage_external_data gets the file path of a sample data
 // with file storage
-func (s *DataService) get_sample_data_stored_by_id_storage_file_data(
+func (s *DataService) get_sample_data_stored_by_id_storage_external_data(
 	sample_data_id uuid.UUID,
 	data_schema_id uuid.UUID,
 ) (string, error) {
 	var file_path string
 	data_query := fmt.Sprintf(
 		"SELECT %s FROM %s WHERE _sample_data=$1",
-		SAMPLE_DATA_STORAGE_TABLE_FILE_COL_LABEL,
+		SAMPLE_DATA_STORAGE_TABLE_EXTERNAL_COL_LABEL,
 		sample_data_table_name_from_schema_id(data_schema_id),
 	)
 	err := s.db.conn.QueryRow(
@@ -811,8 +811,8 @@ func (s *DataService) SaveSampleDataSingle(sample_data_id uuid.UUID) (string, er
 
 	var data []byte
 	switch stored_data.Storage {
-	case DATA_STORAGE_FILE:
-		data, err = s.data_storage_file_get_data(stored_data.Data.(string))
+	case DATA_STORAGE_EXTERNAL:
+		data, err = s.data_storage_external_get_data(stored_data.Data.(string))
 		if err != nil {
 			s.logger.With("stored data", stored_data).Error("could not get stored sample data")
 			return "", err
@@ -852,7 +852,7 @@ func (s *DataService) data_storage_internal_get_data(data []ColumnData) ([]byte,
 	return []byte(data_bytes.String()), nil
 }
 
-func (s *DataService) data_storage_file_get_data(file_path string) ([]byte, error) {
+func (s *DataService) data_storage_external_get_data(file_path string) ([]byte, error) {
 	data, err := os.ReadFile(file_path)
 	if err != nil {
 		s.logger.With(
@@ -976,7 +976,7 @@ func (s *DataService) SaveSampleDataMultiple(
 		var file_name string
 		var data []byte
 		switch stored.Storage {
-		case DATA_STORAGE_FILE:
+		case DATA_STORAGE_EXTERNAL:
 			file_path := stored.Data.(string)
 			base := filepath.Base(file_path)
 			ext := filepath.Ext(base)
@@ -987,7 +987,7 @@ func (s *DataService) SaveSampleDataMultiple(
 				stored.SampleData.String(),
 				ext,
 			)
-			data, err = s.data_storage_file_get_data(file_path)
+			data, err = s.data_storage_external_get_data(file_path)
 			if err != nil {
 				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
 				return "", err
@@ -1108,7 +1108,7 @@ func (s *DataService) SaveDataSchemaSampleDataAll(
 		var file_name string
 		var data []byte
 		switch stored.Storage {
-		case DATA_STORAGE_FILE:
+		case DATA_STORAGE_EXTERNAL:
 			file_path := stored.Data.(string)
 			base := filepath.Base(file_path)
 			ext := filepath.Ext(base)
@@ -1119,7 +1119,7 @@ func (s *DataService) SaveDataSchemaSampleDataAll(
 				stored.SampleData.String(),
 				ext,
 			)
-			data, err = s.data_storage_file_get_data(file_path)
+			data, err = s.data_storage_external_get_data(file_path)
 			if err != nil {
 				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
 				return "", err
@@ -1315,7 +1315,7 @@ func (s *DataService) SaveProjectDataAll(project uuid.UUID, hierarchy []SaveData
 		var file_name string
 		var data []byte
 		switch stored.Storage {
-		case DATA_STORAGE_FILE:
+		case DATA_STORAGE_EXTERNAL:
 			file_path := stored.Data.(string)
 			base := filepath.Base(file_path)
 			ext := filepath.Ext(base)
@@ -1326,7 +1326,7 @@ func (s *DataService) SaveProjectDataAll(project uuid.UUID, hierarchy []SaveData
 				stored.SampleData.String(),
 				ext,
 			)
-			data, err = s.data_storage_file_get_data(file_path)
+			data, err = s.data_storage_external_get_data(file_path)
 			if err != nil {
 				s.logger.With("stored data", stored_data).Error("could not get stored sample data")
 				return "", err

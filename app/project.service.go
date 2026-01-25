@@ -221,8 +221,10 @@ type ProjectResources struct {
 func (s *ProjectService) GetProjectResources(project_id uuid.UUID) (ProjectResources, error) {
 	user_id := s.user_id()
 	if user_id == uuid.Nil {
+		s.logger.With("project", project_id).Warn("user not authorized")
 		return ProjectResources{}, &UserNotAuthenticatedError{}
 	}
+	s.logger.With("project", project_id).Debug("getting project resources")
 
 	var project_resources ProjectResources
 	project_query := "SELECT _id, _creator, label, description, visibility FROM project_ WHERE _id=$1"
@@ -292,52 +294,33 @@ func (s *ProjectService) GetProjectResources(project_id uuid.UUID) (ProjectResou
 		project_resources.Samples = []ProjectSample{}
 	}
 
-	var samples_err error
-	sample_tags_query := "SELECT _tag FROM project_sample_tag_ WHERE _project=$1 AND _sample=$2"
-	sample_properties_query := "SELECT _key, _type, value FROM sample_property_ WHERE _sample=$1"
-	sample_note_count_query := "SELECT COUNT(*) FROM project_sample_note_ WHERE _sample=$1"
-	for i := range project_resources.Samples {
-		sample_id := project_resources.Samples[i].Id
-		sample_tag_rows, _ := s.db.conn.Query(s.ctx, sample_tags_query, project_id, sample_id)
-		project_resources.Samples[i].Tags, err = pgx.CollectRows(sample_tag_rows, func(row pgx.CollectableRow) (string, error) {
-			var tag string
-			err := row.Scan(&tag)
-			return tag, err
-		})
-		if err != nil {
-			s.logger.With("project", project_id, "sample", sample_id, "error", err).Error("could not get project sample tags in project")
-			samples_err = err
-		}
-
-		sample_properties_rows, _ := s.db.conn.Query(s.ctx, sample_properties_query, sample_id)
-		project_resources.Samples[i].Properties, err = pgx.CollectRows(sample_properties_rows, func(row pgx.CollectableRow) (Property, error) {
-			var property Property
-			err := row.Scan(&property.Key, &property.Type, &property.Value)
-			return property, err
-		})
-		if err != nil {
-			s.logger.With("sample", sample_id, "error", err).Error("could not get sample properties")
-		}
-
-		err = s.db.conn.QueryRow(s.ctx, sample_note_count_query, sample_id).Scan(&project_resources.Samples[i].NoteCount)
-		if err != nil {
-			s.logger.With("sample", sample_id, "error", err).Error("could not get sample properties")
-		}
-
-	}
-	if samples_err != nil {
-		return ProjectResources{}, samples_err
-	}
-
-	sample_ids := make([]string, len(project_resources.Samples))
+	sample_ids := make([]uuid.UUID, len(project_resources.Samples))
 	for idx, sample := range project_resources.Samples {
-		sample_ids[idx] = fmt.Sprintf("'%s'", sample.Id)
+		sample_ids[idx] = sample.Id
 	}
-	sample_data_query := fmt.Sprintf(
-		"SELECT _id, _sample, _schema, _creator, timestamp FROM sample_data_ WHERE _sample IN (%s)",
-		strings.Join(sample_ids, ", "),
-	)
-	sample_data_rows, _ := s.db.conn.Query(s.ctx, sample_data_query)
+
+	sample_info, err := s.get_project_resources_sample_info(project_id, sample_ids)
+	if err != nil {
+		return ProjectResources{}, err
+	}
+	for _, info := range sample_info {
+		idx := slices.IndexFunc(project_resources.Samples, func(sample ProjectSample) bool {
+			return sample.Id == info.Id
+		})
+		if idx < 0 {
+			s.logger.With("sample", info.Id).Error("could not find sample")
+			panic("could not find sample")
+		}
+
+		project_resources.Samples[idx].Tags = info.Tags
+		project_resources.Samples[idx].Properties = info.Properties
+		project_resources.Samples[idx].NoteCount = info.NoteCount
+	}
+
+	sample_data_query :=
+		`SELECT _id, _sample, _schema, _creator, timestamp FROM sample_data_ 
+		WHERE _sample=ANY($1)`
+	sample_data_rows, _ := s.db.conn.Query(s.ctx, sample_data_query, sample_ids)
 	project_resources.SampleData, err = pgx.CollectRows(sample_data_rows, func(row pgx.CollectableRow) (SampleData, error) {
 		var sample_data SampleData
 		err := row.Scan(&sample_data.Id, &sample_data.Sample, &sample_data.Schema, &sample_data.Creator, &sample_data.Timestamp)
@@ -360,6 +343,122 @@ func (s *ProjectService) GetProjectResources(project_id uuid.UUID) (ProjectResou
 	}
 
 	return project_resources, nil
+}
+
+type ProjectSampleInfo struct {
+	Id         uuid.UUID
+	Tags       []string
+	Properties []Property
+	NoteCount  uint
+}
+
+func (s *ProjectService) get_project_resources_sample_info(project_id uuid.UUID, sample_ids []uuid.UUID) ([]ProjectSampleInfo, error) {
+	info := make([]ProjectSampleInfo, len(sample_ids))
+	for idx, sample_id := range sample_ids {
+		info[idx].Id = sample_id
+	}
+
+	tags_query :=
+		`SELECT _sample, _tag FROM project_sample_tag_
+	WHERE _project=$1 AND _sample=ANY($2)
+	GROUP BY _sample`
+	rows, _ := s.db.conn.Query(s.ctx, tags_query, sample_ids)
+	for rows.Next() {
+		var sample_id uuid.UUID
+		var tags []string
+		err := rows.Scan(&sample_id, &tags)
+		if err != nil {
+			s.logger.With("error", err).Error("could not get sample tags")
+			return nil, err
+		}
+
+		sample_info_idx := slices.IndexFunc(info, func(sample_info ProjectSampleInfo) bool {
+			return sample_info.Id == sample_id
+		})
+		if sample_info_idx < 0 {
+			s.logger.With("sample", sample_id).Error("could not find sample")
+			panic("could not find sample")
+		}
+
+		info[sample_info_idx].Tags = tags
+	}
+
+	properties_query :=
+		`SELECT _sample, _key, _type, value FROM sample_property_
+		WHERE _sample=ANY($1)
+		GROUP BY _sample`
+	rows, _ = s.db.conn.Query(s.ctx, properties_query, sample_ids)
+	for rows.Next() {
+		var sample_id uuid.UUID
+		var properties []Property
+		err := rows.Scan(&sample_id, &properties)
+		if err != nil {
+			s.logger.With("error", err).Error("could not get sample properties")
+			return nil, err
+		}
+
+		sample_info_idx := slices.IndexFunc(info, func(sample_info ProjectSampleInfo) bool {
+			return sample_info.Id == sample_id
+		})
+		if sample_info_idx < 0 {
+			s.logger.With("sample", sample_id).Error("could not find sample")
+			panic("could not find sample")
+		}
+
+		info[sample_info_idx].Properties = properties
+	}
+
+	note_count_query :=
+		`SELECT _sample, COUNT(*) FROM sample_note_ 
+		WHERE _sample=ANY($1) AND (_creator=$2 OR visibility='public')
+		GROUP BY _sample`
+	rows, _ = s.db.conn.Query(s.ctx, note_count_query, sample_ids, s.app_state.user_id)
+	for rows.Next() {
+		var sample_id uuid.UUID
+		var count uint
+		err := rows.Scan(&sample_id, &count)
+		if err != nil {
+			s.logger.With("error", err).Error("could not get sample note count")
+			return nil, err
+		}
+
+		sample_info_idx := slices.IndexFunc(info, func(sample_info ProjectSampleInfo) bool {
+			return sample_info.Id == sample_id
+		})
+		if sample_info_idx < 0 {
+			s.logger.With("sample", sample_id).Error("could not find sample")
+			panic("could not find sample")
+		}
+
+		info[sample_info_idx].NoteCount = count
+	}
+
+	project_note_count_query :=
+		`SELECT _sample, COUNT(*) FROM project_sample_note_ 
+		WHERE _project=$1 AND _sample=ANY($2) AND (_creator=$2 OR visibility='public')
+		GROUP BY _sample`
+	rows, _ = s.db.conn.Query(s.ctx, project_note_count_query, project_id, sample_ids, s.app_state.user_id)
+	for rows.Next() {
+		var sample_id uuid.UUID
+		var count uint
+		err := rows.Scan(&sample_id, &count)
+		if err != nil {
+			s.logger.With("error", err).Error("could not get project sample note count")
+			return nil, err
+		}
+
+		sample_info_idx := slices.IndexFunc(info, func(sample_info ProjectSampleInfo) bool {
+			return sample_info.Id == sample_id
+		})
+		if sample_info_idx < 0 {
+			s.logger.With("sample", sample_id).Error("could not find sample")
+			panic("could not find sample")
+		}
+
+		info[sample_info_idx].NoteCount += count
+	}
+
+	return info, nil
 }
 
 type ProjectWithUserPermission struct {
@@ -609,7 +708,7 @@ func (s *ProjectService) create_project_samples_parse_sample_data_to_schema(
 			switch data_schema.Storage {
 			case DATA_STORAGE_INTERNAL:
 				payload = data_parsed
-			case DATA_STORAGE_FILE:
+			case DATA_STORAGE_EXTERNAL:
 				payload = data.FilePath
 			default:
 				s.logger.With("data_schema", data.Schema, "storage", data_schema.Storage).Error("invalid storage type")
@@ -937,8 +1036,8 @@ func (s *ProjectService) create_project_samples_store_sample_data(
 				parsed_data,
 				sample_data_ids,
 			)
-		case DATA_STORAGE_FILE:
-			err = s.create_project_samples_store_sample_data_file(
+		case DATA_STORAGE_EXTERNAL:
+			err = s.create_project_samples_store_sample_data_external(
 				tx,
 				data_schema,
 				parsed_data,
@@ -1026,7 +1125,7 @@ func (s *ProjectService) create_project_samples_store_sample_data_internal(
 	return nil
 }
 
-func (s *ProjectService) create_project_samples_store_sample_data_file(
+func (s *ProjectService) create_project_samples_store_sample_data_external(
 	tx pgx.Tx,
 	data_schema DataSchema,
 	parsed_data []sampleDataParsed,
@@ -1038,7 +1137,7 @@ func (s *ProjectService) create_project_samples_store_sample_data_file(
 		&store_data_query,
 		"INSERT INTO %s (_sample_data, %s) VALUES ",
 		sample_data_table_name_from_schema_id(data_schema.Id),
-		SAMPLE_DATA_STORAGE_TABLE_FILE_COL_LABEL,
+		SAMPLE_DATA_STORAGE_TABLE_EXTERNAL_COL_LABEL,
 	)
 
 	args := make([]any, len(parsed_data)*ARGS_PER_SAMPLE_DATA)

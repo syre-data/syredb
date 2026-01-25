@@ -86,12 +86,13 @@ function UserProjects() {
 }
 
 function UserProjectsError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
-    console.error(error);
+    const err = error as common.BackendError;
+    console.error(err);
 
     return (
         <div>
             <div>Could not get your projects</div>
-            <div>{error.message}</div>
+            <div>{err.message}</div>
         </div>
     );
 }
@@ -193,11 +194,12 @@ function DataSchemas({ className }: DataSchemasProps) {
 }
 
 function DataSchemaError({ error, resetErrorBoundary }: FallbackProps) {
-    console.error(error);
+    const err = error as common.BackendError;
+    console.error(err);
     return (
         <div className="text-center">
             <div>Could not get data schemas</div>
-            <div>{error.message}</div>
+            <div>{err.message}</div>
         </div>
     );
 }
@@ -295,8 +297,7 @@ function DataSchemaContent({ index, schema }: DataSchemaProps) {
             </div>
             <div
                 className={classNames({
-                    "col-start-2 col-span-full overflow-hidden flex gap-2 transition-[height]":
-                        true,
+                    "col-start-2 col-span-full overflow-hidden flex gap-2 transition-[height]": true,
                     "h-0": !expanded,
                 })}
                 style={{ gridRow: row_schema }}

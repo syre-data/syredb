@@ -209,7 +209,7 @@ export enum DataStorage {
     $zero = "",
 
     DATA_STORAGE_INTERNAL = "internal",
-    DATA_STORAGE_FILE = "file",
+    DATA_STORAGE_EXTERNAL = "external",
 };
 
 export enum DataType {

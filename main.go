@@ -61,9 +61,21 @@ func main() {
 		OpenInspectorOnStartup: true,
 	})
 
+	w_main.OnWindowEvent(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		logger.Info("main window closing")
+		app.Quit()
+	})
+
 	w_main.OnWindowEvent(
 		events.Common.WindowFilesDropped,
-		func(event *application.WindowEvent) {},
+		func(event *application.WindowEvent) {
+			files := event.Context().DroppedFiles()
+			details := event.Context().DropTargetDetails()
+			logger.With("Dropped on element: %v\n", details).Error("DROP")
+			for _, file := range files {
+				logger.With("Dropped:", file).Error("DROP")
+			}
+		},
 	)
 
 	db := &sdb.DbConnection{}

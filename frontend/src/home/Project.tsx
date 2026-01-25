@@ -24,6 +24,8 @@ import { useImmerReducer } from "use-immer";
 import { UUID } from "../../bindings/github.com/google/uuid";
 import { immerable } from "immer";
 import * as appStateCtx from "../AppStateContext";
+import * as property from "../components/Property";
+import { SelectPropertyType, InputPropertyValue } from "../components/Property";
 
 interface CommonProjectData {
     project_id: string;
@@ -37,7 +39,7 @@ const CommonProjectDataCtx = createContext<CommonProjectData>({
 
 export default function () {
     const navigate = useNavigate();
-    const { id: project_id } = useParams();
+    const { project_id } = useParams();
     if (project_id) {
         return (
             <ErrorBoundary FallbackComponent={ProjectError}>
@@ -57,14 +59,15 @@ function Loading() {
 }
 
 function ProjectError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as common.BackendError;
     const navigate = useNavigate();
 
-    if (error.message === common.USER_NOT_AUTHENTICATED_ERROR) {
+    if (err.message === common.USER_NOT_AUTHENTICATED_ERROR) {
         console.error(common.USER_NOT_AUTHENTICATED_ERROR);
         navigate("/");
         return null;
     } else {
-        console.error(error);
+        console.error(err);
     }
 
     function reload(e: MouseEvent<HTMLButtonElement>) {
@@ -78,7 +81,7 @@ function ProjectError({ error, resetErrorBoundary }: FallbackProps) {
     return (
         <div className="flex flex-col gap-2 items-center pt-4">
             <div>Could not load project</div>
-            <div>{error.message}</div>
+            <div>{err.message}</div>
             <div className="flex gap-2 items-center">
                 <div>
                     <Link to="/">
@@ -142,17 +145,22 @@ function ProjectHeader({ project, className }: ProjectHeaderProps) {
             <div className="flex gap-2 grow">
                 <h2 className={`font-bold`}>{project.Label}</h2>
                 {common.is_admin_or_owner(project_info.user_permission) ? (
-                    <div>
-                        <Link
-                            to={`/project/${project_info.project_id}/samples/create`}
-                        >
-                            <button
-                                type="button"
-                                className="border rounded-full whitespace-nowrap px-2 cursor-pointer"
+                    <div className="flex gap-2">
+                        <div>
+                            <Link
+                                to={`/project/${project_info.project_id}/samples/create`}
                             >
-                                <icon.Plus className="inline" /> Add samples
-                            </button>
-                        </Link>
+                                <button
+                                    type="button"
+                                    className="flex gap-1 items-center border rounded-full \
+                                whitespace-nowrap px-2 cursor-pointer"
+                                    title="Create new samples"
+                                >
+                                    <icon.Plus className="inline" /> Create
+                                    samples
+                                </button>
+                            </Link>
+                        </div>
                     </div>
                 ) : null}
             </div>
@@ -191,11 +199,16 @@ function ResourceBrowser({
 }: ResourceBrowserProps) {
     const primaryResourceTypeNode = useRef<HTMLSelectElement>(null);
     const [primaryResourceType, setPrimaryResourceType] = useState(
-        PrimaryResourceType.Sample
+        PrimaryResourceType.Sample,
     );
     const [queryResults, setQueryResults] = useState<UUID[]>(
-        project_resources.Samples.map((sample) => sample.Id)
+        project_resources.Samples.map((sample) => sample.Id),
     );
+
+    useEffect(() => {
+        const sample_ids = project_resources.Samples.map((sample) => sample.Id);
+        setQueryResults(sample_ids);
+    }, [project_resources.Samples]);
 
     function set_primary_resource_type() {
         const input = primaryResourceTypeNode.current!;
@@ -212,7 +225,7 @@ function ResourceBrowser({
                 break;
             default:
                 throw new Error(
-                    `invalid primary resource type: ${input.value}`
+                    `invalid primary resource type: ${input.value}`,
                 );
         }
     }
@@ -222,11 +235,11 @@ function ResourceBrowser({
     }
 
     async function download_all_project_data(
-        hierarchy: app.SaveDataHierarchy[]
+        hierarchy: app.SaveDataHierarchy[],
     ) {
         await app.DataService.SaveProjectDataAll(
             project_resources.Project.Id,
-            hierarchy
+            hierarchy,
         )
             .then((path) => {
                 console.info(`saved all project data to ${path}`);
@@ -325,7 +338,7 @@ function ResourceBrowserDownloadDataBtn({
 
     function on_download(
         e: MouseEvent<HTMLButtonElement>,
-        hierarchy: app.SaveDataHierarchy[]
+        hierarchy: app.SaveDataHierarchy[],
     ) {
         if (e.button != common.MouseButton.Primary) {
             return;
@@ -453,12 +466,12 @@ class SampleBrowserState {
 
     constructor(project_resources: app.ProjectResources, samples: UUID[]) {
         this.samples = project_resources.Samples.filter(
-            (sample) => samples.findIndex((id) => sample.Id === id) > -1
+            (sample) => samples.findIndex((id) => sample.Id === id) > -1,
         );
 
         this.sample_property_keys = this.samples
             .flatMap((sample) =>
-                sample.Properties.map((property) => property.Key)
+                sample.Properties.map((property) => property.Key),
             )
             .sort()
             .reduce((keys, key) => {
@@ -481,6 +494,10 @@ class SampleBrowserState {
 
 type SampleBrowserStateAction =
     | {
+          type: "set_project_resources";
+          payload: { project_resources: app.ProjectResources; filter: UUID[] };
+      }
+    | {
           type: "toggle_sample_active_state";
           payload: {
               sample: UUID;
@@ -491,9 +508,28 @@ type SampleBrowserStateAction =
 
 function sample_browser_state_reducer(
     draft: SampleBrowserState,
-    action: SampleBrowserStateAction
+    action: SampleBrowserStateAction,
 ) {
     switch (action.type) {
+        case "set_project_resources":
+            draft.samples = action.payload.project_resources.Samples.filter(
+                (sample) =>
+                    action.payload.filter.findIndex((id) => sample.Id === id) >
+                    -1,
+            );
+
+            draft.sample_property_keys = draft.samples
+                .flatMap((sample) =>
+                    sample.Properties.map((property) => property.Key),
+                )
+                .sort()
+                .reduce((keys, key) => {
+                    if (keys[keys.length - 1] !== key) {
+                        keys.push(key);
+                    }
+                    return keys;
+                }, [] as string[]);
+            break;
         case "toggle_sample_active_state":
             if (action.payload.state === true) {
                 draft.active_sample = action.payload.sample;
@@ -518,7 +554,7 @@ function sample_browser_state_reducer(
 }
 
 const SampleBrowserStateCtx = createContext(
-    new SampleBrowserState(new app.ProjectResources(), [])
+    new SampleBrowserState(new app.ProjectResources(), []),
 );
 
 const SampleBrowserStateDispatchCtx = createContext<
@@ -537,51 +573,80 @@ function ResourceBrowserSamples({
 }: ResourceBrowserSamplesProps) {
     const [state, stateDispatch] = useImmerReducer(
         sample_browser_state_reducer,
-        new SampleBrowserState(project_resources, filter)
+        new SampleBrowserState(project_resources, filter),
     );
+
+    useEffect(() => {
+        stateDispatch({
+            type: "set_project_resources",
+            payload: { project_resources: project_resources, filter: filter },
+        });
+    }, [project_resources.Samples, filter]);
 
     return (
         <SampleBrowserStateCtx value={state}>
             <SampleBrowserStateDispatchCtx value={stateDispatch}>
-                <div className={`flex ${className ?? ""}`}>
-                    <div
-                        className="grow grid gap-x-4"
-                        style={{
-                            gridTemplateColumns:
-                                state.grid_template_columns() + " auto",
-                            gridTemplateRows: "min-content min-content",
-                        }}
-                    >
-                        <ResourceBrowserSamplesHeader className="row-1" />
-                        <ol className="row-2 col-span-full grid grid-cols-subgrid">
-                            {state.samples.map((sample, idx) => (
-                                <ResourceBrowserSamplesListitem
-                                    key={sample.Id}
-                                    index={idx}
-                                    sample={sample}
-                                />
-                            ))}
-                        </ol>
-                    </div>
-                    {state.active_sample ? (
-                        <SampleDetail
-                            sample={
-                                state.samples.find(
-                                    (sample) =>
-                                        sample.Id === state.active_sample
-                                )!
-                            }
-                            onClose={() =>
-                                stateDispatch({
-                                    type: "clear_active_sample",
-                                })
-                            }
-                            className="h-full border-l min-w-[20%]"
-                        />
-                    ) : null}
-                </div>
+                {state.samples.length === 0 ? (
+                    <ResourceBrowserSamplesEmpty />
+                ) : (
+                    <ResourceBrowserSamplesInner className={className} />
+                )}
             </SampleBrowserStateDispatchCtx>
         </SampleBrowserStateCtx>
+    );
+}
+
+function ResourceBrowserSamplesEmpty() {
+    return (
+        <div className="px-4">This project doesn't have any samples yet.</div>
+    );
+}
+
+interface ResourceBrowserSamplesInnerProps {
+    className?: string;
+}
+function ResourceBrowserSamplesInner({
+    className,
+}: ResourceBrowserSamplesInnerProps) {
+    const state = useContext(SampleBrowserStateCtx);
+    const stateDispatch = useContext(SampleBrowserStateDispatchCtx);
+    return (
+        <div className={`flex ${className ?? ""}`}>
+            <div
+                className="grow grid gap-x-4"
+                style={{
+                    gridTemplateColumns:
+                        state.grid_template_columns() + " auto",
+                    gridTemplateRows: "min-content min-content",
+                }}
+            >
+                <ResourceBrowserSamplesHeader className="row-1" />
+                <ol className="row-2 col-span-full grid grid-cols-subgrid">
+                    {state.samples.map((sample, idx) => (
+                        <ResourceBrowserSamplesListitem
+                            key={sample.Id}
+                            index={idx}
+                            sample={sample}
+                        />
+                    ))}
+                </ol>
+            </div>
+            {state.active_sample ? (
+                <SampleDetail
+                    sample={
+                        state.samples.find(
+                            (sample) => sample.Id === state.active_sample,
+                        )!
+                    }
+                    onClose={() =>
+                        stateDispatch({
+                            type: "clear_active_sample",
+                        })
+                    }
+                    className="h-full border-l min-w-[20%]"
+                />
+            ) : null}
+        </div>
     );
 }
 
@@ -659,20 +724,24 @@ function ResourceBrowserSamplesListitem({
 
     return (
         <li
-            onMouseDown={toggle_active_state}
             className={classNames({
                 "grid grid-cols-subgrid col-span-full cursor-pointer \
-                hover:bg-gray-50 dark:hover:bg-gray-900 px-4": true,
+                hover:bg-gray-50 dark:hover:bg-gray-900 px-4 \
+                [&.file-drop-target-active]:bg-gray-50 dark:[&.file-drop-target-active]:bg-gray-900":
+                    true,
                 "bg-gray-50 dark:bg-gray-900": isActive,
             })}
             style={{ gridRow: index + 1 }}
+            data-sample-id={sample.Id}
+            data-file-drop-target
+            onMouseDown={toggle_active_state}
         >
             <div style={{ gridColumn: SAMPLE_BROWSER_LABEL_COL }}>
                 {sample.Label}
             </div>
             {state.sample_property_keys.map((property, idx) => {
                 const sample_prop = sample.Properties.find(
-                    (sample_prop) => sample_prop.Key === property
+                    (sample_prop) => sample_prop.Key === property,
                 );
                 if (sample_prop === undefined) {
                     return <div key={property}></div>;
@@ -726,7 +795,7 @@ function SamplePropertyValue({ type, value }: PropertyValueProps) {
         case app.PropertyType.PROPERTY_TYPE_STRING:
             return value;
         case app.PropertyType.PROPERTY_TYPE_QUANTITY:
-            val_typed = value as common.QuantityProperty;
+            val_typed = value as property.QuantityProperty;
             return `${val_typed.MagnitudeString} ${val_typed.Unit}`;
         case app.PropertyType.PROPERTY_TYPE_TIMESTAMP:
             return;
@@ -760,10 +829,11 @@ function SampleDetail({ sample, onClose, className }: SampleDetailProps) {
 }
 
 function SampleDetailError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as common.BackendError;
     return (
         <div>
             <div>Could not load sample details.</div>
-            <div>{error.message}</div>
+            <div>{err.message}</div>
         </div>
     );
 }
@@ -797,7 +867,7 @@ function SampleDetailInner({
         queryFn: async () =>
             app.ProjectService.GetProjectSampleResources(
                 project_data.project_id,
-                sample.Id
+                sample.Id,
             ),
     });
 
@@ -805,6 +875,7 @@ function SampleDetailInner({
     const [expandedData, setExpandedData] = useState(false);
     const [expandedNotes, setExpandedNotes] = useState(false);
     const [dataSelected, setDataSelected] = useState<UUID[]>([]);
+    const [newProperties, setNewProperties] = useState<number[]>([]);
 
     useEffect(() => {
         setExpandedProperties(true);
@@ -850,7 +921,7 @@ function SampleDetailInner({
             setDataSelected([...dataSelected, data]);
         } else {
             const selected = dataSelected.filter(
-                (selected) => selected !== data
+                (selected) => selected !== data,
             );
             setDataSelected(selected);
         }
@@ -877,7 +948,7 @@ function SampleDetailInner({
             await app.DataService.SaveSampleDataMultiple(
                 dataSelected,
                 project_data.project_id,
-                []
+                [],
             )
                 .then((path) => {
                     console.info(`data saved to ${path}`, dataSelected);
@@ -889,10 +960,35 @@ function SampleDetailInner({
         }
     }
 
+    function add_sample_property(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== common.MouseButton.Primary) {
+            return;
+        }
+        e.stopPropagation();
+
+        if (newProperties.length === 0) {
+            setNewProperties([0]);
+        } else {
+            const next_id = newProperties[newProperties.length - 1] + 1;
+            setNewProperties([...newProperties, next_id]);
+        }
+    }
+
     return (
         <div className={`bg-white dark:bg-black ${className ?? ""}`}>
             <div className="flex gap-2 px-2">
-                <h3 className="grow text-xl font-bold">{sample.Label}</h3>
+                <div className="grow flex gap-2">
+                    <h3 className="text-xl font-bold">{sample.Label}</h3>
+                    <div>
+                        <Link
+                            to={`/project/{${project_data.project_id}}/sample/${sample.Id}/edit`}
+                        >
+                            <button type="button" className="btn-cmd">
+                                <icon.Pen />
+                            </button>
+                        </Link>
+                    </div>
+                </div>
                 <div>
                     <button
                         type="button"
@@ -1039,7 +1135,7 @@ function SampleDetailProperties({ properties }: SampleDetailPropertiesProps) {
         }
     });
     return (
-        <ol className="grid grid-cols-[min-content_min-content]">
+        <ol className="grid grid-cols-[min-content_min-content] gap-x-2">
             {properties_sorted.map((property, index) => {
                 return (
                     <li
@@ -1063,6 +1159,59 @@ function SampleDetailProperties({ properties }: SampleDetailPropertiesProps) {
     );
 }
 
+interface SampleDetailNewPropertyProps {
+    id: number;
+}
+function SampleDetailNewProperty({ id }: SampleDetailNewPropertyProps) {
+    const [type, setType] = useState<app.PropertyType>(
+        app.PropertyType.PROPERTY_TYPE_STRING,
+    );
+
+    function add_property(e: FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+    }
+
+    function set_type(e: ChangeEvent<HTMLSelectElement>) {
+        const type_value = property.type_string_to_variant(e.target.value);
+        if (type_value === undefined) {
+            console.error(`invlaid property type string ${e.target.value}`);
+            return;
+        }
+
+        setType(type_value);
+    }
+
+    return (
+        <form className="flex gap-2 px-2" onSubmit={add_property}>
+            <div>
+                <label>
+                    <span className="hidden">Property key</span>
+                    <input
+                        type="text"
+                        className="input-basic"
+                        placeholder="Label"
+                    />
+                </label>
+            </div>
+            <div>
+                <label>
+                    <span className="hidden">Property label</span>
+                    <SelectPropertyType
+                        className="input-basic"
+                        onChange={set_type}
+                    />
+                </label>
+            </div>
+            <div>
+                <label>
+                    <span className="hidden">Property value</span>
+                    <InputPropertyValue type={type} className="input-basic" />
+                </label>
+            </div>
+        </form>
+    );
+}
+
 interface SampleDetailDataProps {
     data: app.SampleData[];
     data_schemas: app.DataSchema[];
@@ -1081,14 +1230,14 @@ function SampleDetailData({
         <ol>
             {data.map((datum, index) => {
                 const data_schema_idx = data_schemas.findIndex(
-                    (schema) => schema.Id === datum.Schema
+                    (schema) => schema.Id === datum.Schema,
                 );
                 if (data_schema_idx < 0) {
                     console.error(`could not find data schema ${datum.Schema}`);
                 }
 
                 const creator_idx = users.findIndex(
-                    (user) => user.Id === datum.Creator
+                    (user) => user.Id === datum.Creator,
                 );
                 if (creator_idx < 0) {
                     console.error(`could not find user ${datum.Creator}`);
@@ -1196,7 +1345,7 @@ function SampleDetailProjectNotes({
         <ol>
             {notes.map((note, index) => {
                 const creator_idx = users.findIndex(
-                    (user) => user.Id === note.Creator
+                    (user) => user.Id === note.Creator,
                 );
                 if (creator_idx < 0) {
                     console.error(`could not find user ${note.Creator}`);
@@ -1266,11 +1415,13 @@ function ResourceBrowserSampleData({
     }
 
     const sample_data_arr = Array.from(data_schema_sample_data.entries());
-    return (
+    return sample_data_arr.length === 0 ? (
+        <ResourceBrowserSampleDataEmpty />
+    ) : (
         <div className={className ?? ""}>
             {sample_data_arr.map(([data_schema_id, schema_sample_data]) => {
                 const data_schema = project_resources.DataSchemas.find(
-                    (schema) => schema.Id === data_schema_id
+                    (schema) => schema.Id === data_schema_id,
                 )!;
                 return (
                     <ResourceBrowserSampleDataSchemaGroup
@@ -1283,6 +1434,14 @@ function ResourceBrowserSampleData({
                     />
                 );
             })}
+        </div>
+    );
+}
+
+function ResourceBrowserSampleDataEmpty() {
+    return (
+        <div className="px-4">
+            This project doesn't have any sample data yet.
         </div>
     );
 }
@@ -1304,13 +1463,13 @@ function ResourceBrowserSampleDataSchemaGroup({
     const project_data = useContext(CommonProjectDataCtx);
 
     async function download_all_schema_data(
-        hierarchy: app.SaveDataHierarchy[]
+        hierarchy: app.SaveDataHierarchy[],
     ) {
         const sample_data_ids = sample_data.map((data) => data.Id);
         await app.DataService.SaveDataSchemaSampleDataAll(
             data_schema.Id,
             project_data.project_id,
-            hierarchy
+            hierarchy,
         )
             .then((path) => {
                 console.info(`data saved to ${path}`, sample_data_ids);
@@ -1338,7 +1497,7 @@ function ResourceBrowserSampleDataSchemaGroup({
             >
                 {sample_data.map((data, idx) => {
                     const sample = project_resources.Samples.find(
-                        (sample) => sample.Id === data.Sample
+                        (sample) => sample.Id === data.Sample,
                     )!;
 
                     const selected = selected_data.includes(data.Id);
@@ -1383,7 +1542,7 @@ function ResourceBrowserSampleDataSchemaGroupDownloadDataBtn({
 
     function on_download(
         e: MouseEvent<HTMLButtonElement>,
-        hierarchy: app.SaveDataHierarchy[]
+        hierarchy: app.SaveDataHierarchy[],
     ) {
         if (e.button != common.MouseButton.Primary) {
             return;
@@ -1492,8 +1651,7 @@ function ResourceBrowserSampleDataSchemaGroupListItem({
             </div>
             <div
                 className={classNames({
-                    "flex gap-1 group-hover/sample-data-row:visible -col-1":
-                        true,
+                    "flex gap-1 group-hover/sample-data-row:visible -col-1": true,
                     invisible: !selected,
                 })}
             >

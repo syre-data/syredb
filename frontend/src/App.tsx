@@ -22,6 +22,7 @@ import {
     QueryClient,
     QueryClientProvider,
 } from "@tanstack/react-query";
+import * as common from "./common";
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -51,7 +52,7 @@ interface ChildrenProps {
 function ProvideAppState({ children }: ChildrenProps) {
     const [state, dispatch] = useReducer(
         appStateCtx.Reducer,
-        new appStateCtx.State()
+        new appStateCtx.State(),
     );
 
     return (
@@ -91,7 +92,8 @@ function DatabaseConnectLoading() {
 }
 
 function DatabaseConnectionError({ error, resetErrorBoundary }: FallbackProps) {
-    if (error.message === "FILE_NOT_FOUND") {
+    const err = error as common.BackendError;
+    if (err.message === "FILE_NOT_FOUND") {
         return (
             <div className="text-center pt-4">
                 <h3 className="pb-2">Setup your database connection</h3>
@@ -103,7 +105,7 @@ function DatabaseConnectionError({ error, resetErrorBoundary }: FallbackProps) {
             <div className="text-center pt-4">
                 <div>
                     <h2 className="py-2">Could not connect to database</h2>
-                    <div className="px-4">{error.message}</div>
+                    <div className="px-4">{err.message}</div>
                 </div>
                 <div className="pt-4">
                     <h3 className="pb-2">Update your database connection</h3>
@@ -151,8 +153,10 @@ function UserAuthFromLocalInner({ children }: UserAuthFromLocalInnerProps) {
         gcTime: 0,
     });
 
+    const onsuccess = () => {};
+
     if (user.Id.toString() === uuid.NIL) {
-        return <Login />;
+        return <Login onsuccess={onsuccess} />;
     } else {
         return <SetUser user={user}>{children}</SetUser>;
     }
@@ -171,9 +175,9 @@ function SetUser({ user, children }: SetUserProps) {
 }
 
 interface LoginProps {
-    onsuccess?: () => void;
+    onsuccess: () => void;
 }
-function Login({ onsuccess = () => {} }: LoginProps) {
+function Login({ onsuccess }: LoginProps) {
     const appStateDispatch = useContext(appStateCtx.Dispatch);
     const [error, setError] = useState("");
 
@@ -181,7 +185,7 @@ function Login({ onsuccess = () => {} }: LoginProps) {
         e.preventDefault();
         setError("");
         const btn_submit = document.getElementById(
-            "submit"
+            "submit",
         )! as HTMLButtonElement;
         btn_submit.disabled = true;
 
@@ -208,12 +212,13 @@ function Login({ onsuccess = () => {} }: LoginProps) {
                     setError("invalid user credentials");
                 } else {
                     appStateDispatch({ type: "set_user", payload: user });
-                    btn_submit.disabled = false;
                     onsuccess();
                 }
             })
             .catch((err) => {
                 setError(err);
+            })
+            .finally(() => {
                 btn_submit.disabled = false;
             });
     }

@@ -9,6 +9,8 @@ import Project from "./Project";
 import ProjectSettings from "./ProjectSettings";
 import ProjectSamplesCreate from "./ProjectSamplesCreate";
 import DataSchemaCreate from "./DataSchemaCreate";
+import SampleEdit from "./SampleEdit";
+import NotFound from "./NotFound";
 
 export default function Home() {
     return (
@@ -20,23 +22,29 @@ export default function Home() {
                 <Route path="/user/create" element={<UserCreate />} />
                 <Route path="/project">
                     <Route path="create" element={<ProjectCreate />} />
-                    <Route path=":id">
+                    <Route path=":project_id">
                         <Route index element={<Project />} />
                         <Route path="settings" element={<ProjectSettings />} />
                         <Route
                             path="samples/create"
                             element={<ProjectSamplesCreate />}
                         />
+                        <Route
+                            path="sample/:sample_id/edit"
+                            element={<SampleEdit />}
+                        />
+                        <Route
+                            path="sample_group/create"
+                            element={<SampleGroupCreate />}
+                        />
                     </Route>
                 </Route>
-                <Route
-                    path="/sample_group/create"
-                    element={<SampleGroupCreate />}
-                />
                 <Route
                     path="/data_schema/create"
                     element={<DataSchemaCreate />}
                 />
+
+                <Route path="*" element={<NotFound />} />
             </Routes>
         </BrowserRouter>
     );
