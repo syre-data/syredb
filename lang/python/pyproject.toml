@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "syredb"
+dynamic = ["version"]
+description = 'Python bindings to SyreDB.'
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+keywords = []
+authors = [{ name = "Brian Carlsen", email = "carlsen.bri@gmail.com" }]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = ["psycopg[binary]", "argon2-cffi"]
+
+[project.urls]
+Documentation = "https://github.com/Brian Carlsen/syredb#readme"
+Issues = "https://github.com/Brian Carlsen/syredb/issues"
+Source = "https://github.com/Brian Carlsen/syredb"
+
+[tool.hatch.version]
+path = "src/syredb/__about__.py"
+
+[tool.hatch.envs.types]
+extra-dependencies = ["mypy>=1.0.0"]
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:src/syredb tests}"
+
+[tool.coverage.run]
+source_pkgs = ["syredb", "tests"]
+branch = true
+parallel = true
+omit = ["src/syredb/__about__.py"]
+
+[tool.coverage.paths]
+syredb = ["src/syredb", "*/syredb/src/syredb"]
+tests = ["tests", "*/syredb/tests"]
+
+[tool.coverage.report]
+exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
