@@ -1,0 +1,70 @@
+{{define "index"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="{{.LogoPath}}" />
+    <link rel="stylesheet" href="public/main.css" />
+    <title>{{.Title}}</title>
+  </head>
+  <body class="h-screen flex flex-col dark:bg-black dark:text-white">
+    <main class="grow flex flex-col gap-4 items-center pt-12">
+      <div class="flex flex-col gap-2 items-center">
+        <div>
+          <img {{.LogoPath}} class="h-12" />
+        </div>
+        <div class="text-lg font-bold">{{.AccountName}}</div>
+      </div>
+      <form action="/api/login" method="post" class="flex flex-col gap-2">
+        <div class="flex flex-col gap-2">
+          <div>
+            <label>
+              <span class="hidden">Email</span>
+              <input
+                type="email"
+                name="email"
+                placeholder="Email"
+                autocomplete="email"
+                class="input-basic"
+              />
+            </label>
+          </div>
+          <div>
+            <label>
+              <span class="hidden">Password</span>
+              <input
+                type="password"
+                name="password"
+                placeholder="Password"
+                autocomplete="current-password"
+                class="input-basic"
+              />
+            </label>
+          </div>
+        </div>
+        <div class="flex justify-center">
+          <button type="submit" class="btn-submit">Login</button>
+        </div>
+      </form>
+    </main>
+    <footer>
+      <div class="flex justify-end pb-1 px-4">
+        <a href="https://syre.ai" target="_blank">
+          <div class="inline-flex gap-2 items-center whitespace-nowrap">
+            <img
+              src="/public/logo-black-icon.svg"
+              class="h-4 block dark:hidden"
+            />
+            <img
+              src="/public/logo-white-icon.svg"
+              class="h-4 hidden dark:block"
+            />
+            Powered by Syre
+          </div>
+        </a>
+      </div>
+    </footer>
+  </body>
+</html>
+{{ end }}

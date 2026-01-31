@@ -2,12 +2,14 @@ $DB_NAME = "syredb"
 $CMD_SET_DB_OWNER = "db-owner"
 $CMD_SET_APP_EMAIL = "app-email"
 $CMD_SET_ACCOUNT_INFO = "account-info"
+$CMD_SET_DATA = "data"
 $APP_EMAIL_URL_KEY = "app:email:url"
 $APP_EMAIL_USERNAME_KEY = "app:email:username"
 $APP_EMAIL_PASSWORD_KEY = "app:email:password"
 $APP_EMAIL_FROM_KEY = "app:email:from"
 $APP_ACCOUNT_NAME = "app:acount:name"
 $APP_ACCOUNT_LOGO = "app:acount:logo"
+$APP_DATA_PATH = "app:data:path"
 
 Write-Host "Initializing Postgres database $DB_NAME"
 $pgUser = Read-Host -Prompt "Postgres user"
@@ -132,6 +134,32 @@ if (-not ($appAccountNameExists || $appAccountLogoExists)) {
     }
 
     Write-Host "$DB_NAME account settings initialized"
+}
+
+$appDataPathExists = psql -U $pgUser -d $DB_NAME -tAc "SELECT 1 FROM _app_data_ WHERE key='$APP_DATA_PATH'"
+if (-not ($appDataPathExists)) {
+    Write-Host "Initializing $DB_NAME data settings"
+    $appDataPath = Read-Host -Prompt "Data path"
+    .\init_db\init_syredb.exe `
+        --cmd $CMD_SET_DATA `
+        --pg-user $pgUser `
+        --pg-password $pgPasswordPlainText `
+        --account-name $appAccountName `
+        --account-logo $appAccountLogo `
+
+    Write-Host "$DB_NAME data settings initialized"
+    if ($LASTEXITCODE -eq 1) {
+        Write-Error "Invalid command $CMD_SET_DB_OWNER"
+        exit 1
+    }
+    if ($LASTEXITCODE -eq 2) {
+        Write-Error "Could not connect to database"
+        exit 1
+    }
+    if ($LASTEXITCODE -eq 40) {
+        Write-Error "Could not set data settings"
+        exit 1
+    }
 }
 
 $env:PGPASSWORD = $pgpassword_o

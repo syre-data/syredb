@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/mail"
 	"os"
+	"path/filepath"
 
 	"github.com/google/uuid"
 
@@ -29,8 +30,17 @@ const APP_EMAIL_PASSWORD_KEY = "app:email:password"
 const APP_EMAIL_FROM_KEY = "app:email:from"
 const APP_ACCOUNT_NAME_KEY = "app:account:name"
 const APP_ACCOUNT_LOGO_KEY = "app:account:logo"
+const APP_DATA_PATH_KEY = "app:data:path"
+
+const DATA_PATH_DEFAULT_REL = "syredb"
 
 func main() {
+	home_dir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Errorf("can not get user's home directory: #%v", err)
+		os.Exit(1)
+	}
+
 	cmd := flag.String("cmd", "", "sub command")
 	pg_user := flag.String("pg-user", "", "postgres username")
 	pg_password := flag.String("pg-password", "", "postgres password")
@@ -51,6 +61,10 @@ func main() {
 	// account info flags
 	account_name := flag.String("account-name", "", "account name")
 	account_logo := flag.String("account-logo", "", "path to the account logo")
+
+	// data flags
+	data_path_default := filepath.Join(home_dir, DATA_PATH_DEFAULT_REL)
+	data_path := flag.String("data-path", data_path_default, "data path")
 
 	flag.Parse()
 
@@ -91,6 +105,13 @@ func main() {
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(30)
+		}
+
+	case "data":
+		err = set_data(conn, *data_path)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(40)
 		}
 
 	default:
@@ -179,6 +200,17 @@ func set_account_info(conn *pgx.Conn, name string, logo_path string) error {
 		name,
 		APP_ACCOUNT_LOGO_KEY,
 		logo_path,
+	)
+	return err
+}
+
+func set_data(conn *pgx.Conn, data_path string) error {
+	inser_data_query := "INSERT INTO _app_data_ (key, value) VALUES ($1, $2), ($3, $4)"
+	_, err := conn.Exec(
+		context.Background(),
+		inser_data_query,
+		APP_DATA_PATH_KEY,
+		data_path,
 	)
 	return err
 }
