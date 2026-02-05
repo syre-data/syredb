@@ -15,6 +15,37 @@ export interface AuthService {
 export const JWT_SESSION_ID_KEY = "session_id";
 
 //////////
+// source: data.service.go
+
+export type DataType = string;
+export const DATA_TYPE_STRING: DataType = "string";
+export const DATA_TYPE_INT: DataType = "int";
+export const DATA_TYPE_UINT: DataType = "uint";
+export const DATA_TYPE_FLOAT: DataType = "float";
+export const DATA_TYPE_BOOLEAN: DataType = "boolean";
+export const DATA_TYPE_TIMESTAMP: DataType = "timestamp";
+export type SaveDataHierarchy = string;
+export const SAVE_DATA_HIERARCHY_DATA_SCHEMA: SaveDataHierarchy = "data_schema";
+export const SAVE_DATA_HIERARCHY_SAMPLE: SaveDataHierarchy = "sample";
+export interface DataService {
+}
+export interface ColumnSchema {
+  label: string;
+  dtype: DataType;
+}
+export type DataStorage = string;
+export const DATA_STORAGE_INTERNAL: DataStorage = "internal";
+export const DATA_STORAGE_EXTERNAL: DataStorage = "external";
+export interface DataSchema {
+  Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Schema: ColumnSchema[];
+  Storage: DataStorage;
+  Label: string;
+  Description: string;
+}
+
+//////////
 // source: project.service.go
 
 export type ProjectUserPermission = string;

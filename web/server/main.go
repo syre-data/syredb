@@ -48,11 +48,13 @@ func main() {
 	auth_service := service.NewAuthService(ctx, e.Logger, db)
 	user_service := service.NewUserService(ctx, e.Logger, db, auth_service)
 	project_service := service.NewProjectService(ctx, e.Logger, db)
+	data_service := service.NewDataService(ctx, e.Logger, db)
 
 	app_handler := handler.NewAppHandler(db)
 	auth_handler := handler.NewAuthHandler(db, auth_service)
 	user_handler := handler.NewUserHandler(db, user_service)
 	project_handler := handler.NewProjectHandler(db, project_service)
+	data_handler := handler.NewDataHandler(db, data_service)
 
 	env_session_secret, env_session_secret_exists := os.LookupEnv(handler.ENV_SESSION_SECRET_KEY)
 	if !env_session_secret_exists {
@@ -120,6 +122,7 @@ func main() {
 		auth_handler,
 		user_handler,
 		project_handler,
+		data_handler,
 	)
 	if os.Getenv("ENV") != "production" {
 		proxy_to_vite(e)
@@ -190,20 +193,22 @@ func (m *ApiMiddleware) UserIdFromSessionToken(next echo.HandlerFunc) echo.Handl
 func register_routes(
 	e *echo.Echo,
 	api_middleware *ApiMiddleware,
-	app_handler *handler.AppHandler,
-	auth_handler *handler.AuthHandler,
-	user_handler *handler.UserHandler,
-	project_hadler *handler.ProjectHandler,
+	app *handler.AppHandler,
+	auth *handler.AuthHandler,
+	user *handler.UserHandler,
+	project *handler.ProjectHandler,
+	data *handler.DataHandler,
 ) {
-	e.GET("/", app_handler.Index)
+	e.GET("/", app.Index)
 
 	api := e.Group("/api")
 	api.Use(api_middleware.SessionTokenFromJwt)
 	api.Use(api_middleware.UserIdFromSessionToken)
 
-	api.POST("/login", auth_handler.Login)
-	api.GET("/user", user_handler.GetUserFromToken)
-	api.GET("/projects", project_hadler.GetUserProjects)
+	api.POST("/login", auth.Login)
+	api.GET("/user", user.GetUserFromToken)
+	api.GET("/projects", project.GetUserProjects)
+	api.GET("/data-schemas", data.GetDataSchemasAll)
 }
 
 func proxy_to_vite(e *echo.Echo) {
