@@ -12,6 +12,8 @@ import * as appStateCtx from "../AppStateContext";
 import * as common from "../common";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
+import * as project_service from "@/service/project.service";
+import * as data_service from "@/service/data.service";
 
 export default function Dashboard() {
     const appState = useContext(appStateCtx.Context);
@@ -105,7 +107,7 @@ function LoadingUserProjects() {
 function UserProjectsInner() {
     const { data: projects } = useSuspenseQuery({
         queryKey: ["user_projects"],
-        queryFn: model.ProjectService.GetUserProjects,
+        queryFn: project_service.getUserProjects,
     });
 
     return (
@@ -212,7 +214,7 @@ function DataSchemaLoading() {
 function DataSchemaInner() {
     const { data: data_schemas } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_DATA_SCHEMA],
-        queryFn: model.DataService.GetDataSchemasAll,
+        queryFn: data_service.GetDataSchemasAll,
     });
 
     if (data_schemas.length === 0) {

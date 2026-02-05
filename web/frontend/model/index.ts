@@ -15,6 +15,33 @@ export interface AuthService {
 export const JWT_SESSION_ID_KEY = "session_id";
 
 //////////
+// source: project.service.go
+
+export type ProjectUserPermission = string;
+export const PROJECT_USER_PERMISSION_READ: ProjectUserPermission = "read";
+export const PROJECT_USER_PERMISSION_READ_WRITE: ProjectUserPermission = "read_write";
+export const PROJECT_USER_PERMISSION_ADMIN: ProjectUserPermission = "admin";
+export const PROJECT_USER_PERMISSION_OWNER: ProjectUserPermission = "owner";
+export type Visibility = string;
+export const VISIBILITY_PUBLIC: Visibility = "public";
+export const VISIBILITY_PRIVATE: Visibility = "private";
+export type SampleUserPermission = string;
+export const SAMPLE_USER_PERMISSION_OWNER: SampleUserPermission = "owner";
+export const SAMPLE_USER_PERMISSION_READ: SampleUserPermission = "read";
+export const SAMPLE_USER_PERMISSION_ADD_DATA: SampleUserPermission = "add_data";
+export const SAMPLE_USER_PERMISSION_CREATE_NOTE: SampleUserPermission = "create_note";
+export const SAMPLE_USER_PERMISSION_MODIFY_PROPERTIES: SampleUserPermission = "modify_properties";
+export interface ProjectService {
+}
+export interface Project {
+  Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Label: string;
+  Description: string;
+  Visibility: Visibility;
+}
+
+//////////
 // source: user.service.go
 
 export const APP_EMAIL_URL_KEY = "app:email:url";

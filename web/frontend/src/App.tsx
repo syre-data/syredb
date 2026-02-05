@@ -1,7 +1,7 @@
 import { useReducer, Suspense } from "react";
 import "./App.css";
 import * as appStateCtx from "./AppStateContext";
-// import Home from "./home/Home";
+import Home from "./home/Home";
 import * as model from "../model";
 import icon from "@/icon";
 import {
@@ -27,8 +27,7 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
             <ErrorBoundary FallbackComponent={AppError}>
                 <ProvideAppState>
-                    {/* <Home /> */}
-                    <div>made it</div>
+                    <Home />
                 </ProvideAppState>
             </ErrorBoundary>
         </QueryClientProvider>
@@ -70,8 +69,6 @@ function ProvideAppState({ children }: ProvideAppStateProps) {
         queryKey: ["user"],
         queryFn: user_service.get_user_by_jwt_token,
     });
-
-    console.debug(user);
 
     return (
         <ErrorBoundary FallbackComponent={LoadUserError}>

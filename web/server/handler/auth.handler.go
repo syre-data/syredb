@@ -14,8 +14,8 @@ import (
 	"syredb/service"
 )
 
-const ENV_SESSION_SECRET_KEY = "SYREDB_SESSION_SECRET"
-const COOKIE_SESSION_TOKEN_KEY string = "session_token"
+const ENV_SESSION_SECRET_KEY string = "SYREDB_SESSION_SECRET"
+const SESSION_TOKEN_KEY string = "session_token"
 const SESSION_DURATION = time.Hour * 24
 
 type JwtCustomClaims struct {
@@ -78,7 +78,11 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 
 	session_id, err := h.auth.CreateSession(user_id, session_expiration)
 	if err != nil {
-		c.Logger().With("user", user_id, "expires", session_expiration).Error("could not create user session")
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"expires", session_expiration,
+		).Error("could not create user session")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
@@ -87,7 +91,7 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 		registered_claims.ExpiresAt = jwt.NewNumericDate(session_expiration)
 	}
 	claims := &JwtCustomClaims{
-		// TODO: add struct fields.
+		// TODO: add struct field names.
 		session_id,
 		registered_claims,
 	}
@@ -109,7 +113,7 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 		Path:     "/",
 		Domain:   "",
 		SameSite: http.SameSiteLaxMode,
-		Name:     COOKIE_SESSION_TOKEN_KEY,
+		Name:     SESSION_TOKEN_KEY,
 		Value:    token,
 		Expires:  session_expiration,
 	}

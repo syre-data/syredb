@@ -5,9 +5,11 @@ import (
 	"syredb/database"
 	"syredb/service"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
+
+const USER_ID_KEY string = "user_id"
 
 type UserHandler struct {
 	db           *database.DbConnection
@@ -22,16 +24,18 @@ func NewUserHandler(
 }
 
 func (h *UserHandler) GetUserFromToken(c *echo.Context) error {
-	token, err := echo.ContextGet[*jwt.Token](c, COOKIE_SESSION_TOKEN_KEY)
-	if err != nil {
-		c.Logger().With("token", token).Error("invalid jwt token")
-		return c.NoContent(http.StatusUnauthorized)
+	maybe_user_id := c.Get(USER_ID_KEY)
+	if maybe_user_id == nil {
+		panic("user id not set")
 	}
+	user_id := maybe_user_id.(uuid.UUID)
 
-	claims := token.Claims.(*JwtCustomClaims)
-	user, err := h.user_service.UserFromToken(claims.SessionId)
+	user, err := h.user_service.UserById(user_id)
 	if err != nil {
-		c.Logger().With("token", token).Error("could not get user from session token")
+		c.Logger().With(
+			"error", err,
+			"user", maybe_user_id,
+		).Error("could not get user from session token")
 		return c.NoContent(http.StatusUnauthorized)
 	}
 

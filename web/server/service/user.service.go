@@ -64,15 +64,10 @@ type User struct {
 	Role          UserRole
 }
 
-func (s *UserService) UserFromToken(token uuid.UUID) (User, error) {
-	user_id, err := s.auth.UserFromToken(token)
-	if err != nil {
-		return User{}, err
-	}
-
+func (s *UserService) UserById(user_id uuid.UUID) (User, error) {
 	user := User{Id: user_id}
 	user_query := "SELECT account_status, email, name, role FROM user_ WHERE _id=$1"
-	err = s.db.Conn.QueryRow(s.ctx, user_query, user_id).Scan(
+	err := s.db.Conn.QueryRow(s.ctx, user_query, user_id).Scan(
 		&user.AccountStatus,
 		&user.Email,
 		&user.Name,

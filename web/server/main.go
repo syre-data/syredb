@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	echojwt "github.com/labstack/echo-jwt/v5"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
@@ -42,13 +43,16 @@ func main() {
 
 	ctx := context.Background()
 	e := echo.New()
+	api_middleware := NewApiMiddleware(ctx, db)
 
 	auth_service := service.NewAuthService(ctx, e.Logger, db)
 	user_service := service.NewUserService(ctx, e.Logger, db, auth_service)
+	project_service := service.NewProjectService(ctx, e.Logger, db)
 
 	app_handler := handler.NewAppHandler(db)
 	auth_handler := handler.NewAuthHandler(db, auth_service)
 	user_handler := handler.NewUserHandler(db, user_service)
+	project_handler := handler.NewProjectHandler(db, project_service)
 
 	env_session_secret, env_session_secret_exists := os.LookupEnv(handler.ENV_SESSION_SECRET_KEY)
 	if !env_session_secret_exists {
@@ -66,9 +70,9 @@ func main() {
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
 	}))
 	e.Use(echojwt.WithConfig(echojwt.Config{
-		ContextKey:  handler.COOKIE_SESSION_TOKEN_KEY,
+		ContextKey:  handler.SESSION_TOKEN_KEY,
 		SigningKey:  []byte(env_session_secret),
-		TokenLookup: fmt.Sprintf("cookie:%s", handler.COOKIE_SESSION_TOKEN_KEY),
+		TokenLookup: fmt.Sprintf("cookie:%s", handler.SESSION_TOKEN_KEY),
 		NewClaimsFunc: func(c *echo.Context) jwt.Claims {
 			return new(handler.JwtCustomClaims)
 		},
@@ -94,7 +98,7 @@ func main() {
 		IgnoreBase: false,
 		Filesystem: nil,
 		Skipper: middleware.Skipper(func(c *echo.Context) bool {
-			_, jwt_err := echo.ContextGet[*jwt.Token](c, handler.COOKIE_SESSION_TOKEN_KEY)
+			_, jwt_err := echo.ContextGet[*jwt.Token](c, handler.SESSION_TOKEN_KEY)
 			valid_token := jwt_err == nil
 
 			path := c.Request().URL.Path
@@ -111,9 +115,11 @@ func main() {
 
 	register_routes(
 		e,
+		api_middleware,
 		app_handler,
 		auth_handler,
 		user_handler,
+		project_handler,
 	)
 	if os.Getenv("ENV") != "production" {
 		proxy_to_vite(e)
@@ -131,15 +137,73 @@ func main() {
 	}
 }
 
+type ApiMiddleware struct {
+	ctx context.Context
+	db  *database.DbConnection
+}
+
+func NewApiMiddleware(ctx context.Context, db *database.DbConnection) *ApiMiddleware {
+	return &ApiMiddleware{ctx: ctx, db: db}
+}
+
+func (m *ApiMiddleware) SessionTokenFromJwt(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		token, err := echo.ContextGet[*jwt.Token](c, handler.SESSION_TOKEN_KEY)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"token", token,
+			).Error("invalid jwt token")
+			return err
+		}
+
+		claims := token.Claims.(*handler.JwtCustomClaims)
+		c.Set(handler.SESSION_TOKEN_KEY, claims.SessionId)
+		return next(c)
+	}
+}
+
+func (m *ApiMiddleware) UserIdFromSessionToken(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		session_token := c.Get(handler.SESSION_TOKEN_KEY)
+		if session_token == nil {
+			panic("session token not set on context")
+		}
+		session_token = session_token.(uuid.UUID)
+
+		var user uuid.UUID
+		query := "SELECT _user FROM _user_session_ WHERE _token=$1 AND _expires>$2 AND active=true"
+		err := m.db.Conn.QueryRow(m.ctx, query, session_token, time.Now()).Scan(&user)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"token", session_token,
+			).Error("could not get session user")
+			return err
+		}
+
+		c.Set(handler.USER_ID_KEY, user)
+		return next(c)
+	}
+}
+
 func register_routes(
 	e *echo.Echo,
+	api_middleware *ApiMiddleware,
 	app_handler *handler.AppHandler,
 	auth_handler *handler.AuthHandler,
 	user_handler *handler.UserHandler,
+	project_hadler *handler.ProjectHandler,
 ) {
 	e.GET("/", app_handler.Index)
-	e.POST("/api/login", auth_handler.Login)
-	e.GET("/api/user", user_handler.GetUserFromToken)
+
+	api := e.Group("/api")
+	api.Use(api_middleware.SessionTokenFromJwt)
+	api.Use(api_middleware.UserIdFromSessionToken)
+
+	api.POST("/login", auth_handler.Login)
+	api.GET("/user", user_handler.GetUserFromToken)
+	api.GET("/projects", project_hadler.GetUserProjects)
 }
 
 func proxy_to_vite(e *echo.Echo) {

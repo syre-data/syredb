@@ -22,7 +22,7 @@ func NewAppHandler(
 }
 
 func (h AppHandler) Index(c *echo.Context) error {
-	_, err := echo.ContextGet[*jwt.Token](c, COOKIE_SESSION_TOKEN_KEY)
+	_, err := echo.ContextGet[*jwt.Token](c, SESSION_TOKEN_KEY)
 	if err != nil {
 		return h.indexUnauthenticatedHandler(c)
 	}
