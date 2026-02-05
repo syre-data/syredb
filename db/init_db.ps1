@@ -144,8 +144,7 @@ if (-not ($appDataPathExists)) {
         --cmd $CMD_SET_DATA `
         --pg-user $pgUser `
         --pg-password $pgPasswordPlainText `
-        --account-name $appAccountName `
-        --account-logo $appAccountLogo `
+        --data-path $appDataPath `
 
     Write-Host "$DB_NAME data settings initialized"
     if ($LASTEXITCODE -eq 1) {

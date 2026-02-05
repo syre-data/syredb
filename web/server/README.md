@@ -13,5 +13,5 @@ Run `air -- [flags]` from the server root.
 e.g.
 
 ```sh
-air -- --pg-username="postgres" --pg-password="root" --pg-url="localhost:5432" --pg-dbname="syredb"
+air -- --db-username="postgres" --db-password="root" --db-host="localhost:5432" --db-name="syredb"
 ```

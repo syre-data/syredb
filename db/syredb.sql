@@ -309,3 +309,12 @@ CREATE TABLE IF NOT EXISTS sample_group_sample_membership_ (
     _sample UUID REFERENCES sample_(_id) NOT NULL,
     PRIMARY KEY (_sample_group, _sample)
 );
+
+-- server
+
+CREATE TABLE IF NOT EXISTS _user_session_ (
+    _token UUID DEFAULT uuidv7() PRIMARY KEY,
+    _user UUID REFERENCES user_(_id) NOT NULL,
+    _expires TIMESTAMP(0) WITH TIME ZONE NOT NULL,
+    active boolean DEFAULT true NOT NULL
+);

@@ -4,7 +4,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="{{.LogoPath}}" />
+    <link rel="icon" type="image/svg+xml" {{.IconPath}} />
     <link rel="stylesheet" href="public/main.css" />
     <title>{{.Title}}</title>
   </head>
@@ -16,7 +16,8 @@
         </div>
         <div class="text-lg font-bold">{{.AccountName}}</div>
       </div>
-      <form action="/api/login" method="post" class="flex flex-col gap-2">
+      <div id="login-form-error" class="text-red-600"></div>
+      <form id="login-form" class="flex flex-col gap-2">
         <div class="flex flex-col gap-2">
           <div>
             <label>
@@ -27,6 +28,7 @@
                 placeholder="Email"
                 autocomplete="email"
                 class="input-basic"
+                required
               />
             </label>
           </div>
@@ -39,12 +41,21 @@
                 placeholder="Password"
                 autocomplete="current-password"
                 class="input-basic"
+                required
               />
+            </label>
+          </div>
+          <div>
+            <label class="whitespace-nowrap">
+              <input type="checkbox" name="remember" />
+              <span class="pl-2"> Remember me </span>
             </label>
           </div>
         </div>
         <div class="flex justify-center">
-          <button type="submit" class="btn-submit">Login</button>
+          <button id="login-form-submit-btn" type="submit" class="btn-submit">
+            Login
+          </button>
         </div>
       </form>
     </main>
@@ -66,5 +77,49 @@
       </div>
     </footer>
   </body>
+  <footer>
+    <script>
+      async function login(e) {
+        e.preventDefault();
+
+        const err_node = document.getElementById("login-form-error");
+        const btn_submit = document.getElementById("login-form-submit-btn");
+
+        err_node.innerText = "";
+        btn_submit.disabled = true;
+
+        const data = new FormData(e.target);
+        let response;
+        try {
+          response = await fetch("/api/login", {
+            method: "POST",
+            body: data,
+          });
+        } catch (err) {
+          console.debug("err");
+          console.error(err);
+          err_node.innerText = "An error occurred, please try again.";
+          return;
+        } finally {
+          btn_submit.disabled = false;
+        }
+
+        if (response.status === 401) {
+          err_node.innerText = "Email or password are incorrect.";
+          return;
+        }
+        if (response.status !== 200) {
+          console.error(response);
+          err_node.innerText = "an error occurred, please try again.";
+          return;
+        }
+
+        location.reload();
+      }
+
+      const form = document.getElementById("login-form");
+      form.addEventListener("submit", login);
+    </script>
+  </footer>
 </html>
 {{ end }}

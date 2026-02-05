@@ -37,7 +37,7 @@ const DATA_PATH_DEFAULT_REL = "syredb"
 func main() {
 	home_dir, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Errorf("can not get user's home directory: #%v", err)
+		fmt.Println(fmt.Errorf("can not get user's home directory: #%v", err))
 		os.Exit(1)
 	}
 

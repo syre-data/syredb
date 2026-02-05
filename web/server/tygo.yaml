@@ -1,0 +1,11 @@
+type_mappings:
+  uuid.UUID: "uuid.UUIDTypes" # include `import * as uuid from "uuid"` in frontmatter
+
+packages:
+  - path: "syredb/service"
+    output_path: "../frontend/model"
+    enum_style: "union"
+    exclude_files:
+      - "service/auth.service.go"
+    frontmatter: |
+      import * as uuid from "uuid"

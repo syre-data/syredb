@@ -1,0 +1,11 @@
+{
+  "name": "syredb",
+  "scripts": {
+    "dev": "concurrently \"cd backend && air\" \"cd frontend && npm run dev\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && air"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
