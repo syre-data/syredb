@@ -6,19 +6,23 @@ import {
     FaDownload,
     FaGear,
     FaPowerOff,
+    FaRegCircleXmark,
     FaSpinner,
     FaTrash,
     FaX,
 } from "react-icons/fa6";
 import { IoIosLogOut, IoMdHome, IoIosArrowRoundBack } from "react-icons/io";
 import { MdEdit } from "react-icons/md";
+import { IoEyeOutline } from "react-icons/io5";
 
 export default {
     BackArrow: IoIosArrowRoundBack,
     CaretDown: FaCaretDown,
     Check: FaCheck,
+    CircleX: FaRegCircleXmark,
     Close: FaX,
     Download: FaDownload,
+    Eye: IoEyeOutline,
     FileUpload: FaFileUpload,
     Gear: FaGear,
     Home: IoMdHome,

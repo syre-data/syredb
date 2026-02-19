@@ -1,4 +1,4 @@
-import * as model from "../../model";
+import * as types from "@/types";
 import { Suspense, useContext, useState } from "react";
 import type { MouseEvent } from "react";
 import { ErrorBoundary } from "react-error-boundary";
@@ -12,8 +12,8 @@ import * as appStateCtx from "../AppStateContext";
 import * as common from "../common";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
-import * as project_service from "@/service/project.service";
-import * as data_service from "@/service/data.service";
+import project_service from "@/service/project.service";
+import data_service from "@/service/data.service";
 
 export default function Dashboard() {
     const appState = useContext(appStateCtx.Context);
@@ -137,7 +137,7 @@ function UserProjectsEmpty() {
 }
 
 interface UserProjectsDeckProps {
-    projects: model.Project[];
+    projects: types.Project[];
 }
 function UserProjectsDeck({ projects }: UserProjectsDeckProps) {
     return (
@@ -150,7 +150,7 @@ function UserProjectsDeck({ projects }: UserProjectsDeckProps) {
 }
 
 interface ProjectCardProps {
-    project: model.Project;
+    project: types.Project;
 }
 function ProjectCard({ project }: ProjectCardProps) {
     return (
@@ -214,7 +214,7 @@ function DataSchemaLoading() {
 function DataSchemaInner() {
     const { data: data_schemas } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_DATA_SCHEMA],
-        queryFn: data_service.GetDataSchemasAll,
+        queryFn: data_service.getDataSchemasAll,
     });
 
     if (data_schemas.length === 0) {
@@ -245,7 +245,7 @@ function DataSchemaInner() {
 
 interface DataSchemaProps {
     index: number;
-    schema: model.DataSchema;
+    schema: types.DataSchema;
 }
 function DataSchemaContent({ index, schema }: DataSchemaProps) {
     const ROW_SPAN = 2;

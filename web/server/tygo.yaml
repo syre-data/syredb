@@ -1,11 +1,28 @@
 type_mappings:
   uuid.UUID: "uuid.UUIDTypes" # include `import * as uuid from "uuid"` in frontmatter
-
+  time.Time: "Date"
+  os.File: "File"
 packages:
   - path: "syredb/service"
-    output_path: "../frontend/model"
-    enum_style: "union"
+    output_path: "../frontend/src/types/service.ts"
     exclude_files:
-      - "service/auth.service.go"
+      - "auth.service.go"
     frontmatter: |
       import * as uuid from "uuid"
+    enum_style: "union"
+
+  - path: "syredb/handler"
+    output_path: "../frontend/src/types/errors.ts"
+    include_files:
+      - "errors.go"
+    frontmatter: |
+      import * as uuid from "uuid"
+    enum_style: "union"
+
+  - path: "syredb/handler"
+    output_path: "../frontend/src/types/handler.ts"
+    include_files:
+      - "project.handler.go"
+    frontmatter: |
+      import * as uuid from "uuid"
+    enum_style: "union"

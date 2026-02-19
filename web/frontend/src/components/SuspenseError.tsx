@@ -1,28 +1,15 @@
-import type { FallbackProps } from "react-error-boundary";
 import * as common from "@/common";
-import { Link, useNavigate } from "react-router";
 import type { MouseEvent } from "react";
+import { Link } from "react-router";
 import icon from "@/icon";
 
-export function Loading() {
-    return <div className="text-center pt-4">Loading</div>;
-}
-
-interface ErrorProps extends FallbackProps {
+interface Props {
+    resetErrorBoundary: (...args: unknown[]) => void;
+    className?: any;
     children: any;
 }
-export function Error({ error, resetErrorBoundary, children }: ErrorProps) {
-    const err = error as common.BackendError;
-    const navigate = useNavigate();
 
-    if (err.message === common.USER_NOT_AUTHENTICATED_ERROR) {
-        console.error(common.USER_NOT_AUTHENTICATED_ERROR);
-        navigate("/");
-        return null;
-    } else {
-        console.error(err);
-    }
-
+export default function ({ resetErrorBoundary, className, children }: Props) {
     function reload(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
             return;
@@ -32,7 +19,7 @@ export function Error({ error, resetErrorBoundary, children }: ErrorProps) {
     }
 
     return (
-        <div className="flex flex-col gap-2 items-center pt-4">
+        <div className={className}>
             <div>{children}</div>
             <div className="flex gap-2 items-center">
                 <div>

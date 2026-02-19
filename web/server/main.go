@@ -24,10 +24,10 @@ import (
 	"syredb/service"
 )
 
-const DEV_FRONTEND_PATH = "../frontend/dist"
-const JWT_CONTEXT_KEY string = "user"
-const ENV_KEY = "SYREDB_ENV"
-const INCLUDE_PATH = "../frontend/dist"
+const DevFrontendPath = "../frontend/dist"
+const JWTContextKey string = "user"
+const EnvKey = "SYREDB_ENV"
+const IncludePath = "../frontend/dist"
 
 func main() {
 	db_credentials, err := database.CollectCredentialsFromEnvAndFlags()
@@ -45,21 +45,23 @@ func main() {
 	e := echo.New()
 	api_middleware := NewApiMiddleware(ctx, db)
 
+	app_service := service.NewAppService(ctx, e.Logger, db)
 	auth_service := service.NewAuthService(ctx, e.Logger, db)
 	user_service := service.NewUserService(ctx, e.Logger, db, auth_service)
-	project_service := service.NewProjectService(ctx, e.Logger, db)
-	data_service := service.NewDataService(ctx, e.Logger, db)
+	sample_service := service.NewSampleService(ctx, e.Logger, db)
+	data_service := service.NewDataService(ctx, e.Logger, db, user_service)
+	project_service := service.NewProjectService(ctx, e.Logger, db, user_service, data_service)
 
 	app_handler := handler.NewAppHandler(db)
 	auth_handler := handler.NewAuthHandler(db, auth_service)
-	user_handler := handler.NewUserHandler(db, user_service)
-	project_handler := handler.NewProjectHandler(db, project_service)
-	data_handler := handler.NewDataHandler(db, data_service)
+	user_handler := handler.NewUserHandler(db, user_service, app_service)
+	project_handler := handler.NewProjectHandler(db, project_service, sample_service)
+	data_handler := handler.NewDataHandler(db, data_service, user_service)
 
-	env_session_secret, env_session_secret_exists := os.LookupEnv(handler.ENV_SESSION_SECRET_KEY)
+	env_session_secret, env_session_secret_exists := os.LookupEnv(handler.EnvSessionSecretKey)
 	if !env_session_secret_exists {
 		env_session_secret = "secret"
-		os.Setenv(handler.ENV_SESSION_SECRET_KEY, env_session_secret)
+		os.Setenv(handler.EnvSessionSecretKey, env_session_secret)
 	}
 
 	e.Use(middleware.RequestLogger())
@@ -72,11 +74,11 @@ func main() {
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
 	}))
 	e.Use(echojwt.WithConfig(echojwt.Config{
-		ContextKey:  handler.SESSION_TOKEN_KEY,
+		ContextKey:  handler.SessionTokenKey,
 		SigningKey:  []byte(env_session_secret),
-		TokenLookup: fmt.Sprintf("cookie:%s", handler.SESSION_TOKEN_KEY),
+		TokenLookup: fmt.Sprintf("cookie:%s", handler.SessionTokenKey),
 		NewClaimsFunc: func(c *echo.Context) jwt.Claims {
-			return new(handler.JwtCustomClaims)
+			return new(handler.JWTCustomClaims)
 		},
 		ErrorHandler: func(c *echo.Context, err error) error {
 			c.Logger().With(
@@ -93,14 +95,14 @@ func main() {
 		ContinueOnIgnoredError: true,
 	}))
 	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
-		Root:       DEV_FRONTEND_PATH,
+		Root:       DevFrontendPath,
 		Index:      "index.html",
 		HTML5:      true,
 		Browse:     false,
 		IgnoreBase: false,
 		Filesystem: nil,
 		Skipper: middleware.Skipper(func(c *echo.Context) bool {
-			_, jwt_err := echo.ContextGet[*jwt.Token](c, handler.SESSION_TOKEN_KEY)
+			_, jwt_err := echo.ContextGet[*jwt.Token](c, handler.SessionTokenKey)
 			valid_token := jwt_err == nil
 
 			path := c.Request().URL.Path
@@ -142,16 +144,16 @@ func main() {
 
 type ApiMiddleware struct {
 	ctx context.Context
-	db  *database.DbConnection
+	db  *database.DBConnection
 }
 
-func NewApiMiddleware(ctx context.Context, db *database.DbConnection) *ApiMiddleware {
+func NewApiMiddleware(ctx context.Context, db *database.DBConnection) *ApiMiddleware {
 	return &ApiMiddleware{ctx: ctx, db: db}
 }
 
-func (m *ApiMiddleware) SessionTokenFromJwt(next echo.HandlerFunc) echo.HandlerFunc {
+func (m *ApiMiddleware) SessionTokenFromJWT(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		token, err := echo.ContextGet[*jwt.Token](c, handler.SESSION_TOKEN_KEY)
+		token, err := echo.ContextGet[*jwt.Token](c, handler.SessionTokenKey)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
@@ -160,15 +162,15 @@ func (m *ApiMiddleware) SessionTokenFromJwt(next echo.HandlerFunc) echo.HandlerF
 			return err
 		}
 
-		claims := token.Claims.(*handler.JwtCustomClaims)
-		c.Set(handler.SESSION_TOKEN_KEY, claims.SessionId)
+		claims := token.Claims.(*handler.JWTCustomClaims)
+		c.Set(handler.SessionTokenKey, claims.SessionId)
 		return next(c)
 	}
 }
 
 func (m *ApiMiddleware) UserIdFromSessionToken(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		session_token := c.Get(handler.SESSION_TOKEN_KEY)
+		session_token := c.Get(handler.SessionTokenKey)
 		if session_token == nil {
 			panic("session token not set on context")
 		}
@@ -185,7 +187,7 @@ func (m *ApiMiddleware) UserIdFromSessionToken(next echo.HandlerFunc) echo.Handl
 			return err
 		}
 
-		c.Set(handler.USER_ID_KEY, user)
+		c.Set(handler.UserIdKey, user)
 		return next(c)
 	}
 }
@@ -200,15 +202,27 @@ func register_routes(
 	data *handler.DataHandler,
 ) {
 	e.GET("/", app.Index)
+	e.POST("/api/login", auth.Login)
 
 	api := e.Group("/api")
-	api.Use(api_middleware.SessionTokenFromJwt)
+	api.Use(api_middleware.SessionTokenFromJWT)
 	api.Use(api_middleware.UserIdFromSessionToken)
 
-	api.POST("/login", auth.Login)
-	api.GET("/user", user.GetUserFromToken)
+	api.PUT("/logout", auth.Logout)
+	api.GET("/user", user.GetUser)
+	api.PUT("/user", user.UpdateUser)
+	api.POST("/user/create", user.CreateUser)
+	api.PUT("/user/deactivate", user.DeactivateUser)
+	api.GET("/users", user.GetUsersAll)
+	api.GET("/project", project.GetProjectWithUserPermission)
+	api.POST("/project", project.CreateProject)
 	api.GET("/projects", project.GetUserProjects)
+	api.GET("/project/resources", project.GetProjectResources)
+	api.GET("/project/sample-resources", project.GetProjectSampleResources)
+	api.POST("/project/samples", project.CreateProjectSamples)
+	api.PUT("/project/sample", project.UpdateProjectSample)
 	api.GET("/data-schemas", data.GetDataSchemasAll)
+	api.POST("/data-schema", data.CreateDataSchema)
 }
 
 func proxy_to_vite(e *echo.Echo) {

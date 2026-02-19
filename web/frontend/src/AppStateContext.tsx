@@ -1,12 +1,12 @@
 import { createContext } from "react";
 import type { ActionDispatch } from "react";
-import * as model from "../model";
+import * as types from "@/types";
 import * as uuid from "uuid";
 
 export class State {
-    user: model.User;
+    user: types.User;
 
-    constructor(user: model.User) {
+    constructor(user: types.User) {
         this.user = user;
     }
 }
@@ -16,14 +16,12 @@ export const Context = createContext(
         Id: uuid.NIL,
         Email: "",
         Name: "",
-        AccountStatus: model.ACCOUNT_STATUS_DISABLED,
-        Role: model.USER_ROLE_USER,
+        AccountStatus: types.AccountStatusDeactivated,
+        Role: types.UserRoleUser,
     }),
 );
 export const Dispatch = createContext<ActionDispatch<[Action]>>(() => {});
-export type Action =
-    | { type: "set_user"; payload: model.User }
-    | { type: "signout" };
+export type Action = { type: "set_user"; payload: types.User };
 
 export function Reducer(prevState: State, action: Action): State {
     switch (action.type) {
@@ -33,8 +31,4 @@ export function Reducer(prevState: State, action: Action): State {
             return update;
         }
     }
-
-    throw new Error("invalid action", {
-        cause: `recieved action of type ${action.type}`,
-    });
 }

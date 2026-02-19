@@ -17,22 +17,22 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-const PASSWORD_HASH_ALGO_ID = "argon2id"
-const PASSWORD_HASH_HASH_LENGTH_BYTES = 512
-const PASSWORD_HASH_SALT_LENGTH_BYTES = 64
-const PASSWORD_HASH_ITERATIONS = 2
-const PASSWORD_HASH_MEMORY = 64 * 1024
-const PASSWORD_HASH_PARALLELISM = 4
+const PasswordHashAlgoId = "argon2id"
+const PasswordHashHashLengthBytes = 512
+const PasswordHashSaltLengthBytes = 64
+const PasswordHashIterations = 2
+const PasswordHashMemory = 64 * 1024
+const PasswordHashParallelism = 4
 
-const APP_EMAIL_URL_KEY = "app:email:url"
-const APP_EMAIL_USERNAME_KEY = "app:email:username"
-const APP_EMAIL_PASSWORD_KEY = "app:email:password"
-const APP_EMAIL_FROM_KEY = "app:email:from"
-const APP_ACCOUNT_NAME_KEY = "app:account:name"
-const APP_ACCOUNT_LOGO_KEY = "app:account:logo"
-const APP_DATA_PATH_KEY = "app:data:path"
+const AppEmailUrlKey = "app:email:url"
+const AppEmailUsernameKey = "app:email:username"
+const AppEmailPasswordKey = "app:email:password"
+const AppEmailFromKey = "app:email:from"
+const AppAccountNameKey = "app:account:name"
+const AppAccountLogoKey = "app:account:logo"
+const AppDataPathKey = "app:data:path"
 
-const DATA_PATH_DEFAULT_REL = "syredb"
+const DataPathDefaultRel = "syredb"
 
 func main() {
 	home_dir, err := os.UserHomeDir()
@@ -63,7 +63,7 @@ func main() {
 	account_logo := flag.String("account-logo", "", "path to the account logo")
 
 	// data flags
-	data_path_default := filepath.Join(home_dir, DATA_PATH_DEFAULT_REL)
+	data_path_default := filepath.Join(home_dir, DataPathDefaultRel)
 	data_path := flag.String("data-path", data_path_default, "data path")
 
 	flag.Parse()
@@ -148,15 +148,15 @@ func create_db_owner_user(conn *pgx.Conn, email string, name string, password st
 }
 
 func encode_password(password string) string {
-	salt := make([]byte, PASSWORD_HASH_SALT_LENGTH_BYTES)
+	salt := make([]byte, PasswordHashSaltLengthBytes)
 	rand.Read(salt)
 	hash := argon2.IDKey(
 		[]byte(password),
 		salt,
-		PASSWORD_HASH_ITERATIONS,
-		PASSWORD_HASH_MEMORY,
-		PASSWORD_HASH_PARALLELISM,
-		PASSWORD_HASH_HASH_LENGTH_BYTES,
+		PasswordHashIterations,
+		PasswordHashMemory,
+		PasswordHashParallelism,
+		PasswordHashHashLengthBytes,
 	)
 
 	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
@@ -164,11 +164,11 @@ func encode_password(password string) string {
 
 	return fmt.Sprintf(
 		"$%s$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		PASSWORD_HASH_ALGO_ID,
+		PasswordHashAlgoId,
 		argon2.Version,
-		PASSWORD_HASH_MEMORY,
-		PASSWORD_HASH_ITERATIONS,
-		PASSWORD_HASH_PARALLELISM,
+		PasswordHashMemory,
+		PasswordHashIterations,
+		PasswordHashParallelism,
 		b64Salt,
 		b64Hash,
 	)
@@ -179,13 +179,13 @@ func set_app_email(conn *pgx.Conn, url string, username string, password string,
 	_, err := conn.Exec(
 		context.Background(),
 		insert_user_query,
-		APP_EMAIL_URL_KEY,
+		AppEmailUrlKey,
 		url,
-		APP_EMAIL_USERNAME_KEY,
+		AppEmailUsernameKey,
 		username,
-		APP_EMAIL_PASSWORD_KEY,
+		AppEmailPasswordKey,
 		password,
-		APP_EMAIL_FROM_KEY,
+		AppEmailFromKey,
 		from,
 	)
 	return err
@@ -196,9 +196,9 @@ func set_account_info(conn *pgx.Conn, name string, logo_path string) error {
 	_, err := conn.Exec(
 		context.Background(),
 		inser_account_info_query,
-		APP_ACCOUNT_NAME_KEY,
+		AppAccountNameKey,
 		name,
-		APP_ACCOUNT_LOGO_KEY,
+		AppAccountLogoKey,
 		logo_path,
 	)
 	return err
@@ -209,7 +209,7 @@ func set_data(conn *pgx.Conn, data_path string) error {
 	_, err := conn.Exec(
 		context.Background(),
 		inser_data_query,
-		APP_DATA_PATH_KEY,
+		AppDataPathKey,
 		data_path,
 	)
 	return err

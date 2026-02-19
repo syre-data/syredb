@@ -1,85 +1,45 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { useParams, Link, useNavigate } from "react-router";
-import * as app from "../../model";
-import icon from "../icon";
+import { useParams, redirect } from "react-router";
 import { ErrorBoundary } from "react-error-boundary";
 import type { FallbackProps } from "react-error-boundary";
-import {
-  FormEvent,
-  MouseEvent,
-  Suspense,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
-import * as common from "../common";
+import { Suspense } from "react";
+import SuspenseError from "@/components/SuspenseError";
 
 export default function () {
-  const navigate = useNavigate();
-  const { id: project_id } = useParams();
-  if (project_id) {
-    return (
-      <ErrorBoundary FallbackComponent={ProjectSettingsError}>
-        <Suspense fallback={<Loading />}>
-          <ProjectSettings id={project_id} />
-        </Suspense>
-      </ErrorBoundary>
-    );
-  } else {
-    navigate("/");
-    return null;
-  }
+    const { project_id } = useParams();
+    if (project_id) {
+        return (
+            <ErrorBoundary FallbackComponent={ProjectSettingsError}>
+                <Suspense fallback={<Loading />}>
+                    <ProjectSettings id={project_id} />
+                </Suspense>
+            </ErrorBoundary>
+        );
+    } else {
+        throw redirect("/");
+    }
 }
 
 function Loading() {
-  return <div className="text-center pt-4">Loading</div>;
+    return <div className="text-center pt-4">Loading</div>;
 }
 
 function ProjectSettingsError({ error, resetErrorBoundary }: FallbackProps) {
-  const navigate = useNavigate();
-
-  if (error.message === common.USER_NOT_AUTHENTICATED_ERROR) {
-    console.error(common.USER_NOT_AUTHENTICATED_ERROR);
-    navigate("/");
-    return null;
-  } else {
     console.error(error);
-  }
 
-  function reload(e: MouseEvent<HTMLButtonElement>) {
-    if (e.button != common.MouseButton.Primary) {
-      return;
-    }
-
-    resetErrorBoundary();
-  }
-
-  return (
-    <div className="flex flex-col gap-2 items-center pt-4">
-      <div>Could not load project</div>
-      <div>{error.message}</div>
-      <div className="flex gap-2 items-center">
-        <div>
-          <Link to="/">
-            <button type="button" className="btn-cmd">
-              <icon.Home />
-            </button>
-          </Link>
-        </div>
-        <div>
-          <button type="button" onMouseDown={reload} className="btn-cmd">
-            <icon.Reload />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+    return (
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="flex flex-col gap-2 items-center pt-4"
+        >
+            <div>Could not load project</div>
+            <div>{error.message}</div>
+        </SuspenseError>
+    );
 }
 
 interface ProjectSettngsProps {
-  id: string;
+    id: string;
 }
 function ProjectSettings({ id }: ProjectSettngsProps) {
-  return <div>{id}</div>;
+    return <div>{id}</div>;
 }

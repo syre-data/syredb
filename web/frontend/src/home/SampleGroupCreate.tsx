@@ -1,18 +1,12 @@
-import {
-  useState,
-  FormEvent,
-  MouseEventHandler,
-  MouseEvent,
-  SetStateAction,
-  Dispatch,
-} from "react";
+import { useState } from "react";
+import type { MouseEvent, SetStateAction, Dispatch } from "react";
 import icons from "../icon";
 import { MouseButton } from "../common";
-import * as app from "../../model";
+import * as app from "../types";
 import { useNavigate } from "react-router";
 
 export default function () {
-  return <div>sample group create</div>;
+    return <div>sample group create</div>;
 }
 
 // export default function () {

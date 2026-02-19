@@ -17,37 +17,37 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-const PASSWORD_HASH_ALGO_ID = "argon2id"
-const PASSWORD_HASH_HASH_LENGTH_BYTES = 512
-const PASSWORD_HASH_SALT_LENGTH_BYTES = 64
-const PASSWORD_HASH_ITERATIONS = 2
-const PASSWORD_HASH_MEMORY = 64 * 1024
-const PASSWORD_HASH_PARALLELISM = 4
+const PasswordHashAlgoId = "argon2id"
+const PasswordHashHashLengthBytes = 512
+const PasswordHashSaltLengthBytes = 64
+const PasswordHashIterations = 2
+const PasswordHashMemory = 64 * 1024
+const PasswordHashParallelism = 4
 
 type AuthService struct {
 	ctx    context.Context
 	logger *slog.Logger
-	db     *database.DbConnection
+	db     *database.DBConnection
 }
 
 func NewAuthService(
 	ctx context.Context,
 	logger *slog.Logger,
-	db *database.DbConnection,
+	db *database.DBConnection,
 ) *AuthService {
 	return &AuthService{ctx: ctx, logger: logger, db: db}
 }
 
 func (s *AuthService) EncodePassword(password string) string {
-	salt := make([]byte, PASSWORD_HASH_SALT_LENGTH_BYTES)
+	salt := make([]byte, PasswordHashSaltLengthBytes)
 	rand.Read(salt)
 	hash := argon2.IDKey(
 		[]byte(password),
 		salt,
-		PASSWORD_HASH_ITERATIONS,
-		PASSWORD_HASH_MEMORY,
-		PASSWORD_HASH_PARALLELISM,
-		PASSWORD_HASH_HASH_LENGTH_BYTES,
+		PasswordHashIterations,
+		PasswordHashMemory,
+		PasswordHashParallelism,
+		PasswordHashHashLengthBytes,
 	)
 
 	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
@@ -55,11 +55,11 @@ func (s *AuthService) EncodePassword(password string) string {
 
 	return fmt.Sprintf(
 		"$%s$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		PASSWORD_HASH_ALGO_ID,
+		PasswordHashAlgoId,
 		argon2.Version,
-		PASSWORD_HASH_MEMORY,
-		PASSWORD_HASH_ITERATIONS,
-		PASSWORD_HASH_PARALLELISM,
+		PasswordHashMemory,
+		PasswordHashIterations,
+		PasswordHashParallelism,
 		b64Salt,
 		b64Hash,
 	)
@@ -79,7 +79,7 @@ func decodePasswordHash(encoded_hash string) (p *passwordHashParameters, salt, h
 		return nil, nil, nil, fmt.Errorf("invalid hash format")
 	}
 
-	if vals[1] != PASSWORD_HASH_ALGO_ID {
+	if vals[1] != PasswordHashAlgoId {
 		return nil, nil, nil, errors.New("incompatible hash alogrithm")
 	}
 
@@ -138,7 +138,7 @@ func (s *AuthService) ComparePasswordAndHash(
 	return false, nil
 }
 
-const JWT_SESSION_ID_KEY = "session_id"
+const JWTSessionIdKey = "session_id"
 
 func (s *AuthService) CreateSession(user uuid.UUID, expires time.Time) (uuid.UUID, error) {
 	tx, err := s.db.Conn.Begin(s.ctx)
@@ -147,16 +147,6 @@ func (s *AuthService) CreateSession(user uuid.UUID, expires time.Time) (uuid.UUI
 		return uuid.Nil, err
 	}
 	defer tx.Rollback(s.ctx)
-
-	remove_query := "UPDATE _user_session_ SET active=false WHERE _user=$1"
-	_, err = tx.Exec(s.ctx, remove_query, user)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"user", user,
-		).Error("could not deactivate previous user sessions")
-		return uuid.Nil, err
-	}
 
 	var session uuid.UUID
 	create_query :=
@@ -189,4 +179,18 @@ func (s *AuthService) UserFromToken(token uuid.UUID) (uuid.UUID, error) {
 		return uuid.Nil, err
 	}
 	return user, nil
+}
+
+func (s *AuthService) DeactivateSession(token uuid.UUID) error {
+	disable_query := "UPDATE _user_session_ SET active=false WHERE _token=$1"
+	_, err := s.db.Conn.Exec(s.ctx, disable_query, token)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"session token", token,
+		).Error("could not deactivate previous user sessions")
+		return err
+	}
+
+	return nil
 }

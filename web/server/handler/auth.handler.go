@@ -14,31 +14,35 @@ import (
 	"syredb/service"
 )
 
-const ENV_SESSION_SECRET_KEY string = "SYREDB_SESSION_SECRET"
-const SESSION_TOKEN_KEY string = "session_token"
-const SESSION_DURATION = time.Hour * 24
+const EnvSessionSecretKey string = "SYREDB_SESSION_SECRET"
+const SessionTokenKey string = "session_token"
+const SessionDuration = time.Hour * 24
 
-type JwtCustomClaims struct {
+type JWTCustomClaims struct {
 	SessionId uuid.UUID `json:"session_id"`
 	jwt.RegisteredClaims
 }
 
 type AuthHandler struct {
-	db   *database.DbConnection
-	auth *service.AuthService
+	db           *database.DBConnection
+	auth_service *service.AuthService
 }
 
 func NewAuthHandler(
-	db *database.DbConnection,
+	db *database.DBConnection,
 	auth_service *service.AuthService,
 ) *AuthHandler {
-	return &AuthHandler{db: db, auth: auth_service}
+	return &AuthHandler{db: db, auth_service: auth_service}
 }
 
 func (h *AuthHandler) Login(c *echo.Context) error {
 	email := c.FormValue("email")
 	password := c.FormValue("password")
 	remember := c.FormValue("remember") != ""
+
+	if email == "" || password == "" {
+		return c.NoContent(http.StatusUnprocessableEntity)
+	}
 
 	var user_id uuid.UUID
 	user_id_query := "SELECT _id FROM user_ WHERE email=$1"
@@ -56,7 +60,7 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 		return c.NoContent(http.StatusNotFound)
 	}
 
-	authenticated, err := h.auth.ComparePasswordAndHash(password, hash)
+	authenticated, err := h.auth_service.ComparePasswordAndHash(password, hash)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -73,10 +77,10 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 	if remember {
 		session_expiration = time.Now().Add(time.Hour * 24 * 365)
 	} else {
-		session_expiration = time.Now().Add(SESSION_DURATION)
+		session_expiration = time.Now().Add(SessionDuration)
 	}
 
-	session_id, err := h.auth.CreateSession(user_id, session_expiration)
+	session_id, err := h.auth_service.CreateSession(user_id, session_expiration)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -90,15 +94,15 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 	if !remember {
 		registered_claims.ExpiresAt = jwt.NewNumericDate(session_expiration)
 	}
-	claims := &JwtCustomClaims{
+	claims := &JWTCustomClaims{
 		// TODO: add struct field names.
 		session_id,
 		registered_claims,
 	}
 
-	session_secret, session_secret_exists := os.LookupEnv(ENV_SESSION_SECRET_KEY)
+	session_secret, session_secret_exists := os.LookupEnv(EnvSessionSecretKey)
 	if !session_secret_exists {
-		panic(fmt.Sprintf("%s does not exist, can not sign token", ENV_SESSION_SECRET_KEY))
+		panic(fmt.Sprintf("%s does not exist, can not sign token", EnvSessionSecretKey))
 	}
 	token_data := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	token, err := token_data.SignedString([]byte(session_secret))
@@ -113,11 +117,33 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 		Path:     "/",
 		Domain:   "",
 		SameSite: http.SameSiteLaxMode,
-		Name:     SESSION_TOKEN_KEY,
+		Name:     SessionTokenKey,
 		Value:    token,
 		Expires:  session_expiration,
 	}
 	c.SetCookie(cookie)
 
+	return c.NoContent(http.StatusOK)
+}
+
+func (h *AuthHandler) Logout(c *echo.Context) error {
+	session_token := c.Get(SessionTokenKey).(uuid.UUID)
+	err := h.auth_service.DeactivateSession(session_token)
+	if err != nil {
+		c.Logger().With("session token", session_token).Error("could not deactivate session")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	cookie := &http.Cookie{
+		HttpOnly: true,
+		Secure:   false,
+		Path:     "/",
+		Domain:   "",
+		SameSite: http.SameSiteLaxMode,
+		Name:     SessionTokenKey,
+		Value:    "",
+		MaxAge:   -1,
+	}
+	c.SetCookie(cookie)
 	return c.NoContent(http.StatusOK)
 }

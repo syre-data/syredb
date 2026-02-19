@@ -94,7 +94,9 @@ func (s *ProjectService) GetUserProjects() ([]Project, error) {
 		return nil, &UserNotAuthenticatedError{}
 	}
 
-	user_project_query := "SELECT _id, _creator, label, description, visibility FROM project_ WHERE _creator=$1 ORDER BY _id"
+	user_project_query :=
+		`SELECT _id, _creator, label, description, visibility FROM project_ 
+		WHERE _creator=$1 ORDER BY _id`
 	rows, _ := s.db.conn.Query(s.ctx, user_project_query, user_id)
 	user_projects, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Project, error) {
 		var project Project
@@ -130,8 +132,8 @@ func (s *ProjectService) CreateProject(project ProjectCreate) (uuid.UUID, error)
 	var project_id uuid.UUID
 	create_project_query :=
 		`INSERT INTO project_ (_creator, label, description, visibility) 
-	VALUES ($1, $2, $3, $4) 
-	RETURNING _id`
+		VALUES ($1, $2, $3, $4) 
+		RETURNING _id`
 	err = tx.QueryRow(s.ctx, create_project_query, user_id, project.Label, project.Description, project.Visibility).Scan(&project_id)
 	if err != nil {
 		s.logger.With("error", err).Error("could not create project")
@@ -140,7 +142,7 @@ func (s *ProjectService) CreateProject(project ProjectCreate) (uuid.UUID, error)
 
 	set_user_permission_query :=
 		`INSERT INTO project_user_permission_ (_project, _user, permission) 
-	VALUES ($1, $2, $3)`
+		VALUES ($1, $2, $3)`
 	_, err = tx.Exec(s.ctx, set_user_permission_query, project_id, user_id, PROJECT_USER_PERMISSION_OWNER)
 	if err != nil {
 		s.logger.With("error", err).Error("could not create user project permission")
@@ -159,13 +161,13 @@ func (s *ProjectService) CreateProject(project ProjectCreate) (uuid.UUID, error)
 type PropertyType string
 
 const (
-	PROPERTY_TYPE_STRING    = PropertyType("string")
-	PROPERTY_TYPE_BOOL      = PropertyType("bool")
-	PROPERTY_TYPE_UINT      = PropertyType("uint")
-	PROPERTY_TYPE_INT       = PropertyType("int")
-	PROPERTY_TYPE_FLOAT     = PropertyType("float")
-	PROPERTY_TYPE_QUANTITY  = PropertyType("quantity")
-	PROPERTY_TYPE_TIMESTAMP = PropertyType("timestamp")
+	PROPERTY_TYPE_STRING    PropertyType = "string"
+	PROPERTY_TYPE_BOOL      PropertyType = "bool"
+	PROPERTY_TYPE_UINT      PropertyType = "uint"
+	PROPERTY_TYPE_INT       PropertyType = "int"
+	PROPERTY_TYPE_FLOAT     PropertyType = "float"
+	PROPERTY_TYPE_QUANTITY  PropertyType = "quantity"
+	PROPERTY_TYPE_TIMESTAMP PropertyType = "timestamp"
 )
 
 type Property struct {

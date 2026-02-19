@@ -1,23 +1,23 @@
 import { BrowserRouter, Routes, Route } from "react-router";
 import Dashboard from "./Dashboard";
-// import SampleGroupCreate from "./SampleGroupCreate";
-// import Settings from "./Settings";
-// import Users from "./Users";
-// import UserCreate from "./UserCreate";
-// import ProjectCreate from "./ProjectCreate";
-// import Project from "./Project";
-// import ProjectSettings from "./ProjectSettings";
-// import ProjectSamplesCreate from "./ProjectSamplesCreate";
-// import DataSchemaCreate from "./DataSchemaCreate";
-// import SampleEdit from "./SampleEdit";
-// import NotFound from "./NotFound";
+import SampleGroupCreate from "./SampleGroupCreate";
+import Settings from "./Settings";
+import Users from "./Users";
+import UserCreate from "./UserCreate";
+import ProjectCreate from "./ProjectCreate";
+import Project from "./Project";
+import ProjectSettings from "./ProjectSettings";
+import ProjectSamplesCreate from "./ProjectSamplesCreate";
+import DataSchemaCreate from "./DataSchemaCreate";
+import SampleEdit from "./SampleEdit";
+import NotFound from "./NotFound";
 
 export default function Home() {
     return (
         <BrowserRouter>
             <Routes>
                 <Route index element={<Dashboard />} />
-                {/* <Route path="/settings" element={<Settings />} />
+                <Route path="/settings" element={<Settings />} />
                 <Route path="/users" element={<Users />} />
                 <Route path="/user/create" element={<UserCreate />} />
                 <Route path="/project">
@@ -44,7 +44,7 @@ export default function Home() {
                     element={<DataSchemaCreate />}
                 />
 
-                <Route path="*" element={<NotFound />} /> */}
+                <Route path="*" element={<NotFound />} />
             </Routes>
         </BrowserRouter>
     );

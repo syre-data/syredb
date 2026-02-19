@@ -12,17 +12,17 @@ import (
 )
 
 type AppHandler struct {
-	db *database.DbConnection
+	db *database.DBConnection
 }
 
 func NewAppHandler(
-	db *database.DbConnection,
+	db *database.DBConnection,
 ) *AppHandler {
 	return &AppHandler{db: db}
 }
 
 func (h AppHandler) Index(c *echo.Context) error {
-	_, err := echo.ContextGet[*jwt.Token](c, SESSION_TOKEN_KEY)
+	_, err := echo.ContextGet[*jwt.Token](c, SessionTokenKey)
 	if err != nil {
 		return h.indexUnauthenticatedHandler(c)
 	}
@@ -31,16 +31,16 @@ func (h AppHandler) Index(c *echo.Context) error {
 }
 
 func (h *AppHandler) indexUnauthenticatedHandler(c *echo.Context) error {
-	const APP_ACCOUNT_NAME_KEY = "app:account:name"
-	const APP_ACCOUNT_LOGO_KEY = "app:account:logo"
-	const STATIC_FILE_PREFIX = "public"
+	const AppAccountNameKey = "app:account:name"
+	const AppAccountLogoKey = "app:account:logo"
+	const StaticFilePrefix = "public"
 
 	var account_name string
 	var logo_path string
 	app_query := fmt.Sprintf(
 		`SELECT key, value FROM _app_data_ WHERE key IN ('%s', '%s')`,
-		APP_ACCOUNT_NAME_KEY,
-		APP_ACCOUNT_LOGO_KEY,
+		AppAccountNameKey,
+		AppAccountLogoKey,
 	)
 	rows, err := h.db.Conn.Query(c.Request().Context(), app_query)
 	if err != nil {
@@ -56,10 +56,10 @@ func (h *AppHandler) indexUnauthenticatedHandler(c *echo.Context) error {
 		}
 
 		switch key {
-		case APP_ACCOUNT_NAME_KEY:
+		case AppAccountNameKey:
 			account_name = value
-		case APP_ACCOUNT_LOGO_KEY:
-			logo_path = filepath.Join(STATIC_FILE_PREFIX, value)
+		case AppAccountLogoKey:
+			logo_path = filepath.Join(StaticFilePrefix, value)
 		default:
 			c.Logger().With("key", key).Error("invalid key")
 			panic("invalid key")

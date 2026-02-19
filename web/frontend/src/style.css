@@ -1,9 +1,7 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
-
 @utility input-basic {
-    @apply rounded-xs border py-0.5 px-1
+    @apply rounded-xs border py-0.5 px-1;
 }
 
 @utility btn-cmd {
@@ -11,9 +9,9 @@
 }
 
 @utility btn-submit {
-  @apply cursor-pointer px-1 py-0.5 rounded-xs border
+  @apply cursor-pointer px-1 py-0.5 rounded-xs border;
 }
 
-.dark select option {
-  background-color: black;
+select option {
+  @apply dark:bg-black;
 }

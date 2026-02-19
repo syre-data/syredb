@@ -2,7 +2,7 @@ import { useReducer, Suspense } from "react";
 import "./App.css";
 import * as appStateCtx from "./AppStateContext";
 import Home from "./home/Home";
-import * as model from "../model";
+import * as types from "@/types";
 import icon from "@/icon";
 import {
     QueryClient,
@@ -10,9 +10,9 @@ import {
     useSuspenseQuery,
 } from "@tanstack/react-query";
 import type { FallbackProps } from "react-error-boundary";
-import { Loading } from "./components/Common";
+import Loading from "./components/Loading";
 import { ErrorBoundary } from "react-error-boundary";
-import * as user_service from "@/service/user.service";
+import user_service from "@/service/user.service";
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -109,7 +109,7 @@ function LoadUserError({ error, resetErrorBoundary }: FallbackProps) {
 }
 
 interface ProvideAppStateInnerProps {
-    user: model.User;
+    user: types.User;
     children: any;
 }
 function ProvideAppStateInner({ user, children }: ProvideAppStateInnerProps) {

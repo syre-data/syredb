@@ -1,4 +1,4 @@
-import * as model from "../model";
+import * as model from "./types";
 
 export const QUERY_KEY_DATA_SCHEMA = "data_schema";
 
@@ -18,14 +18,13 @@ export function project_user_permission_string_to_variant(
 ): model.ProjectUserPermission | undefined {
     switch (value) {
         case "owner":
-            return model.ProjectUserPermission.PROJECT_USER_PERMISSION_OWNER;
+            return model.ProjectUserPermissionOwner;
         case "admin":
-            return model.ProjectUserPermission.PROJECT_USER_PERMISSION_ADMIN;
+            return model.ProjectUserPermissionAdmin;
         case "read_write":
-            return model.ProjectUserPermission
-                .PROJECT_USER_PERMISSION_READ_WRITE;
+            return model.ProjectUserPermissionReadWrite;
         case "read":
-            return model.ProjectUserPermission.PROJECT_USER_PERMISSION_READ;
+            return model.ProjectUserPermissionRead;
         default:
             return undefined;
     }
@@ -35,10 +34,8 @@ export function is_admin_or_owner(
     user_permission: model.ProjectUserPermission,
 ): boolean {
     return (
-        user_permission ===
-            model.ProjectUserPermission.PROJECT_USER_PERMISSION_ADMIN ||
-        user_permission ===
-            model.ProjectUserPermission.PROJECT_USER_PERMISSION_OWNER
+        user_permission === model.ProjectUserPermissionAdmin ||
+        user_permission === model.ProjectUserPermissionOwner
     );
 }
 
@@ -47,11 +44,11 @@ export function user_role_string_to_variant(
 ): model.UserRole | undefined {
     switch (value) {
         case "owner":
-            return model.UserRole.USER_ROLE_OWNER;
+            return model.UserRoleOwner;
         case "admin":
-            return model.UserRole.USER_ROLE_ADMIN;
+            return model.UserRoleAdmin;
         case "user":
-            return model.UserRole.USER_ROLE_USER;
+            return model.UserRoleUser;
         default:
             return undefined;
     }
@@ -62,17 +59,17 @@ export function data_type_string_to_variant(
 ): model.DataType | undefined {
     switch (value) {
         case "string":
-            return model.DataType.DATA_TYPE_STRING;
+            return model.DataTypeString;
         case "int":
-            return model.DataType.DATA_TYPE_INT;
+            return model.DataTypeInt;
         case "uint":
-            return model.DataType.DATA_TYPE_UINT;
+            return model.DataTypeUint;
         case "float":
-            return model.DataType.DATA_TYPE_FLOAT;
+            return model.DataTypeFloat;
         case "boolean":
-            return model.DataType.DATA_TYPE_BOOLEAN;
+            return model.DataTypeBoolean;
         case "timestamp":
-            return model.DataType.DATA_TYPE_TIMESTAMP;
+            return model.DataTypeTimestamp;
         default:
             return undefined;
     }
@@ -83,9 +80,9 @@ export function visibility_string_to_variant(
 ): model.Visibility | undefined {
     switch (value) {
         case "public":
-            return model.Visibility.VISIBILITY_PUBLIC;
+            return model.VisibilityPublic;
         case "private":
-            return model.Visibility.VISIBILITY_PRIVATE;
+            return model.VisibilityPrivate;
         default:
             return undefined;
     }

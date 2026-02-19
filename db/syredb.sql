@@ -25,7 +25,7 @@ INSERT INTO user_role_ VALUES
     ('user')
 ON CONFLICT (name) DO NOTHING;
 
-CREATE TYPE user_account_status AS ENUM ('active', 'disabled');
+CREATE TYPE user_account_status AS ENUM ('active', 'deactivated');
 CREATE TABLE IF NOT EXISTS user_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     account_status user_account_status DEFAULT 'active' NOT NULL,
@@ -58,7 +58,13 @@ EXECUTE PROCEDURE enforce_at_least_one_user_owner();
 CREATE TABLE IF NOT EXISTS user_auth_ (
     _id UUID REFERENCES user_(_id) NOT NULL UNIQUE,
     auth VARCHAR(2048) NOT NULL,
-    tokens VARCHAR(256)[]
+);
+
+CREATE TABLE IF NOT EXISTS _user_session_ (
+    _token UUID DEFAULT uuidv7() PRIMARY KEY,
+    _user UUID REFERENCES user_(_id) NOT NULL,
+    _expires TIMESTAMP(0) WITH TIME ZONE NOT NULL,
+    active boolean DEFAULT true NOT NULL
 );
 
 CREATE TYPE data_storage AS ENUM ('internal', 'external');
@@ -100,6 +106,7 @@ CREATE TABLE IF NOT EXISTS sample_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _creator UUID REFERENCES user_(_id) NOT NULL,
     visibility visibility DEFAULT 'private' NOT NULL
+    frozen boolean DEFAULT false NOT NULL, -- indicates no more changes are allowed to the sample
 );
 
 CREATE TABLE IF NOT EXISTS sample_property_ (
@@ -110,6 +117,14 @@ CREATE TABLE IF NOT EXISTS sample_property_ (
     PRIMARY KEY (_sample, _key)
 );
 
+CREATE TABLE IF NOT EXISTS sample_property_history_ (
+    _sample UUID REFERENCES sample_(_id) NOT NULL,
+    _key VARCHAR(512) NOT NULL,
+    _version INT NOT NULL,
+    value JSONB NOT NULL,
+    PRIMARY KEY (_sample, _key, _version)
+);
+
 CREATE TABLE IF NOT EXISTS sample_note_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _sample UUID REFERENCES sample_(_id) NOT NULL,
@@ -118,6 +133,16 @@ CREATE TABLE IF NOT EXISTS sample_note_ (
     visibility visibility DEFAULT 'private' NOT NULL,
     content TEXT NOT NULL
 );
+
+
+CREATE TABLE IF NOT EXISTS sample_note_history_ (
+    _note UUID REFERENCES project_sample_note_(_id) NOT NULL,
+    _version INT NOT NULL,
+    _content TEXT NOT NULL,
+    _editor UUID REFERENCES user_(_id) NOT NULL,
+    _timestamp TIMESTAMP(3) WITH TIME ZONE DEFAULT NOW() NOT NULL,
+    PRIMARY KEY (_note, _version)
+)
 
 CREATE TYPE sample_user_permission AS ENUM (
     'owner',
@@ -191,7 +216,7 @@ CREATE TYPE sample_data_user_permission AS ENUM (
 CREATE TABLE IF NOT EXISTS sample_data_user_permission_ (
     _sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
     _user UUID REFERENCES user_(_id) NOT NULL,
-    permissions sample_data_user_permission[] NOT NULL,
+    _permission sample_data_user_permission NOT NULL,
     PRIMARY KEY (_sample_data, _user)
 );
 
@@ -270,6 +295,15 @@ CREATE TABLE IF NOT EXISTS project_sample_note_ (
     content TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS project_sample_note_history_ (
+    _note UUID REFERENCES project_sample_note_(_id) NOT NULL,
+    _version INT NOT NULL,
+    _content TEXT NOT NULL,
+    _editor UUID REFERENCES user_(_id) NOT NULL,
+    _timestamp TIMESTAMP(3) WITH TIME ZONE DEFAULT NOW() NOT NULL,
+    PRIMARY KEY (_note, _version)
+)
+
 CREATE TABLE IF NOT EXISTS project_sample_membership_ (
     _project UUID REFERENCES project_(_id) NOT NULL,
     _sample UUID REFERENCES sample_(_id) NOT NULL,
@@ -278,6 +312,20 @@ CREATE TABLE IF NOT EXISTS project_sample_membership_ (
     label VARCHAR(512) NOT NULL,
     PRIMARY KEY (_project, _sample),
     UNIQUE (_project, label)
+);
+
+CREATE TYPE project_sample_user_permission AS ENUM (
+    'modify_label',
+    'modify_tags',
+    'modify_properties'
+);
+
+CREATE TABLE IF NOT EXISTS project_sample_user_permission_ (
+    _project UUID REFERENCES project_(_id) NOT NULL,
+    _sample UUID REFERENCES sample_(_id) NOT NULL,
+    _user UUID REFERENCES user_(_id) NOT NULL,
+    _permission project_sample_user_permission NOT NULL,
+    PRIMARY KEY (_project, _sample, _user, _permission)
 );
 
 CREATE TABLE IF NOT EXISTS sample_group_ (
@@ -310,11 +358,3 @@ CREATE TABLE IF NOT EXISTS sample_group_sample_membership_ (
     PRIMARY KEY (_sample_group, _sample)
 );
 
--- server
-
-CREATE TABLE IF NOT EXISTS _user_session_ (
-    _token UUID DEFAULT uuidv7() PRIMARY KEY,
-    _user UUID REFERENCES user_(_id) NOT NULL,
-    _expires TIMESTAMP(0) WITH TIME ZONE NOT NULL,
-    active boolean DEFAULT true NOT NULL
-);

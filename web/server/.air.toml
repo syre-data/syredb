@@ -13,7 +13,7 @@ args_bin = [
     "--db-name=syredb",
 ]
 bin = "tmp/main.exe"
-cmd = "tygo generate; go build -o ./tmp/main.exe ."
+cmd = "cmd /C \"tygo generate && go build -o ./tmp/main.exe .\""
 delay = 500
 entrypoint = ["tmp/main.exe"]
 exclude_dir = ["assets", "tmp", "vendor", "testdata", "node_modules"]

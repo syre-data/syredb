@@ -1,29 +1,32 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useParams, Link, useNavigate } from "react-router";
-import * as app from "@/../model";
+import * as types from "@/types";
 import icon from "@/icon";
-import { Loading } from "@/components/Common";
+import * as uuid from "uuid";
+import Loading from "@/components/Loading";
 import { ErrorBoundary } from "react-error-boundary";
 import type { FallbackProps } from "react-error-boundary";
 import {
-    ActionDispatch,
-    ChangeEvent,
     createContext,
-    FormEvent,
-    InputEvent,
-    MouseEvent,
     Suspense,
     useContext,
     useEffect,
     useLayoutEffect,
-    useReducer,
     useRef,
     useState,
 } from "react";
-import * as common from "../common";
+import type {
+    ActionDispatch,
+    ChangeEvent,
+    SubmitEvent,
+    MouseEvent,
+} from "react";
+import * as common from "@/common";
 import classNames from "classnames";
 import { useImmerReducer } from "use-immer";
-import { UUID } from "../../bindings/github.com/google/uuid";
+import project_service from "@/service/project.service";
+import data_service from "@/service/data.service";
+import type { UUIDTypes } from "uuid";
 import { immerable } from "immer";
 import * as appStateCtx from "../AppStateContext";
 import * as property from "../components/Property";
@@ -31,13 +34,57 @@ import { SelectPropertyType, InputPropertyValue } from "../components/Property";
 
 interface CommonProjectData {
     project_id: string;
-    user_permission: app.ProjectUserPermission;
+    user_permission: types.ProjectUserPermission;
 }
 
 const CommonProjectDataCtx = createContext<CommonProjectData>({
     project_id: "",
-    user_permission: app.ProjectUserPermission.$zero,
+    user_permission: types.ProjectUserPermissionRead,
 });
+
+function createProject(overrides: Partial<types.Project> = {}): types.Project {
+    return {
+        Id: overrides.Id ?? uuid.NIL,
+        Creator: overrides.Creator ?? uuid.NIL,
+        Label: overrides.Label ?? "",
+        Description: overrides.Description ?? "",
+        Visibility: overrides.Visibility ?? types.VisibilityPrivate,
+    };
+}
+
+function createProjectSample(
+    overrides: Partial<types.ProjectSample> = {},
+): types.ProjectSample {
+    return {
+        Id: overrides.Id ?? uuid.NIL,
+        Creator: overrides.Creator ?? uuid.NIL,
+        MembershipCreator: overrides.MembershipCreator ?? uuid.NIL,
+        MembershipCreated: overrides.MembershipCreated ?? new Date(),
+        Label: overrides.Label ?? "",
+        Tags: overrides.Tags ?? [],
+        Properties: overrides.Properties ?? [],
+        NoteCount: overrides.NoteCount ?? 0,
+    };
+}
+
+function createProjectResources(
+    overrides: Partial<types.ProjectResources> = {},
+): types.ProjectResources {
+    let samples = overrides.Samples ?? [];
+    samples = samples.map((sample) => createProjectSample(sample));
+    return {
+        Project: createProject(overrides.Project),
+        ProjectTags: overrides.ProjectTags ?? [],
+        Samples: samples,
+        SampleData: overrides.SampleData ?? [],
+        DataSchemas: overrides.DataSchemas ?? [],
+        SampleGroups: overrides.SampleGroups ?? [],
+        SampleGroupRelations: overrides.SampleGroupRelations ?? [],
+        ProjectNoteCount: overrides.ProjectNoteCount ?? 0,
+        ProjectUserPermission:
+            overrides.ProjectUserPermission ?? types.ProjectUserPermissionRead,
+    };
+}
 
 export default function () {
     const navigate = useNavigate();
@@ -57,11 +104,11 @@ export default function () {
 }
 
 function ProjectError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as common.BackendError;
+    const err = error as types.AppError;
     const navigate = useNavigate();
 
-    if (err.message === common.USER_NOT_AUTHENTICATED_ERROR) {
-        console.error(common.USER_NOT_AUTHENTICATED_ERROR);
+    if (err.Code === types.AppErrorCodeUserNotAuthenticated) {
+        console.error(types.AppErrorCodeUserNotAuthenticated);
         navigate("/");
         return null;
     } else {
@@ -79,7 +126,7 @@ function ProjectError({ error, resetErrorBoundary }: FallbackProps) {
     return (
         <div className="flex flex-col gap-2 items-center pt-4">
             <div>Could not load project</div>
-            <div>{err.message}</div>
+            <div>{err.Message}</div>
             <div className="flex gap-2 items-center">
                 <div>
                     <Link to="/">
@@ -106,10 +153,11 @@ interface ProjectProps {
     id: string;
 }
 function Project({ id }: ProjectProps) {
-    const { data: project_resources } = useSuspenseQuery({
+    const { data: project_resources_data } = useSuspenseQuery({
         queryKey: ["project_resources", id],
-        queryFn: async () => app.ProjectService.GetProjectResources(id),
+        queryFn: async () => project_service.getProjectResources(id),
     });
+    const project_resources = createProjectResources(project_resources_data);
 
     return (
         <CommonProjectDataCtx
@@ -130,7 +178,7 @@ function Project({ id }: ProjectProps) {
 }
 
 interface ProjectHeaderProps {
-    project: app.Project;
+    project: types.Project;
     className?: string;
 }
 function ProjectHeader({ project, className }: ProjectHeaderProps) {
@@ -188,7 +236,7 @@ enum PrimaryResourceType {
 }
 
 interface ResourceBrowserProps {
-    project_resources: app.ProjectResources;
+    project_resources: types.ProjectResources;
     className?: string;
 }
 function ResourceBrowser({
@@ -199,7 +247,7 @@ function ResourceBrowser({
     const [primaryResourceType, setPrimaryResourceType] = useState(
         PrimaryResourceType.Sample,
     );
-    const [queryResults, setQueryResults] = useState<UUID[]>(
+    const [queryResults, setQueryResults] = useState<UUIDTypes[]>(
         project_resources.Samples.map((sample) => sample.Id),
     );
 
@@ -228,20 +276,15 @@ function ResourceBrowser({
         }
     }
 
-    function query_resources(e: FormEvent) {
+    function query_resources(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault();
     }
 
     async function download_all_project_data(
-        hierarchy: app.SaveDataHierarchy[],
+        hierarchy: types.SaveDataHierarchy[],
     ) {
-        await app.DataService.SaveProjectDataAll(
-            project_resources.Project.Id,
-            hierarchy,
-        )
-            .then((path) => {
-                console.info(`saved all project data to ${path}`);
-            })
+        await data_service
+            .saveProjectDataAll(project_resources.Project.Id, hierarchy)
             .catch((err) => {
                 console.error("could not save project data", err);
             });
@@ -310,7 +353,7 @@ function ResourceBrowser({
 }
 
 interface ResourceBrowserDownloadDataBtnProps {
-    onDownload: (hierarchy: app.SaveDataHierarchy[]) => Promise<void>;
+    onDownload: (hierarchy: types.SaveDataHierarchy[]) => Promise<void>;
     disabled: boolean;
 }
 function ResourceBrowserDownloadDataBtn({
@@ -336,7 +379,7 @@ function ResourceBrowserDownloadDataBtn({
 
     function on_download(
         e: MouseEvent<HTMLButtonElement>,
-        hierarchy: app.SaveDataHierarchy[],
+        hierarchy: types.SaveDataHierarchy[],
     ) {
         if (e.button != common.MouseButton.Primary) {
             return;
@@ -392,8 +435,7 @@ function ResourceBrowserDownloadDataBtn({
                                 title="Download all project data organized by sample"
                                 onMouseDown={(e) =>
                                     on_download(e, [
-                                        app.SaveDataHierarchy
-                                            .SAVE_DATA_HIERARCHY_SAMPLE,
+                                        types.SaveDataHierarchySample,
                                     ])
                                 }
                             >
@@ -407,8 +449,7 @@ function ResourceBrowserDownloadDataBtn({
                                 title="Download all project data organized by data schema"
                                 onMouseDown={(e) =>
                                     on_download(e, [
-                                        app.SaveDataHierarchy
-                                            .SAVE_DATA_HIERARCHY_DATA_SCHEMA,
+                                        types.SaveDataHierarchyDataSchema,
                                     ])
                                 }
                             >
@@ -422,10 +463,8 @@ function ResourceBrowserDownloadDataBtn({
                                 title="Download all project data organized by sample then data schema"
                                 onMouseDown={(e) =>
                                     on_download(e, [
-                                        app.SaveDataHierarchy
-                                            .SAVE_DATA_HIERARCHY_SAMPLE,
-                                        app.SaveDataHierarchy
-                                            .SAVE_DATA_HIERARCHY_DATA_SCHEMA,
+                                        types.SaveDataHierarchySample,
+                                        types.SaveDataHierarchyDataSchema,
                                     ])
                                 }
                             >
@@ -439,10 +478,8 @@ function ResourceBrowserDownloadDataBtn({
                                 title="Download all project data organized by data schema then sample"
                                 onMouseDown={(e) =>
                                     on_download(e, [
-                                        app.SaveDataHierarchy
-                                            .SAVE_DATA_HIERARCHY_DATA_SCHEMA,
-                                        app.SaveDataHierarchy
-                                            .SAVE_DATA_HIERARCHY_SAMPLE,
+                                        types.SaveDataHierarchyDataSchema,
+                                        types.SaveDataHierarchySample,
                                     ])
                                 }
                             >
@@ -458,11 +495,14 @@ function ResourceBrowserDownloadDataBtn({
 
 class SampleBrowserState {
     [immerable] = true;
-    samples: app.ProjectSample[];
+    samples: types.ProjectSample[];
     sample_property_keys: string[];
-    active_sample?: UUID;
+    active_sample?: UUIDTypes;
 
-    constructor(project_resources: app.ProjectResources, samples: UUID[]) {
+    constructor(
+        project_resources: types.ProjectResources,
+        samples: UUIDTypes[],
+    ) {
         this.samples = project_resources.Samples.filter(
             (sample) => samples.findIndex((id) => sample.Id === id) > -1,
         );
@@ -493,12 +533,15 @@ class SampleBrowserState {
 type SampleBrowserStateAction =
     | {
           type: "set_project_resources";
-          payload: { project_resources: app.ProjectResources; filter: UUID[] };
+          payload: {
+              project_resources: types.ProjectResources;
+              filter: UUIDTypes[];
+          };
       }
     | {
           type: "toggle_sample_active_state";
           payload: {
-              sample: UUID;
+              sample: UUIDTypes;
               state?: boolean;
           };
       }
@@ -552,7 +595,7 @@ function sample_browser_state_reducer(
 }
 
 const SampleBrowserStateCtx = createContext(
-    new SampleBrowserState(new app.ProjectResources(), []),
+    new SampleBrowserState(createProjectResources(), []),
 );
 
 const SampleBrowserStateDispatchCtx = createContext<
@@ -560,8 +603,8 @@ const SampleBrowserStateDispatchCtx = createContext<
 >(() => {});
 
 interface ResourceBrowserSamplesProps {
-    project_resources: app.ProjectResources;
-    filter: UUID[];
+    project_resources: types.ProjectResources;
+    filter: UUIDTypes[];
     className?: string;
 }
 function ResourceBrowserSamples({
@@ -622,7 +665,7 @@ function ResourceBrowserSamplesInner({
                 <ol className="row-2 col-span-full grid grid-cols-subgrid">
                     {state.samples.map((sample, idx) => (
                         <ResourceBrowserSamplesListitem
-                            key={sample.Id}
+                            key={sample.Id.toString()}
                             index={idx}
                             sample={sample}
                         />
@@ -693,7 +736,7 @@ function ResourceBrowserSamplesHeader({
 
 interface ResourceBrowserSamplesListitem {
     index: number;
-    sample: app.ProjectSample;
+    sample: types.ProjectSample;
 }
 function ResourceBrowserSamplesListitem({
     index,
@@ -766,40 +809,40 @@ function ResourceBrowserSamplesListitem({
 }
 
 interface PropertyValueProps {
-    type: app.PropertyType;
+    type: types.PropertyType;
     value: any;
 }
 function SamplePropertyValue({ type, value }: PropertyValueProps) {
     let val_typed;
     switch (type) {
-        case app.PropertyType.PROPERTY_TYPE_BOOL:
+        case types.PropertyTypeBool:
             val_typed = value as boolean;
             if (val_typed) {
                 return "true";
             } else {
                 return "false";
             }
-        case app.PropertyType.PROPERTY_TYPE_INT:
+        case types.PropertyTypeInt:
             val_typed = value as number;
             return val_typed.toString();
-        case app.PropertyType.PROPERTY_TYPE_UINT:
+        case types.PropertyTypeUint:
             val_typed = value as number;
             return val_typed.toString();
-        case app.PropertyType.PROPERTY_TYPE_FLOAT:
+        case types.PropertyTypeFloat:
             val_typed = value as number;
             return val_typed.toString();
-        case app.PropertyType.PROPERTY_TYPE_STRING:
+        case types.PropertyTypeString:
             return value;
-        case app.PropertyType.PROPERTY_TYPE_QUANTITY:
+        case types.PropertyTypeQuantity:
             val_typed = value as property.QuantityProperty;
             return `${val_typed.MagnitudeString} ${val_typed.Unit}`;
-        case app.PropertyType.PROPERTY_TYPE_TIMESTAMP:
+        case types.PropertyTypeTimestamp:
             return;
     }
 }
 
 interface SampleDetailProps {
-    sample: app.ProjectSample;
+    sample: types.ProjectSample;
     onClose: () => void;
     className?: string;
 }
@@ -835,7 +878,7 @@ function SampleDetailError({ error, resetErrorBoundary }: FallbackProps) {
 }
 
 interface SampleDetailLoadingProps {
-    sample: app.ProjectSample;
+    sample: types.ProjectSample;
     className?: string;
 }
 function SampleDetailLoading({ sample, className }: SampleDetailLoadingProps) {
@@ -848,7 +891,7 @@ function SampleDetailLoading({ sample, className }: SampleDetailLoadingProps) {
 }
 
 interface SampleDetailInnerProps {
-    sample: app.ProjectSample;
+    sample: types.ProjectSample;
     onClose: () => void;
     className?: string;
 }
@@ -861,7 +904,7 @@ function SampleDetailInner({
     const { data: sample_resources } = useSuspenseQuery({
         queryKey: ["project_sample_resources", sample.Id],
         queryFn: async () =>
-            app.ProjectService.GetProjectSampleResources(
+            project_service.getProjectSampleResources(
                 project_data.project_id,
                 sample.Id,
             ),
@@ -870,7 +913,7 @@ function SampleDetailInner({
     const [expandedProperties, setExpandedProperties] = useState(true);
     const [expandedData, setExpandedData] = useState(false);
     const [expandedNotes, setExpandedNotes] = useState(false);
-    const [dataSelected, setDataSelected] = useState<UUID[]>([]);
+    const [dataSelected, setDataSelected] = useState<UUIDTypes[]>([]);
     const [newProperties, setNewProperties] = useState<number[]>([]);
 
     useEffect(() => {
@@ -912,7 +955,7 @@ function SampleDetailInner({
         setExpandedNotes(!expandedNotes);
     }
 
-    function set_selected_data(data: UUID, selected: boolean) {
+    function set_selected_data(data: UUIDTypes, selected: boolean) {
         if (selected) {
             setDataSelected([...dataSelected, data]);
         } else {
@@ -932,24 +975,18 @@ function SampleDetailInner({
         if (dataSelected.length === 0) {
             console.error("attempted to download 0 data resources");
         } else if (dataSelected.length === 1) {
-            await app.DataService.SaveSampleDataSingle(dataSelected[0])
-                .then((path) => {
-                    console.info(`data ${dataSelected[0]} saved to ${path}`);
-                    setDataSelected([]);
-                })
+            await data_service
+                .saveSampleDataSingle(dataSelected[0]!)
                 .catch((err) => {
                     console.error(err);
                 });
         } else {
-            await app.DataService.SaveSampleDataMultiple(
-                dataSelected,
-                project_data.project_id,
-                [],
-            )
-                .then((path) => {
-                    console.info(`data saved to ${path}`, dataSelected);
-                    setDataSelected([]);
-                })
+            await data_service
+                .saveSampleDataMultiple(
+                    dataSelected,
+                    project_data.project_id,
+                    [],
+                )
                 .catch((err) => {
                     console.error(err);
                 });
@@ -965,7 +1002,7 @@ function SampleDetailInner({
         if (newProperties.length === 0) {
             setNewProperties([0]);
         } else {
-            const next_id = newProperties[newProperties.length - 1] + 1;
+            const next_id = newProperties[newProperties.length - 1]! + 1;
             setNewProperties([...newProperties, next_id]);
         }
     }
@@ -1117,7 +1154,7 @@ function SampleDetailInner({
 }
 
 interface SampleDetailPropertiesProps {
-    properties: app.Property[];
+    properties: types.Property[];
 }
 function SampleDetailProperties({ properties }: SampleDetailPropertiesProps) {
     const properties_sorted = properties.toSorted((a, b) => {
@@ -1159,11 +1196,11 @@ interface SampleDetailNewPropertyProps {
     id: number;
 }
 function SampleDetailNewProperty({ id }: SampleDetailNewPropertyProps) {
-    const [type, setType] = useState<app.PropertyType>(
-        app.PropertyType.PROPERTY_TYPE_STRING,
+    const [type, setType] = useState<types.PropertyType>(
+        types.PropertyTypeString,
     );
 
-    function add_property(e: FormEvent<HTMLFormElement>) {
+    function add_property(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault();
     }
 
@@ -1209,11 +1246,11 @@ function SampleDetailNewProperty({ id }: SampleDetailNewPropertyProps) {
 }
 
 interface SampleDetailDataProps {
-    data: app.SampleData[];
-    data_schemas: app.DataSchema[];
-    users: app.User[];
-    selectedData: UUID[];
-    onDataSelectionChange: (data: UUID, selected: boolean) => void;
+    data: types.SampleData[];
+    data_schemas: types.DataSchema[];
+    users: types.User[];
+    selectedData: UUIDTypes[];
+    onDataSelectionChange: (data: UUIDTypes, selected: boolean) => void;
 }
 function SampleDetailData({
     data,
@@ -1241,11 +1278,11 @@ function SampleDetailData({
 
                 return (
                     <SampleDetailDataListItem
-                        key={datum.Id}
+                        key={datum.Id.toString()}
                         index={index}
                         data={datum}
-                        data_schema={data_schemas[data_schema_idx]}
-                        creator={users[creator_idx]}
+                        data_schema={data_schemas[data_schema_idx]!}
+                        creator={users[creator_idx]!}
                         selected={selectedData.includes(datum.Id)}
                         onSelectionChange={onDataSelectionChange}
                     />
@@ -1257,11 +1294,11 @@ function SampleDetailData({
 
 interface SampleDetailDataListItemProps {
     index: number;
-    data: app.SampleData;
-    data_schema: app.DataSchema;
-    creator: app.User;
+    data: types.SampleData;
+    data_schema: types.DataSchema;
+    creator: types.User;
     selected: boolean;
-    onSelectionChange: (data: UUID, selected: boolean) => void;
+    onSelectionChange: (data: UUIDTypes, selected: boolean) => void;
 }
 function SampleDetailDataListItem({
     data,
@@ -1283,7 +1320,8 @@ function SampleDetailDataListItem({
             return;
         }
 
-        await app.DataService.SaveSampleDataSingle(data.Id)
+        await data_service
+            .saveSampleDataSingle(data.Id)
             .then((path) => console.info(`data ${data.Id} saved to ${path}`))
             .catch((err) => {
                 if (err.message === "CANCELLED_BY_USER") {
@@ -1330,8 +1368,8 @@ function SampleDetailDataListItem({
 }
 
 interface SampleDetailProjectNotesProps {
-    notes: app.ProjectSampleNote[];
-    users: app.User[];
+    notes: types.ProjectSampleNote[];
+    users: types.User[];
 }
 function SampleDetailProjectNotes({
     notes,
@@ -1349,9 +1387,9 @@ function SampleDetailProjectNotes({
 
                 return (
                     <SampleDetailProjectNoteListItem
-                        key={note.Id}
+                        key={note.Id.toString()}
                         note={note}
-                        creator={users[creator_idx]}
+                        creator={users[creator_idx]!}
                     />
                 );
             })}
@@ -1360,8 +1398,8 @@ function SampleDetailProjectNotes({
 }
 
 interface SampleDetailProjectNoteListItemProps {
-    note: app.ProjectSampleNote;
-    creator: app.User;
+    note: types.ProjectSampleNote;
+    creator: types.User;
 }
 function SampleDetailProjectNoteListItem({
     note,
@@ -1372,7 +1410,7 @@ function SampleDetailProjectNoteListItem({
     return (
         <li>
             <div>
-                <div>{note.Timestamp}</div>
+                <div>{note.Timestamp.toLocaleString()}</div>
                 <div>{creator.Name}</div>
             </div>
             <div>{note.Content}</div>
@@ -1381,8 +1419,8 @@ function SampleDetailProjectNoteListItem({
 }
 
 interface ResourceBrowserSampleDataProps {
-    project_resources: app.ProjectResources;
-    filter: UUID[];
+    project_resources: types.ProjectResources;
+    filter: UUIDTypes[];
     className?: string;
 }
 function ResourceBrowserSampleData({
@@ -1390,8 +1428,8 @@ function ResourceBrowserSampleData({
     filter,
     className,
 }: ResourceBrowserSampleDataProps) {
-    const [dataSelected, setDataSelected] = useState<UUID[]>([]);
-    const data_schema_sample_data = new Map<UUID, app.SampleData[]>();
+    const [dataSelected, setDataSelected] = useState<UUIDTypes[]>([]);
+    const data_schema_sample_data = new Map<UUIDTypes, types.SampleData[]>();
     for (const sample_data of project_resources.SampleData) {
         const schema_datas = data_schema_sample_data.get(sample_data.Schema);
         if (schema_datas === undefined) {
@@ -1401,7 +1439,7 @@ function ResourceBrowserSampleData({
         }
     }
 
-    function toggle_data_selection(sample_data: UUID, selected: boolean) {
+    function toggle_data_selection(sample_data: UUIDTypes, selected: boolean) {
         if (selected && !dataSelected.includes(sample_data)) {
             setDataSelected([...dataSelected, sample_data]);
         } else if (!selected && dataSelected.includes(sample_data)) {
@@ -1422,7 +1460,7 @@ function ResourceBrowserSampleData({
                 return (
                     <ResourceBrowserSampleDataSchemaGroup
                         project_resources={project_resources}
-                        key={data_schema_id}
+                        key={data_schema_id.toString()}
                         data_schema={data_schema}
                         sample_data={schema_sample_data}
                         selected_data={dataSelected}
@@ -1443,11 +1481,11 @@ function ResourceBrowserSampleDataEmpty() {
 }
 
 interface ResourceBrowserSampleDataSchemaGroupProps {
-    project_resources: app.ProjectResources;
-    data_schema: app.DataSchema;
-    sample_data: app.SampleData[];
-    selected_data: UUID[];
-    onSelectionToggle: (sample_data: UUID, selected: boolean) => void;
+    project_resources: types.ProjectResources;
+    data_schema: types.DataSchema;
+    sample_data: types.SampleData[];
+    selected_data: UUIDTypes[];
+    onSelectionToggle: (sample_data: UUIDTypes, selected: boolean) => void;
 }
 function ResourceBrowserSampleDataSchemaGroup({
     project_resources,
@@ -1459,17 +1497,15 @@ function ResourceBrowserSampleDataSchemaGroup({
     const project_data = useContext(CommonProjectDataCtx);
 
     async function download_all_schema_data(
-        hierarchy: app.SaveDataHierarchy[],
+        hierarchy: types.SaveDataHierarchy[],
     ) {
         const sample_data_ids = sample_data.map((data) => data.Id);
-        await app.DataService.SaveDataSchemaSampleDataAll(
-            data_schema.Id,
-            project_data.project_id,
-            hierarchy,
-        )
-            .then((path) => {
-                console.info(`data saved to ${path}`, sample_data_ids);
-            })
+        await data_service
+            .saveDataSchemaSampleDataAll(
+                data_schema.Id,
+                project_data.project_id,
+                hierarchy,
+            )
             .catch((err) => {
                 console.error("could not download data", err);
             });
@@ -1499,7 +1535,7 @@ function ResourceBrowserSampleDataSchemaGroup({
                     const selected = selected_data.includes(data.Id);
                     return (
                         <ResourceBrowserSampleDataSchemaGroupListItem
-                            key={data.Id}
+                            key={data.Id.toString()}
                             index={idx}
                             sample={sample}
                             sample_data={data}
@@ -1514,7 +1550,7 @@ function ResourceBrowserSampleDataSchemaGroup({
 }
 
 interface ResourceBrowserSampleDataSchemaGroupDownloadDataBtnProps {
-    onDownload: (hierarchy: app.SaveDataHierarchy[]) => Promise<void>;
+    onDownload: (hierarchy: types.SaveDataHierarchy[]) => Promise<void>;
 }
 function ResourceBrowserSampleDataSchemaGroupDownloadDataBtn({
     onDownload,
@@ -1538,7 +1574,7 @@ function ResourceBrowserSampleDataSchemaGroupDownloadDataBtn({
 
     function on_download(
         e: MouseEvent<HTMLButtonElement>,
-        hierarchy: app.SaveDataHierarchy[],
+        hierarchy: types.SaveDataHierarchy[],
     ) {
         if (e.button != common.MouseButton.Primary) {
             return;
@@ -1593,8 +1629,7 @@ function ResourceBrowserSampleDataSchemaGroupDownloadDataBtn({
                                 title="Download all project data organized by sample"
                                 onMouseDown={(e) =>
                                     on_download(e, [
-                                        app.SaveDataHierarchy
-                                            .SAVE_DATA_HIERARCHY_SAMPLE,
+                                        types.SaveDataHierarchySample,
                                     ])
                                 }
                             >
@@ -1610,10 +1645,10 @@ function ResourceBrowserSampleDataSchemaGroupDownloadDataBtn({
 
 interface ResourceBrowserSampleDataSchemaGroupListItemProps {
     index: number;
-    sample: app.ProjectSample;
-    sample_data: app.SampleData;
+    sample: types.ProjectSample;
+    sample_data: types.SampleData;
     selected: boolean;
-    onSelectionToggle: (sample_data: UUID, selected: boolean) => void;
+    onSelectionToggle: (sample_data: UUIDTypes, selected: boolean) => void;
 }
 function ResourceBrowserSampleDataSchemaGroupListItem({
     index,
