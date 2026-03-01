@@ -231,10 +231,13 @@ function DataSchemaInner() {
         );
     } else {
         return (
-            <ul className="grid gap-y-2 grid-cols-[50px_1fr_5fr]">
+            <ul className="grid gap-2 grid-cols-[repeat(4,min-content)]">
                 {data_schemas.map((schema, index) => (
                     // TODO: Change to subgrid
-                    <li key={schema.Id.toString()} className="contents">
+                    <li
+                        key={schema.Id.toString()}
+                        className="grid grid-cols-subgrid col-span-full"
+                    >
                         <DataSchemaContent index={index} schema={schema} />
                     </li>
                 ))}
@@ -259,22 +262,19 @@ function DataSchemaContent({ index, schema }: DataSchemaProps) {
         setExpanded(!expanded);
     }
 
-    const row_idx = index * ROW_SPAN;
-    const row_main = row_idx + 1;
-    const row_schema = row_main + 1;
     const description = schema.Description ?? "(no description)";
     return (
-        <div className="contents group/schema-row">
-            <div className="contents" onMouseDown={toggle_expand}>
+        <div className="grid col-span-full grid-cols-subgrid group/schema-row">
+            <div
+                className="grid grid-cols-subgrid col-span-2"
+                onMouseDown={toggle_expand}
+            >
                 <div
                     className={classNames({
-                        "col-start-1 pl-4": true,
+                        "col-start-1 pl-4 row-1": true,
                         "invisible hover:visible group-hover/schema-row:visible":
                             !expanded,
                     })}
-                    style={{
-                        gridRow: row_main,
-                    }}
                 >
                     <button
                         type="button"
@@ -286,24 +286,29 @@ function DataSchemaContent({ index, schema }: DataSchemaProps) {
                         <icon.CaretDown />
                     </button>
                 </div>
-                <div
-                    className="col-start-2 cursor-pointer"
-                    style={{
-                        gridRow: row_main,
-                    }}
-                >
+                <div className="row-1 col-start-2 whitespace-nowrap cursor-pointer">
                     {schema.Label}
                 </div>
             </div>
-            <div className="col-start-3" style={{ gridRow: row_main }}>
+            <div className="row-1 col-start-3 whitespace-nowrap">
                 {description}
+            </div>
+            <div className="row-1 col-start-4 invisible group-hover/schema-row:visible">
+                <Link to={`/data_schema/${schema.Id}`}>
+                    <button
+                        type="button"
+                        className="btn-cmd"
+                        title="Edit data schema"
+                    >
+                        <icon.Pen />
+                    </button>
+                </Link>
             </div>
             <div
                 className={classNames({
-                    "col-start-2 col-span-full overflow-hidden flex gap-2 transition-[height]": true,
+                    "row-2 col-start-2 -col-end-1 overflow-hidden whitespace-nowrap flex gap-2 transition-[height]": true,
                     "h-0": !expanded,
                 })}
-                style={{ gridRow: row_schema }}
             >
                 {schema.Schema.map((col, idx) => (
                     <div key={col.label}>

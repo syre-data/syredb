@@ -56,7 +56,7 @@ func main() {
 	auth_handler := handler.NewAuthHandler(db, auth_service)
 	user_handler := handler.NewUserHandler(db, user_service, app_service)
 	project_handler := handler.NewProjectHandler(db, project_service, sample_service)
-	data_handler := handler.NewDataHandler(db, data_service, user_service)
+	data_handler := handler.NewDataHandler(db, data_service, user_service, project_service)
 
 	env_session_secret, env_session_secret_exists := os.LookupEnv(handler.EnvSessionSecretKey)
 	if !env_session_secret_exists {
@@ -223,6 +223,10 @@ func register_routes(
 	api.PUT("/project/sample", project.UpdateProjectSample)
 	api.GET("/data-schemas", data.GetDataSchemasAll)
 	api.POST("/data-schema", data.CreateDataSchema)
+	api.GET("/data-schema", data.GetDataSchemaResources)
+	api.GET("/sample-data/single", data.DownloadSampleDataSingle)
+	api.GET("/sample-data/project", data.DownloadSampleDataProject)
+	api.POST("/transform", data.CreateTransform)
 }
 
 func proxy_to_vite(e *echo.Echo) {

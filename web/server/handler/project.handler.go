@@ -174,11 +174,6 @@ type ProjectSampleDataCreate struct {
 
 func (h *ProjectHandler) CreateProjectSamples(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	// form, err := c.MultipartForm()
-	// if err != nil {
-	// 	c.Logger().With("error", err).Error("could not parse form data")
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
 
 	err := error(nil)
 	var payload ProjectSampleCreatePayload

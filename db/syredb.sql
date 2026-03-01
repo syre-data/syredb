@@ -16,6 +16,7 @@ CREATE TYPE property_type AS ENUM (
     'timestamp'
 );
 
+-- TODO: change role to permissions
 CREATE TABLE IF NOT EXISTS user_role_ (
     name VARCHAR(64) PRIMARY KEY
 );
@@ -67,11 +68,13 @@ CREATE TABLE IF NOT EXISTS _user_session_ (
     active boolean DEFAULT true NOT NULL
 );
 
+CREATE TYPE data_schema_type AS ENUM ('raw', 'transform');
 CREATE TYPE data_storage AS ENUM ('internal', 'external');
 CREATE TYPE data_type AS ENUM ('string', 'int', 'uint', 'float', 'boolean', 'timestamp');
 
 CREATE TABLE IF NOT EXISTS data_schema_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _type data_schema_type NOT NULL,
     _creator UUID REFERENCES user_(_id) NOT NULL,
     _schema JSONB NOT NULL,
     _storage data_storage NOT NULL,
@@ -186,6 +189,7 @@ CREATE TABLE IF NOT EXISTS sample_data_ (
     _sample UUID REFERENCES sample_(_id) NOT NULL,
     _schema UUID REFERENCES data_schema_(_id) NOT NULL,
     _creator UUID REFERENCES user_(_id) NOT NULL,
+    label VARCHAR(128),
     timestamp TIMESTAMP(3) WITH TIME ZONE NOT NULL,
     visibility visibility DEFAULT 'private' NOT NULL
 );
@@ -357,4 +361,31 @@ CREATE TABLE IF NOT EXISTS sample_group_sample_membership_ (
     _sample UUID REFERENCES sample_(_id) NOT NULL,
     PRIMARY KEY (_sample_group, _sample)
 );
+
+CREATE TABLE IF NOT EXISTS transform_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _input UUID REFERENCES data_schema_(_id) NOT NULL,
+    _output UUID REFERENCES data_schema_(_id) NOT NULL,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    label VARCHAR(128) NOT NULL,
+    description TEXT
+);
+
+CREATE TYPE transform_job_status AS ENUM (
+    'pending',
+    'running',
+    'completed',
+    'failed'
+);
+
+CREATE TABLE IF NOT EXISTS _transform_queue_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _transform UUID REFERENCES transform_(_id) NOT NULL,
+    _payload UUID NOT NULL, -- id of the data in the schema table
+    status transform_job_status DEFAULT 'pending' NOT NULL,
+    started TIMESTAMP WITH TIME ZONE,
+    finished TIMESTAMP WITH TIME ZONE,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS _transform_queue__status ON _transform_queue_ (status);
 

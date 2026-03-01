@@ -224,11 +224,13 @@ type ProjectSample struct {
 }
 
 type SampleData struct {
-	Id        uuid.UUID
-	Sample    uuid.UUID
-	Schema    uuid.UUID
-	Creator   uuid.UUID
-	Timestamp time.Time
+	Id         uuid.UUID
+	Sample     uuid.UUID
+	Schema     uuid.UUID
+	Creator    uuid.UUID
+	Timestamp  time.Time
+	Visibility Visibility
+	Label      *string
 }
 
 type ProjectSampleGroup struct {
@@ -645,7 +647,7 @@ type sampleDataParsed struct {
 	Payload     any
 }
 
-type sampleDataParsedPayloadExternal struct {
+type SampleDataPayloadExternal struct {
 	Path     string
 	Filename string
 }
@@ -747,6 +749,15 @@ func (s *ProjectService) CreateProjectSamples(
 		return err
 	}
 
+	err = s.create_project_samples_sample_data_user_permisson_as_owner(
+		tx,
+		sample_data_ids,
+		user_id,
+	)
+	if err != nil {
+		return err
+	}
+
 	err = s.create_project_samples_create_sample_notes(
 		tx,
 		samples,
@@ -843,7 +854,7 @@ func (s *ProjectService) create_project_samples_parse_sample_data_to_schema(
 			case DataStorageInternal:
 				payload = data_parsed
 			case DataStorageExternal:
-				payload = sampleDataParsedPayloadExternal{
+				payload = SampleDataPayloadExternal{
 					Path:     "TODO",
 					Filename: data.File.Name,
 				}
@@ -1204,6 +1215,40 @@ func (s *ProjectService) create_project_samples_store_sample_data(
 	return nil
 }
 
+func (s *ProjectService) create_project_samples_sample_data_user_permisson_as_owner(
+	tx pgx.Tx,
+	sample_data_ids map[sampleDataIdx]uuid.UUID,
+	user uuid.UUID,
+) error {
+	if len(sample_data_ids) == 0 {
+		return nil
+	}
+
+	args := make([]any, len(sample_data_ids)+2)
+	args[0] = user
+	args[1] = SampleDataUserPermissionOwner
+	arg_idx := 2
+	var query strings.Builder
+	query.WriteString("INSERT INTO sample_data_user_permission_ (_sample_data, _user, _permission) VALUES ")
+	for _, sample_data := range sample_data_ids {
+		args[arg_idx] = sample_data
+		fmt.Fprintf(&query, "($%d, $1, $2)", arg_idx+1)
+		arg_idx += 1
+	}
+
+	_, err := tx.Exec(s.ctx, query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"sample data", sample_data_ids,
+			"user", user,
+		).Error("could not insert sample data user permission")
+		return err
+	}
+
+	return nil
+}
+
 func (s *ProjectService) create_project_samples_store_sample_data_internal(
 	tx pgx.Tx,
 	data_schema DataSchema,
@@ -1219,7 +1264,7 @@ func (s *ProjectService) create_project_samples_store_sample_data_internal(
 	fmt.Fprintf(
 		&store_data_query,
 		"INSERT INTO %s (_sample_data, %s) VALUES ",
-		sample_data_table_name_from_schema_id(data_schema.Id),
+		data_storage_table_name_from_schema_id(data_schema.Id),
 		strings.Join(col_labels, ", "),
 	)
 
@@ -1248,7 +1293,7 @@ func (s *ProjectService) create_project_samples_store_sample_data_internal(
 			}
 
 			data_arg_idx := args_offset + col_idx + 1
-			args[data_arg_idx] = col_data.Data
+			args[data_arg_idx] = col_data.Values
 		}
 
 		if data_idx > 0 {
@@ -1289,9 +1334,9 @@ func (s *ProjectService) create_project_samples_store_sample_data_external(
 	fmt.Fprintf(
 		&store_data_query,
 		"INSERT INTO %s (_sample_data, %s, %s) VALUES ",
-		sample_data_table_name_from_schema_id(data_schema.Id),
-		SAMPLE_DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL,
-		SAMPLE_DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL,
+		data_storage_table_name_from_schema_id(data_schema.Id),
+		DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL,
+		DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL,
 	)
 
 	args := make([]any, len(parsed_data)*ARGS_PER_SAMPLE_DATA)
@@ -1301,7 +1346,7 @@ func (s *ProjectService) create_project_samples_store_sample_data_external(
 			DataIndex:   data.DataIndex,
 		}
 		sample_data_id := sample_data_ids[sample_data_id_key]
-		payload := data.Payload.(sampleDataParsedPayloadExternal)
+		payload := data.Payload.(SampleDataPayloadExternal)
 
 		args_offset := data_idx * ARGS_PER_SAMPLE_DATA
 		arg_idx_id := args_offset
@@ -1578,7 +1623,7 @@ func (e *ParseSampleDataErrors) Error() string {
 	return fmt.Sprintf("{%s}", strings.Join(msgs, "; "))
 }
 
-type ProjectSampleMembership struct {
+type ProjectSampleMembershipAsResource struct {
 	Creator   User
 	Timestamp time.Time
 	Label     string
@@ -1598,7 +1643,7 @@ type ProjectSampleResources struct {
 	Id                           uuid.UUID
 	Creator                      uuid.UUID
 	Properties                   []Property
-	ProjectMembership            ProjectSampleMembership
+	ProjectMembership            ProjectSampleMembershipAsResource
 	ProjectTags                  []string
 	ProjectNotes                 []ProjectSampleNote
 	Data                         []SampleData
@@ -1742,8 +1787,8 @@ func (s *ProjectService) get_project_sample_resources_project_membership(
 	user_id uuid.UUID,
 	project_id uuid.UUID,
 	sample_id uuid.UUID,
-) (ProjectSampleMembership, error) {
-	var membership ProjectSampleMembership
+) (ProjectSampleMembershipAsResource, error) {
+	var membership ProjectSampleMembershipAsResource
 	var creator_id uuid.UUID
 	membership_query :=
 		`SELECT _creator, _timestamp, label FROM project_sample_membership_
@@ -1760,12 +1805,12 @@ func (s *ProjectService) get_project_sample_resources_project_membership(
 			"project", project_id,
 			"sample", sample_id,
 		).Error("could not get project sample membership")
-		return ProjectSampleMembership{}, err
+		return ProjectSampleMembershipAsResource{}, err
 	}
 
 	membership.Creator, err = s.user_service.GetUserById(user_id)
 	if err != nil {
-		return ProjectSampleMembership{}, err
+		return ProjectSampleMembershipAsResource{}, err
 	}
 
 	return membership, nil
@@ -2266,4 +2311,37 @@ func (s *ProjectService) update_project_sample_remove_sample_properties(
 	}
 
 	return nil
+}
+
+type ProjectSampleMembership struct {
+	Project   uuid.UUID
+	Sample    uuid.UUID
+	Creator   uuid.UUID
+	Timestamp time.Time
+	Label     string
+}
+
+func (s *ProjectService) GetProjectSampleMembershipsByProject(project uuid.UUID) ([]ProjectSampleMembership, error) {
+	query := "SELECT _project, _sample, _creator, _timestamp, label FROM project_sample_membership_ WHERE _project=$1"
+	rows, _ := s.db.Conn.Query(s.ctx, query, project)
+	memberships, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ProjectSampleMembership, error) {
+		var membership ProjectSampleMembership
+		err := row.Scan(
+			&membership.Project,
+			&membership.Sample,
+			&membership.Creator,
+			&membership.Timestamp,
+			&membership.Label,
+		)
+		return membership, err
+	})
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"project", project,
+		).Error("could not get project sample memberships")
+		return nil, err
+	}
+
+	return memberships, nil
 }

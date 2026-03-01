@@ -7,15 +7,40 @@ function getDataSchemasAll(): Promise<types.DataSchema[]> {
     }).then(async (resp) => (await resp.json()) as types.DataSchema[]);
 }
 
+function getDataSchemasRaw(): Promise<types.DataSchema[]> {
+    const params = new URLSearchParams();
+    params.append("type", "raw");
+    return fetch(`/api/data-schemas?${params}`, {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.DataSchema[]);
+}
+
+function getDataSchemasTransform(): Promise<types.DataSchema[]> {
+    const params = new URLSearchParams();
+    params.append("type", "transform");
+    return fetch(`/api/data-schemas?${params}`, {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.DataSchema[]);
+}
+
 function saveProjectDataAll(
     project: UUIDTypes,
-    hierarchy: types.SaveDataHierarchy[],
+    hierarchy: types.SaveDataHierarchy,
 ): Promise<Response> {
-    throw new Error("not yet implemented");
+    const params = new URLSearchParams();
+    params.append("id", project.toString());
+    params.append("hierarchy", hierarchy);
+    return fetch(`/api/sample-data/project?${params}`, {
+        credentials: "same-origin",
+    });
 }
 
 function saveSampleDataSingle(sample_data: UUIDTypes): Promise<Response> {
-    throw new Error("not yet implemented");
+    const params = new URLSearchParams();
+    params.append("id", sample_data.toString());
+    return fetch(`/api/sample-data/single?${params}`, {
+        credentials: "same-origin",
+    });
 }
 
 function saveSampleDataMultiple(
@@ -42,6 +67,20 @@ function dataSchemaCreate(
         method: "post",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data_schema),
+    });
+}
+
+function transformCreate(transform: types.TransformCreate): Promise<Response> {
+    const data = new FormData();
+    data.append("input", transform.Input.toString());
+    data.append("output", transform.Output.toString());
+    data.append("label", transform.Label);
+    data.append("description", transform.Description);
+    data.append("script", transform.Script);
+    return fetch("/api/transform", {
+        credentials: "same-origin",
+        method: "post",
+        body: data,
     });
 }
 
@@ -158,12 +197,35 @@ function parse_data_file_parse_string_to_value(
     }
 }
 
+function getDataSchemaResources(
+    data_schema_id: UUIDTypes,
+): Promise<types.DataSchemaResources> {
+    const params = new URLSearchParams();
+    params.append("id", data_schema_id.toString());
+    return fetch(`/api/data-schema?${params}`, {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.DataSchemaResources);
+}
+
+function getTransformSchemas(): Promise<types.TransformResources> {
+    const params = new URLSearchParams();
+    params.append("type", "transform");
+    return fetch(`/api/data-schemas?${params}`, {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.TransformResources);
+}
+
 export default {
     getDataSchemasAll,
+    getDataSchemasRaw,
+    getDataSchemasTransform,
     saveProjectDataAll,
     saveSampleDataSingle,
     saveSampleDataMultiple,
     saveDataSchemaSampleDataAll,
     dataSchemaCreate,
     parseDataFileToSchema,
+    getDataSchemaResources,
+    getTransformSchemas,
+    transformCreate,
 };

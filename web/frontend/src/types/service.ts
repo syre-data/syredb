@@ -20,6 +20,8 @@ export interface InsufficientPermissionsError {
 //////////
 // source: data.service.go
 
+export const AppDataPath = "app:data:path";
+export const AppTransformDir = "transforms";
 export const DataTypeString = "string";
 export const DataTypeInt = "int";
 export const DataTypeUint = "uint";
@@ -27,9 +29,12 @@ export const DataTypeFloat = "float";
 export const DataTypeBoolean = "boolean";
 export const DataTypeTimestamp = "timestamp";
 export type DataType = typeof DataTypeString | typeof DataTypeInt | typeof DataTypeUint | typeof DataTypeFloat | typeof DataTypeBoolean | typeof DataTypeTimestamp;
+export const SaveDataHierarchyFlat = "flat";
 export const SaveDataHierarchyDataSchema = "data_schema";
 export const SaveDataHierarchySample = "sample";
-export type SaveDataHierarchy = typeof SaveDataHierarchyDataSchema | typeof SaveDataHierarchySample;
+export const SaveDataHierarchySampleDataSchema = "sample-data_scmeha";
+export const SaveDataHierarchyDataSchemaSample = "data_schema-sample";
+export type SaveDataHierarchy = typeof SaveDataHierarchyFlat | typeof SaveDataHierarchyDataSchema | typeof SaveDataHierarchySample | typeof SaveDataHierarchySampleDataSchema | typeof SaveDataHierarchyDataSchemaSample;
 export interface DataService {
 }
 export interface ColumnSchema {
@@ -41,6 +46,7 @@ export const DataStorageExternal = "external";
 export type DataStorage = typeof DataStorageInternal | typeof DataStorageExternal;
 export interface DataSchema {
   Id: uuid.UUIDTypes;
+  Type: DataSchemaType;
   Creator: uuid.UUIDTypes;
   Schema: ColumnSchema[];
   Storage: DataStorage;
@@ -51,15 +57,32 @@ export interface InvalidSampleDataColumnLabels {
   Labels: string[];
 }
 export const PATTERN = `^[\\w_]+\$`;
+export const DataSchemaTypeRaw = "raw";
+export const DataSchemaTypeTransform = "transform";
+export type DataSchemaType = typeof DataSchemaTypeRaw | typeof DataSchemaTypeTransform;
 export interface DataSchemaCreate {
+  Type: DataSchemaType;
   Schema: ColumnSchema[];
   Storage: DataStorage;
   Label: string;
   Description: string;
 }
-export const SAMPLE_DATA_TABLE_NAME_PREFIX = "sample_data";
-export const SAMPLE_DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL = "path";
-export const SAMPLE_DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL = "filename";
+export const TABLE_NAME_PREFIX = "data_storage";
+export const DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL = "path";
+export const DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL = "filename";
+export interface Transform {
+  Id: uuid.UUIDTypes;
+  Input: uuid.UUIDTypes;
+  Output: uuid.UUIDTypes;
+  Creator: User;
+  Label: string;
+  Description: string;
+}
+export interface DataSchemaResources {
+  DataSchema: DataSchema;
+  Creator: User;
+  Transforms: Transform[];
+}
 export interface InvalidFileExtensionError {
 }
 export interface IncompatibleDataSizeError {
@@ -67,7 +90,7 @@ export interface IncompatibleDataSizeError {
 export interface ColumnData {
   Label: string;
   DType: DataType;
-  Data: any[];
+  Values: any[];
 }
 export interface ParseCsvError {
   Record: number /* uint */;
@@ -130,6 +153,22 @@ export interface SampleDataRecord {
 export interface DataSchemaRecord {
   Id: uuid.UUIDTypes;
   Label: string;
+}
+export const SampleDataUserPermissionOwner = "owner";
+export const SampleDataUserPermissionRead = "read";
+export const SampleDataUserPermissionCreateNote = "create_note";
+export const SampleDataUserPermissionModifyProperties = "modify_properties";
+export type SampleDataUserPermission = typeof SampleDataUserPermissionOwner | typeof SampleDataUserPermissionRead | typeof SampleDataUserPermissionCreateNote | typeof SampleDataUserPermissionModifyProperties;
+export interface SampleDataUserPermissions {
+  SampleData: uuid.UUIDTypes;
+  Permissions: SampleDataUserPermission[];
+}
+export interface TransformCreate {
+  Input: uuid.UUIDTypes;
+  Output: uuid.UUIDTypes;
+  Script?: any /* multipart.FileHeader */;
+  Label: string;
+  Description: string;
 }
 
 //////////
@@ -198,6 +237,8 @@ export interface SampleData {
   Schema: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
   Timestamp: Date;
+  Visibility: Visibility;
+  Label?: string;
 }
 export interface ProjectSampleGroup {
   Id: uuid.UUIDTypes;
@@ -252,6 +293,10 @@ export interface ProjectSampleDataPropertyCreate {
   Type: PropertyType;
   Value: any; // TODO: match type
 }
+export interface SampleDataPayloadExternal {
+  Path: string;
+  Filename: string;
+}
 export interface ProjectSampleNoteCreate {
   Timestamp: Date;
   Content: string;
@@ -271,7 +316,7 @@ export const NUM_NOTE_VALUES = 2;
 export const PROJECT_SAMPLE_USER_PERMISSION_COUNT = 3;
 export interface ParseSampleDataErrors {
 }
-export interface ProjectSampleMembership {
+export interface ProjectSampleMembershipAsResource {
   Creator: User;
   Timestamp: Date;
   Label: string;
@@ -288,7 +333,7 @@ export interface ProjectSampleResources {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
   Properties: Property[];
-  ProjectMembership: ProjectSampleMembership;
+  ProjectMembership: ProjectSampleMembershipAsResource;
   ProjectTags: string[];
   ProjectNotes: ProjectSampleNote[];
   Data: SampleData[];
@@ -311,6 +356,13 @@ export interface ProjectSampleUpdate {
   NotesNew: ProjectSampleNoteCreate[];
   NotesUpdate: ProjectSampleNoteUpdate[];
   NotesRemove: uuid.UUIDTypes[];
+}
+export interface ProjectSampleMembership {
+  Project: uuid.UUIDTypes;
+  Sample: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Timestamp: Date;
+  Label: string;
 }
 
 //////////

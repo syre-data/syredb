@@ -9,6 +9,7 @@ import Project from "./Project";
 import ProjectSettings from "./ProjectSettings";
 import ProjectSamplesCreate from "./ProjectSamplesCreate";
 import DataSchemaCreate from "./DataSchemaCreate";
+import DataSchema from "./DataSchema";
 import SampleEdit from "./SampleEdit";
 import NotFound from "./NotFound";
 
@@ -39,10 +40,10 @@ export default function Home() {
                         />
                     </Route>
                 </Route>
-                <Route
-                    path="/data_schema/create"
-                    element={<DataSchemaCreate />}
-                />
+                <Route path="/data_schema">
+                    <Route path="create" element={<DataSchemaCreate />} />
+                    <Route path=":data_schema_id" element={<DataSchema />} />
+                </Route>
 
                 <Route path="*" element={<NotFound />} />
             </Routes>

@@ -1,6 +1,7 @@
-import * as model from "./types";
+import * as types from "@/types";
 
 export const QUERY_KEY_DATA_SCHEMA = "data_schema";
+export const QUERY_KEY_TRANSFORM_SCHEMA = "transform_schema";
 
 export interface BackendError {
     message: string;
@@ -15,40 +16,40 @@ export enum MouseButton {
 
 export function project_user_permission_string_to_variant(
     value: string,
-): model.ProjectUserPermission | undefined {
+): types.ProjectUserPermission | undefined {
     switch (value) {
         case "owner":
-            return model.ProjectUserPermissionOwner;
+            return types.ProjectUserPermissionOwner;
         case "admin":
-            return model.ProjectUserPermissionAdmin;
+            return types.ProjectUserPermissionAdmin;
         case "read_write":
-            return model.ProjectUserPermissionReadWrite;
+            return types.ProjectUserPermissionReadWrite;
         case "read":
-            return model.ProjectUserPermissionRead;
+            return types.ProjectUserPermissionRead;
         default:
             return undefined;
     }
 }
 
 export function is_admin_or_owner(
-    user_permission: model.ProjectUserPermission,
+    user_permission: types.ProjectUserPermission,
 ): boolean {
     return (
-        user_permission === model.ProjectUserPermissionAdmin ||
-        user_permission === model.ProjectUserPermissionOwner
+        user_permission === types.ProjectUserPermissionAdmin ||
+        user_permission === types.ProjectUserPermissionOwner
     );
 }
 
 export function user_role_string_to_variant(
     value: string,
-): model.UserRole | undefined {
+): types.UserRole | undefined {
     switch (value) {
         case "owner":
-            return model.UserRoleOwner;
+            return types.UserRoleOwner;
         case "admin":
-            return model.UserRoleAdmin;
+            return types.UserRoleAdmin;
         case "user":
-            return model.UserRoleUser;
+            return types.UserRoleUser;
         default:
             return undefined;
     }
@@ -56,20 +57,20 @@ export function user_role_string_to_variant(
 
 export function data_type_string_to_variant(
     value: string,
-): model.DataType | undefined {
+): types.DataType | undefined {
     switch (value) {
         case "string":
-            return model.DataTypeString;
+            return types.DataTypeString;
         case "int":
-            return model.DataTypeInt;
+            return types.DataTypeInt;
         case "uint":
-            return model.DataTypeUint;
+            return types.DataTypeUint;
         case "float":
-            return model.DataTypeFloat;
+            return types.DataTypeFloat;
         case "boolean":
-            return model.DataTypeBoolean;
+            return types.DataTypeBoolean;
         case "timestamp":
-            return model.DataTypeTimestamp;
+            return types.DataTypeTimestamp;
         default:
             return undefined;
     }
@@ -77,12 +78,38 @@ export function data_type_string_to_variant(
 
 export function visibility_string_to_variant(
     value: string,
-): model.Visibility | undefined {
+): types.Visibility | undefined {
     switch (value) {
         case "public":
-            return model.VisibilityPublic;
+            return types.VisibilityPublic;
         case "private":
-            return model.VisibilityPrivate;
+            return types.VisibilityPrivate;
+        default:
+            return undefined;
+    }
+}
+
+export function data_storage_string_to_variant(
+    value: string,
+): types.DataStorage | undefined {
+    switch (value) {
+        case "internal":
+            return types.DataStorageInternal;
+        case "file":
+            return types.DataStorageExternal;
+        default:
+            return undefined;
+    }
+}
+
+export function data_schema_type_string_to_variant(
+    value: string,
+): types.DataSchemaType | undefined {
+    switch (value) {
+        case "raw":
+            return types.DataSchemaTypeRaw;
+        case "transform":
+            return types.DataSchemaTypeTransform;
         default:
             return undefined;
     }

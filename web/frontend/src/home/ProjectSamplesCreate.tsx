@@ -393,7 +393,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
     });
     const { data: data_schemas } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_DATA_SCHEMA],
-        queryFn: data_service.getDataSchemasAll,
+        queryFn: data_service.getDataSchemasRaw,
     });
 
     const [error, setError] = useState("");
@@ -716,6 +716,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
                     console.error(resp);
                     setError("Something went wrong.");
                 }
+                submitBtn.disabled = false;
             })
             .catch((err: common.BackendError) => {
                 setError(err.message);

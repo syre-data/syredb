@@ -4,7 +4,9 @@ import * as types from "@/types";
 import icon from "@/icon";
 import * as uuid from "uuid";
 import Loading from "@/components/Loading";
+import * as datefn from "date-fns";
 import { ErrorBoundary } from "react-error-boundary";
+import { StatusCodes } from "http-status-codes";
 import type { FallbackProps } from "react-error-boundary";
 import {
     createContext,
@@ -31,6 +33,7 @@ import { immerable } from "immer";
 import * as appStateCtx from "../AppStateContext";
 import * as property from "../components/Property";
 import { SelectPropertyType, InputPropertyValue } from "../components/Property";
+import { SuspenseError } from "@/components";
 
 interface CommonProjectData {
     project_id: string;
@@ -105,47 +108,12 @@ export default function () {
 
 function ProjectError({ error, resetErrorBoundary }: FallbackProps) {
     const err = error as types.AppError;
-    const navigate = useNavigate();
-
-    if (err.Code === types.AppErrorCodeUserNotAuthenticated) {
-        console.error(types.AppErrorCodeUserNotAuthenticated);
-        navigate("/");
-        return null;
-    } else {
-        console.error(err);
-    }
-
-    function reload(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != common.MouseButton.Primary) {
-            return;
-        }
-
-        resetErrorBoundary();
-    }
 
     return (
-        <div className="flex flex-col gap-2 items-center pt-4">
+        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
             <div>Could not load project</div>
             <div>{err.Message}</div>
-            <div className="flex gap-2 items-center">
-                <div>
-                    <Link to="/">
-                        <button type="button" className="btn-cmd">
-                            <icon.Home />
-                        </button>
-                    </Link>
-                </div>
-                <div>
-                    <button
-                        type="button"
-                        onMouseDown={reload}
-                        className="btn-cmd"
-                    >
-                        <icon.Reload />
-                    </button>
-                </div>
-            </div>
-        </div>
+        </SuspenseError>
     );
 }
 
@@ -281,10 +249,13 @@ function ResourceBrowser({
     }
 
     async function download_all_project_data(
-        hierarchy: types.SaveDataHierarchy[],
+        hierarchy: types.SaveDataHierarchy,
     ) {
         await data_service
             .saveProjectDataAll(project_resources.Project.Id, hierarchy)
+            .then(async (resp) => {
+                await save_sample_data_attachment(resp, "data.zip");
+            })
             .catch((err) => {
                 console.error("could not save project data", err);
             });
@@ -353,7 +324,7 @@ function ResourceBrowser({
 }
 
 interface ResourceBrowserDownloadDataBtnProps {
-    onDownload: (hierarchy: types.SaveDataHierarchy[]) => Promise<void>;
+    onDownload: (hierarchy: types.SaveDataHierarchy) => Promise<void>;
     disabled: boolean;
 }
 function ResourceBrowserDownloadDataBtn({
@@ -379,7 +350,7 @@ function ResourceBrowserDownloadDataBtn({
 
     function on_download(
         e: MouseEvent<HTMLButtonElement>,
-        hierarchy: types.SaveDataHierarchy[],
+        hierarchy: types.SaveDataHierarchy,
     ) {
         if (e.button != common.MouseButton.Primary) {
             return;
@@ -399,7 +370,7 @@ function ResourceBrowserDownloadDataBtn({
                 className="cursor-pointer"
                 title="Download all project data"
                 disabled={disabled}
-                onMouseDown={(e) => on_download(e, [])}
+                onMouseDown={(e) => on_download(e, types.SaveDataHierarchyFlat)}
             >
                 <icon.Download />
             </button>
@@ -423,7 +394,9 @@ function ResourceBrowserDownloadDataBtn({
                                 type="button"
                                 className={MENU_LIST_ITEM_BTN_CLASS}
                                 title="Download all project data in the same folder"
-                                onMouseDown={(e) => on_download(e, [])}
+                                onMouseDown={(e) =>
+                                    on_download(e, types.SaveDataHierarchyFlat)
+                                }
                             >
                                 Flat
                             </button>
@@ -434,9 +407,10 @@ function ResourceBrowserDownloadDataBtn({
                                 className={MENU_LIST_ITEM_BTN_CLASS}
                                 title="Download all project data organized by sample"
                                 onMouseDown={(e) =>
-                                    on_download(e, [
+                                    on_download(
+                                        e,
                                         types.SaveDataHierarchySample,
-                                    ])
+                                    )
                                 }
                             >
                                 Sample
@@ -448,9 +422,10 @@ function ResourceBrowserDownloadDataBtn({
                                 className={MENU_LIST_ITEM_BTN_CLASS}
                                 title="Download all project data organized by data schema"
                                 onMouseDown={(e) =>
-                                    on_download(e, [
+                                    on_download(
+                                        e,
                                         types.SaveDataHierarchyDataSchema,
-                                    ])
+                                    )
                                 }
                             >
                                 Data schema
@@ -462,10 +437,10 @@ function ResourceBrowserDownloadDataBtn({
                                 className={MENU_LIST_ITEM_BTN_CLASS}
                                 title="Download all project data organized by sample then data schema"
                                 onMouseDown={(e) =>
-                                    on_download(e, [
-                                        types.SaveDataHierarchySample,
-                                        types.SaveDataHierarchyDataSchema,
-                                    ])
+                                    on_download(
+                                        e,
+                                        types.SaveDataHierarchySampleDataSchema,
+                                    )
                                 }
                             >
                                 Sample &gt; Data schema
@@ -477,10 +452,10 @@ function ResourceBrowserDownloadDataBtn({
                                 className={MENU_LIST_ITEM_BTN_CLASS}
                                 title="Download all project data organized by data schema then sample"
                                 onMouseDown={(e) =>
-                                    on_download(e, [
-                                        types.SaveDataHierarchyDataSchema,
-                                        types.SaveDataHierarchySample,
-                                    ])
+                                    on_download(
+                                        e,
+                                        types.SaveDataHierarchyDataSchemaSample,
+                                    )
                                 }
                             >
                                 Data schema &gt; Sample
@@ -870,10 +845,10 @@ function SampleDetail({ sample, onClose, className }: SampleDetailProps) {
 function SampleDetailError({ error, resetErrorBoundary }: FallbackProps) {
     const err = error as common.BackendError;
     return (
-        <div>
+        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
             <div>Could not load sample details.</div>
             <div>{err.message}</div>
-        </div>
+        </SuspenseError>
     );
 }
 
@@ -977,6 +952,12 @@ function SampleDetailInner({
         } else if (dataSelected.length === 1) {
             await data_service
                 .saveSampleDataSingle(dataSelected[0]!)
+                .then(async (resp) => {
+                    await save_sample_data_attachment(
+                        resp,
+                        dataSelected[0]!.toString() + ".csv",
+                    );
+                })
                 .catch((err) => {
                     console.error(err);
                 });
@@ -1322,12 +1303,18 @@ function SampleDetailDataListItem({
 
         await data_service
             .saveSampleDataSingle(data.Id)
-            .then((path) => console.info(`data ${data.Id} saved to ${path}`))
-            .catch((err) => {
-                if (err.message === "CANCELLED_BY_USER") {
+            .then(async (res) => {
+                if (res.status === StatusCodes.UNAUTHORIZED) {
+                    console.warn("insufficient permissions");
                     return;
                 }
 
+                await save_sample_data_attachment(
+                    res,
+                    data.Id.toString() + ".csv",
+                );
+            })
+            .catch((err) => {
                 console.error(err);
             });
     }
@@ -1408,10 +1395,12 @@ function SampleDetailProjectNoteListItem({
     const appState = useContext(appStateCtx.Context);
 
     return (
-        <li>
-            <div>
-                <div>{note.Timestamp.toLocaleString()}</div>
+        <li className="px-2 pb-4">
+            <div className="flex gap-4">
                 <div>{creator.Name}</div>
+                <div title={datefn.format(note.Timestamp, "dd-MM-yyyy HH:mm")}>
+                    ({datefn.format(note.Timestamp, "dd-MM-yyyy")})
+                </div>
             </div>
             <div>{note.Content}</div>
         </li>
@@ -1697,4 +1686,29 @@ function ResourceBrowserSampleDataSchemaGroupListItem({
             </div>
         </li>
     );
+}
+
+async function save_sample_data_attachment(
+    resp: Response,
+    default_filename: string,
+) {
+    const data = await resp.blob();
+    const obj_url = URL.createObjectURL(data);
+    const header = resp.headers.get("content-disposition");
+    let filename = "";
+    if (header !== null) {
+        const match = header.match('filename="(.*)"');
+        if (match !== null) {
+            filename = match[1]!;
+        }
+    }
+    if (filename.length === 0) {
+        filename = default_filename;
+    }
+
+    const link = document.createElement("a");
+    link.href = obj_url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(obj_url);
 }
