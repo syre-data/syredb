@@ -37,12 +37,12 @@ import { SuspenseError } from "@/components";
 
 interface CommonProjectData {
     project_id: string;
-    user_permission: types.ProjectUserPermission;
+    user_permissions: types.ProjectPermission[];
 }
 
 const CommonProjectDataCtx = createContext<CommonProjectData>({
     project_id: "",
-    user_permission: types.ProjectUserPermissionRead,
+    user_permissions: [],
 });
 
 function createProject(overrides: Partial<types.Project> = {}): types.Project {
@@ -79,13 +79,14 @@ function createProjectResources(
         Project: createProject(overrides.Project),
         ProjectTags: overrides.ProjectTags ?? [],
         Samples: samples,
-        SampleData: overrides.SampleData ?? [],
+        RawData: overrides.RawData ?? [],
         DataSchemas: overrides.DataSchemas ?? [],
         SampleGroups: overrides.SampleGroups ?? [],
         SampleGroupRelations: overrides.SampleGroupRelations ?? [],
         ProjectNoteCount: overrides.ProjectNoteCount ?? 0,
-        ProjectUserPermission:
-            overrides.ProjectUserPermission ?? types.ProjectUserPermissionRead,
+        ProjectPermissions: overrides.ProjectPermissions ?? [
+            types.ProjectPermissionRead,
+        ],
     };
 }
 
@@ -110,7 +111,10 @@ function ProjectError({ error, resetErrorBoundary }: FallbackProps) {
     const err = error as types.AppError;
 
     return (
-        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="pt-4 text-center"
+        >
             <div>Could not load project</div>
             <div>{err.Message}</div>
         </SuspenseError>
@@ -131,7 +135,7 @@ function Project({ id }: ProjectProps) {
         <CommonProjectDataCtx
             value={{
                 project_id: id,
-                user_permission: project_resources.ProjectUserPermission,
+                user_permissions: project_resources.ProjectPermissions,
             }}
         >
             <div className="h-full flex flex-col">
@@ -158,7 +162,10 @@ function ProjectHeader({ project, className }: ProjectHeaderProps) {
         >
             <div className="flex gap-2 grow">
                 <h2 className={`font-bold`}>{project.Label}</h2>
-                {common.is_admin_or_owner(project_info.user_permission) ? (
+                {project_service.hasPermission(
+                    types.ProjectPermissionCreateSample,
+                    project_info.user_permissions,
+                ) ? (
                     <div className="flex gap-2">
                         <div>
                             <Link
@@ -293,7 +300,7 @@ function ResourceBrowser({
                 <div className="flex gap-1 pr-1">
                     <ResourceBrowserDownloadDataBtn
                         onDownload={download_all_project_data}
-                        disabled={project_resources.SampleData.length === 0}
+                        disabled={project_resources.RawData.length === 0}
                     />
                 </div>
             </div>
@@ -845,7 +852,10 @@ function SampleDetail({ sample, onClose, className }: SampleDetailProps) {
 function SampleDetailError({ error, resetErrorBoundary }: FallbackProps) {
     const err = error as common.BackendError;
     return (
-        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="pt-4 text-center"
+        >
             <div>Could not load sample details.</div>
             <div>{err.message}</div>
         </SuspenseError>
@@ -995,7 +1005,7 @@ function SampleDetailInner({
                     <h3 className="text-xl font-bold">{sample.Label}</h3>
                     <div>
                         <Link
-                            to={`/project/{${project_data.project_id}}/sample/${sample.Id}/edit`}
+                            to={`/project/${project_data.project_id}/sample/${sample.Id}/edit`}
                         >
                             <button type="button" className="btn-cmd">
                                 <icon.Pen />
@@ -1060,7 +1070,7 @@ function SampleDetailInner({
                         >
                             <icon.CaretDown />
                         </button>
-                        <h4>Data ({sample_resources.Data.length})</h4>
+                        <h4>Raw Data ({sample_resources.RawData.length})</h4>
                         <div
                             className={classNames({
                                 hidden: dataSelected.length === 0,
@@ -1083,9 +1093,9 @@ function SampleDetailInner({
                             "pb-2": expandedData,
                         })}
                     >
-                        {sample_resources.Data.length > 0 ? (
+                        {sample_resources.RawData.length > 0 ? (
                             <SampleDetailData
-                                data={sample_resources.Data}
+                                data={sample_resources.RawData}
                                 data_schemas={sample_resources.DataSchemas}
                                 users={sample_resources.Users}
                                 selectedData={dataSelected}
@@ -1227,7 +1237,7 @@ function SampleDetailNewProperty({ id }: SampleDetailNewPropertyProps) {
 }
 
 interface SampleDetailDataProps {
-    data: types.SampleData[];
+    data: types.RawDataRecord[];
     data_schemas: types.DataSchema[];
     users: types.User[];
     selectedData: UUIDTypes[];
@@ -1243,13 +1253,6 @@ function SampleDetailData({
     return (
         <ol>
             {data.map((datum, index) => {
-                const data_schema_idx = data_schemas.findIndex(
-                    (schema) => schema.Id === datum.Schema,
-                );
-                if (data_schema_idx < 0) {
-                    console.error(`could not find data schema ${datum.Schema}`);
-                }
-
                 const creator_idx = users.findIndex(
                     (user) => user.Id === datum.Creator,
                 );
@@ -1258,11 +1261,10 @@ function SampleDetailData({
                 }
 
                 return (
-                    <SampleDetailDataListItem
+                    <RawDetailDataListItem
                         key={datum.Id.toString()}
                         index={index}
                         data={datum}
-                        data_schema={data_schemas[data_schema_idx]!}
                         creator={users[creator_idx]!}
                         selected={selectedData.includes(datum.Id)}
                         onSelectionChange={onDataSelectionChange}
@@ -1273,21 +1275,21 @@ function SampleDetailData({
     );
 }
 
-interface SampleDetailDataListItemProps {
+interface RawDetailDataListItemProps {
     index: number;
-    data: types.SampleData;
+    data: types.RawDataRecord;
     data_schema: types.DataSchema;
     creator: types.User;
     selected: boolean;
     onSelectionChange: (data: UUIDTypes, selected: boolean) => void;
 }
-function SampleDetailDataListItem({
+function RawDetailDataListItem({
     data,
     data_schema,
     creator,
     selected,
     onSelectionChange,
-}: SampleDetailDataListItemProps) {
+}: RawDetailDataListItemProps) {
     const app_state = useContext(appStateCtx.Context);
     const timestamp = new Date(data.Timestamp);
 
@@ -1418,15 +1420,6 @@ function ResourceBrowserSampleData({
     className,
 }: ResourceBrowserSampleDataProps) {
     const [dataSelected, setDataSelected] = useState<UUIDTypes[]>([]);
-    const data_schema_sample_data = new Map<UUIDTypes, types.SampleData[]>();
-    for (const sample_data of project_resources.SampleData) {
-        const schema_datas = data_schema_sample_data.get(sample_data.Schema);
-        if (schema_datas === undefined) {
-            data_schema_sample_data.set(sample_data.Schema, [sample_data]);
-        } else {
-            schema_datas.push(sample_data);
-        }
-    }
 
     function toggle_data_selection(sample_data: UUIDTypes, selected: boolean) {
         if (selected && !dataSelected.includes(sample_data)) {
@@ -1437,28 +1430,7 @@ function ResourceBrowserSampleData({
         }
     }
 
-    const sample_data_arr = Array.from(data_schema_sample_data.entries());
-    return sample_data_arr.length === 0 ? (
-        <ResourceBrowserSampleDataEmpty />
-    ) : (
-        <div className={className ?? ""}>
-            {sample_data_arr.map(([data_schema_id, schema_sample_data]) => {
-                const data_schema = project_resources.DataSchemas.find(
-                    (schema) => schema.Id === data_schema_id,
-                )!;
-                return (
-                    <ResourceBrowserSampleDataSchemaGroup
-                        project_resources={project_resources}
-                        key={data_schema_id.toString()}
-                        data_schema={data_schema}
-                        sample_data={schema_sample_data}
-                        selected_data={dataSelected}
-                        onSelectionToggle={toggle_data_selection}
-                    />
-                );
-            })}
-        </div>
-    );
+    <ResourceBrowserSampleDataEmpty />;
 }
 
 function ResourceBrowserSampleDataEmpty() {
@@ -1472,7 +1444,7 @@ function ResourceBrowserSampleDataEmpty() {
 interface ResourceBrowserSampleDataSchemaGroupProps {
     project_resources: types.ProjectResources;
     data_schema: types.DataSchema;
-    sample_data: types.SampleData[];
+    sample_data: types.RawDataRecord[];
     selected_data: UUIDTypes[];
     onSelectionToggle: (sample_data: UUIDTypes, selected: boolean) => void;
 }
@@ -1635,7 +1607,7 @@ function ResourceBrowserSampleDataSchemaGroupDownloadDataBtn({
 interface ResourceBrowserSampleDataSchemaGroupListItemProps {
     index: number;
     sample: types.ProjectSample;
-    sample_data: types.SampleData;
+    sample_data: types.RawDataRecord;
     selected: boolean;
     onSelectionToggle: (sample_data: UUIDTypes, selected: boolean) => void;
 }

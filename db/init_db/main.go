@@ -127,7 +127,7 @@ func create_db_owner_user(conn *pgx.Conn, email string, name string, password st
 	defer tx.Rollback(context.Background())
 
 	var user_id uuid.UUID
-	insert_user_query := "INSERT INTO user_ (email, name, role) VALUES ($1, $2, 'owner') RETURNING _id"
+	insert_user_query := "INSERT INTO user_ (email, name) VALUES ($1, $2) RETURNING _id"
 	err = tx.QueryRow(context.Background(), insert_user_query, email, name).Scan(&user_id)
 	if err != nil {
 		return err
@@ -135,6 +135,12 @@ func create_db_owner_user(conn *pgx.Conn, email string, name string, password st
 
 	insert_user_auth_query := "INSERT INTO user_auth_ (_id, auth) VALUES ($1, $2)"
 	_, err = tx.Exec(context.Background(), insert_user_auth_query, user_id, encode_password(password))
+	if err != nil {
+		return err
+	}
+
+	insert_user_permission_query := "INSERT INTO db_user_permission_ (_user, _permission) VALUES ($1, $2)"
+	_, err = tx.Exec(context.Background(), insert_user_permission_query, user_id, "owner")
 	if err != nil {
 		return err
 	}
@@ -205,7 +211,7 @@ func set_account_info(conn *pgx.Conn, name string, logo_path string) error {
 }
 
 func set_data(conn *pgx.Conn, data_path string) error {
-	inser_data_query := "INSERT INTO _app_data_ (key, value) VALUES ($1, $2), ($3, $4)"
+	inser_data_query := "INSERT INTO _app_data_ (key, value) VALUES ($1, $2)"
 	_, err := conn.Exec(
 		context.Background(),
 		inser_data_query,

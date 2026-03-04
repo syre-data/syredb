@@ -123,6 +123,16 @@ function updateProjectSample(
     });
 }
 
+function hasPermission(
+    needle: types.ProjectPermission,
+    haystack: types.ProjectPermission[],
+): boolean {
+    return (
+        haystack.includes(types.ProjectPermissionOwner) ||
+        haystack.includes(needle)
+    );
+}
+
 export default {
     getUserProjects,
     createProject,
@@ -132,4 +142,5 @@ export default {
     createProjectSamples,
     saveSampleDataMultiple,
     updateProjectSample,
+    hasPermission,
 };

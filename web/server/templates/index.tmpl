@@ -96,7 +96,6 @@
             body: data,
           });
         } catch (err) {
-          console.debug("err");
           console.error(err);
           err_node.innerText = "An error occurred, please try again.";
           return;
@@ -110,7 +109,7 @@
         }
         if (response.status !== 200) {
           console.error(response);
-          err_node.innerText = "an error occurred, please try again.";
+          err_node.innerText = "An error occurred, please try again.";
           return;
         }
 

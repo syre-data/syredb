@@ -21,7 +21,7 @@ export default function ({ resetErrorBoundary, className, children }: Props) {
     return (
         <div className={className}>
             <div>{children}</div>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center justify-center">
                 <div>
                     <Link to="/">
                         <button type="button" className="btn-cmd">

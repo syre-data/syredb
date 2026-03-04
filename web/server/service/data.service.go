@@ -99,7 +99,6 @@ const (
 
 type DataSchema struct {
 	Id          uuid.UUID
-	Type        DataSchemaType
 	Creator     uuid.UUID
 	Schema      []ColumnSchema
 	Storage     DataStorage
@@ -107,9 +106,9 @@ type DataSchema struct {
 	Description string
 }
 
-func (s *DataService) GetDataSchemasAll(user_id uuid.UUID) ([]DataSchema, error) {
+func (s *DataService) GetDataSchemasAll() ([]DataSchema, error) {
 	data_schema_query :=
-		`SELECT _id, _type, _creator, _schema, _storage, label, description
+		`SELECT _id, _creator, _schema, _storage, label, description
 		FROM data_schema_ ORDER BY _id DESC`
 	rows, err := s.db.Conn.Query(s.ctx, data_schema_query)
 	if err != nil {
@@ -121,73 +120,6 @@ func (s *DataService) GetDataSchemasAll(user_id uuid.UUID) ([]DataSchema, error)
 		var schema DataSchema
 		err := row.Scan(
 			&schema.Id,
-			&schema.Type,
-			&schema.Creator,
-			&schema.Schema,
-			&schema.Storage,
-			&schema.Label,
-			&schema.Description,
-		)
-		return schema, err
-	})
-	if err != nil {
-		s.logger.With("error", err).Error("could not collect data schemas")
-		return []DataSchema{}, err
-	}
-
-	return schemas, nil
-}
-
-func (s *DataService) GetDataSchemasRaw(user_id uuid.UUID) ([]DataSchema, error) {
-	data_schema_query := fmt.Sprintf(
-		`SELECT _id, _type, _creator, _schema, _storage, label, description
-		FROM data_schema_ WHERE _type='%s' ORDER BY _id DESC`,
-		DataSchemaTypeRaw,
-	)
-	rows, err := s.db.Conn.Query(s.ctx, data_schema_query)
-	if err != nil {
-		s.logger.With("error", err).Error("could not get data schemas")
-		return []DataSchema{}, err
-	}
-
-	schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchema, error) {
-		var schema DataSchema
-		err := row.Scan(
-			&schema.Id,
-			&schema.Type,
-			&schema.Creator,
-			&schema.Schema,
-			&schema.Storage,
-			&schema.Label,
-			&schema.Description,
-		)
-		return schema, err
-	})
-	if err != nil {
-		s.logger.With("error", err).Error("could not collect data schemas")
-		return []DataSchema{}, err
-	}
-
-	return schemas, nil
-}
-
-func (s *DataService) GetDataSchemasTransform(user_id uuid.UUID) ([]DataSchema, error) {
-	data_schema_query := fmt.Sprintf(
-		`SELECT _id, _type, _creator, _schema, _storage, label, description
-		FROM data_schema_ WHERE _type='%s' ORDER BY _id DESC`,
-		DataSchemaTypeTransform,
-	)
-	rows, err := s.db.Conn.Query(s.ctx, data_schema_query)
-	if err != nil {
-		s.logger.With("error", err).Error("could not get data schemas")
-		return []DataSchema{}, err
-	}
-
-	schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchema, error) {
-		var schema DataSchema
-		err := row.Scan(
-			&schema.Id,
-			&schema.Type,
 			&schema.Creator,
 			&schema.Schema,
 			&schema.Storage,
@@ -210,10 +142,8 @@ func (s *DataService) GetDataSchemasById(schema_ids []uuid.UUID) ([]DataSchema, 
 	}
 
 	data_schema_query := `
-		SELECT _id, _type, _creator, _schema, _storage, label, description
-		FROM data_schema_ 
-		WHERE _id=ANY($1)
-		ORDER BY _id DESC`
+		SELECT _id, _creator, _schema, _storage, label, description
+		FROM data_schema_ WHERE _id=ANY($1) ORDER BY _id DESC`
 	rows, err := s.db.Conn.Query(s.ctx, data_schema_query, schema_ids)
 	if err != nil {
 		s.logger.With("error", err).Error("could not get data schemas")
@@ -221,11 +151,9 @@ func (s *DataService) GetDataSchemasById(schema_ids []uuid.UUID) ([]DataSchema, 
 	}
 
 	schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchema, error) {
-		s.logger.Debug("v", "desc", row.FieldDescriptions())
 		var schema DataSchema
 		err := row.Scan(
 			&schema.Id,
-			&schema.Type,
 			&schema.Creator,
 			&schema.Schema,
 			&schema.Storage,
@@ -279,15 +207,7 @@ func is_valid_table_column_label(label string) bool {
 	return match
 }
 
-type DataSchemaType string
-
-const (
-	DataSchemaTypeRaw       DataSchemaType = "raw"
-	DataSchemaTypeTransform DataSchemaType = "transform"
-)
-
 type DataSchemaCreate struct {
-	Type        DataSchemaType
 	Schema      []ColumnSchema
 	Storage     DataStorage
 	Label       string
@@ -295,8 +215,11 @@ type DataSchemaCreate struct {
 }
 
 func (s *DataService) DataSchemaCreate(user_id uuid.UUID, data_schema DataSchemaCreate) error {
-	user_role, err := s.user_service.UserRole(user_id)
-	if err != nil || (user_role != UserRoleOwner && user_role != UserRoleAdmin) {
+	has_permission, err := s.user_service.UserHasPermission(user_id, DbPermissionCreateDataSchema)
+	if err != nil {
+		return err
+	}
+	if !has_permission {
 		s.logger.With("user", user_id).Debug(
 			"insufficient permissions to create data schema for user",
 		)
@@ -321,47 +244,23 @@ func (s *DataService) DataSchemaCreate(user_id uuid.UUID, data_schema DataSchema
 		return err
 	}
 
-	switch data_schema.Type {
-	case DataSchemaTypeRaw:
-		switch data_schema.Storage {
-		case DataStorageInternal:
-			err = s.data_schema_raw_storage_table_internal_create(
-				tx,
-				schema_id,
-				data_schema.Schema,
-			)
-			if err != nil {
-				return err
-			}
-		case DataStorageExternal:
-			err = s.data_schema_raw_storage_table_external_create(tx, schema_id)
-			if err != nil {
-				return err
-			}
-		default:
-			panic(fmt.Sprintf("invalid data storage %s", data_schema.Storage))
+	switch data_schema.Storage {
+	case DataStorageInternal:
+		err = s.data_schema_storage_table_internal_create(
+			tx,
+			schema_id,
+			data_schema.Schema,
+		)
+		if err != nil {
+			return err
 		}
-	case DataSchemaTypeTransform:
-		switch data_schema.Storage {
-		case DataStorageInternal:
-			err = s.data_schema_transform_storage_table_internal_create(
-				tx,
-				schema_id,
-				data_schema.Schema,
-			)
-			if err != nil {
-				return err
-			}
-		case DataStorageExternal:
-			err = s.data_schema_transform_storage_table_external_create(tx, schema_id)
-			if err != nil {
-				return err
-			}
-		default:
-			panic(fmt.Sprintf("invalid data storage %s", data_schema.Storage))
+	case DataStorageExternal:
+		err = s.data_schema_storage_table_external_create(tx, schema_id)
+		if err != nil {
+			return err
 		}
 	default:
-		panic(fmt.Sprintf("invalid data schema type %s", data_schema.Type))
+		panic(fmt.Sprintf("invalid data storage %s", data_schema.Storage))
 	}
 
 	err = tx.Commit(s.ctx)
@@ -385,7 +284,6 @@ func (s *DataService) data_schema_create(
 	err := tx.QueryRow(
 		s.ctx,
 		create_schema_query,
-		data_schema.Type,
 		user_id,
 		data_schema.Schema,
 		data_schema.Storage,
@@ -465,49 +363,7 @@ func data_storage_table_equal_column_length_constraint_query(
 	return query
 }
 
-func (s *DataService) data_schema_raw_storage_table_internal_create(
-	tx pgx.Tx,
-	schema_id uuid.UUID,
-	schema []ColumnSchema,
-) error {
-	table_cols := data_storage_table_columns_from_schema(schema)
-	table_name := data_storage_table_name_from_schema_id(schema_id)
-	create_table_query := fmt.Sprintf(
-		"CREATE TABLE %s (_sample_data UUID REFERENCES sample_data_(_id) PRIMARY KEY, %s)",
-		table_name,
-		strings.Join(table_cols, ", "),
-	)
-
-	_, err := tx.Exec(s.ctx, create_table_query)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"schema", schema_id,
-		).Error("could not create data table for schema")
-		return err
-	}
-
-	if len(schema) > 1 {
-		table_constraint_query :=
-			data_storage_table_equal_column_length_constraint_query(
-				table_name,
-				schema,
-			)
-
-		_, err = tx.Exec(s.ctx, table_constraint_query)
-		if err != nil {
-			s.logger.With(
-				"error", err,
-				"schema", schema_id,
-			).Error("could not create data table constraint for schema")
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (s *DataService) data_schema_transform_storage_table_internal_create(
+func (s *DataService) data_schema_storage_table_internal_create(
 	tx pgx.Tx,
 	schema_id uuid.UUID,
 	schema []ColumnSchema,
@@ -516,11 +372,11 @@ func (s *DataService) data_schema_transform_storage_table_internal_create(
 	table_name := data_storage_table_name_from_schema_id(schema_id)
 	create_table_query := fmt.Sprintf(
 		`CREATE TABLE %s (
-			_input UUID NOT NULL,
+			_parent UUID NOT NULL,
 			_transform UUID REFERENCES transform_(_id) NOT NULL,
 			_sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
 			%s,
-			PRIMARY KEY(_input, _transform)
+			PRIMARY KEY(_parent, _transform)
 		)`,
 		table_name,
 		strings.Join(table_cols, ", "),
@@ -559,34 +415,7 @@ func (s *DataService) data_schema_transform_storage_table_internal_create(
 const DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL = "path"
 const DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL = "filename"
 
-func (s *DataService) data_schema_raw_storage_table_external_create(
-	tx pgx.Tx,
-	schema_id uuid.UUID,
-) error {
-	create_table_query := fmt.Sprintf(
-		`CREATE TABLE $1 (
-			_sample_data UUID REFERENCES sample_data_(_id) PRIMARY KEY,
-			%s VARCHAR(4096) NOT NULL,
-			%s VARCHAR(512) NOT NULL
-		)`,
-		DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL,
-		DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL,
-	)
-
-	_, err := tx.Exec(
-		s.ctx,
-		create_table_query,
-		data_storage_table_name_from_schema_id(schema_id),
-	)
-	if err != nil {
-		s.logger.With("error", err, "schema", schema_id).Error("could not create data table for schema")
-		return err
-	}
-
-	return nil
-}
-
-func (s *DataService) data_schema_transform_storage_table_external_create(
+func (s *DataService) data_schema_storage_table_external_create(
 	tx pgx.Tx,
 	schema_id uuid.UUID,
 ) error {
@@ -634,15 +463,35 @@ type DataSchemaResources struct {
 func (s *DataService) GetDataSchemaResources(data_schema_id uuid.UUID) (DataSchemaResources, error) {
 	var schema DataSchema
 	schema_query := `SELECT _id, _creator, _schema, _storage, label, description FROM data_schema_ WHERE _id=$1`
-	err := s.db.Conn.QueryRow(s.ctx, schema_query, data_schema_id).Scan(&schema.Id, &schema.Creator, &schema.Schema, &schema.Storage, &schema.Label, &schema.Description)
+	err := s.db.Conn.QueryRow(
+		s.ctx,
+		schema_query,
+		data_schema_id,
+	).Scan(
+		&schema.Id,
+		&schema.Creator,
+		&schema.Schema,
+		&schema.Storage,
+		&schema.Label,
+		&schema.Description,
+	)
 	if err != nil {
 		s.logger.With("error", err, "schema", data_schema_id).Error("could not get data schema")
 		return DataSchemaResources{}, err
 	}
 
 	var creator User
-	creator_query := "SELECT _id, account_status, email, name, role FROM user_ WHERE _id=$1"
-	err = s.db.Conn.QueryRow(s.ctx, creator_query, schema.Creator).Scan(&creator.Id, &creator.AccountStatus, &creator.Email, &creator.Name, &creator.Role)
+	creator_query := "SELECT _id, account_status, email, name FROM user_ WHERE _id=$1"
+	err = s.db.Conn.QueryRow(
+		s.ctx,
+		creator_query,
+		schema.Creator,
+	).Scan(
+		&creator.Id,
+		&creator.AccountStatus,
+		&creator.Email,
+		&creator.Name,
+	)
 	if err != nil {
 		s.logger.With("error", err, "user", schema.Creator).Error("could not get data schema creator")
 		return DataSchemaResources{}, err
@@ -1726,27 +1575,27 @@ func (s *DataService) save_data_file_path(
 	return file_path.String(), nil
 }
 
-func (s *DataService) GetSampleData(id uuid.UUID) (SampleData, error) {
-	var sample_data SampleData
-	query := `SELECT _id, _sample, _schema, _creator, timestamp, visibility 
-		FROM sample_data_ WHERE _id=$1`
-	err := s.db.Conn.QueryRow(s.ctx, query, id).Scan(
-		&sample_data.Id,
-		&sample_data.Sample,
-		&sample_data.Schema,
-		&sample_data.Creator,
-		&sample_data.Timestamp,
-		&sample_data.Visibility,
-	)
+func (s *DataService) RawDataById(id uuid.UUID) (RawDataRecord, error) {
+	query := `SELECT _id, _sample, _creator, _path, _type, _filename, label, timestamp, visibility 
+		FROM raw_data_ WHERE _id=$1`
+	rows, err := s.db.Conn.Query(s.ctx, query, id)
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"id", id,
 		).Error("could not get sample data")
-		return SampleData{}, err
+		return RawDataRecord{}, err
+	}
+	raw_data, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[RawDataRecord])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"id", id,
+		).Error("could not get sample data")
+		return RawDataRecord{}, err
 	}
 
-	return sample_data, nil
+	return raw_data, nil
 }
 
 type SampleDataUserPermission string
@@ -1810,33 +1659,21 @@ func (s *DataService) GetSampleDataUserPermission(sample_data []uuid.UUID, user 
 	return permissions, nil
 }
 
-func (s *DataService) GetProjectSampleData(project uuid.UUID) ([]SampleData, error) {
+func (s *DataService) ProjectRawDataAll(project uuid.UUID) ([]RawDataRecord, error) {
 	query := `SELECT s._id, s._sample, s._schema, s._creator, s.timestamp, s.visibility, s.label 
 		FROM sample_data_ AS s JOIN project_sample_membership_ as p ON s._sample=p._sample
 		WHERE p._project=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, query, project)
-	sample_data, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleData, error) {
-		var sample_data SampleData
-		err := row.Scan(
-			&sample_data.Id,
-			&sample_data.Sample,
-			&sample_data.Schema,
-			&sample_data.Creator,
-			&sample_data.Timestamp,
-			&sample_data.Visibility,
-			&sample_data.Label,
-		)
-		return sample_data, err
-	})
+	sample_data, err := pgx.CollectRows(rows, pgx.RowToStructByName[RawDataRecord])
 	return sample_data, err
 }
 
 type TransformCreate struct {
-	Input       uuid.UUID
-	Output      uuid.UUID
-	Script      *multipart.FileHeader
-	Label       string
-	Description string
+	SourceSchema      uuid.UUID
+	DestinationSchema uuid.UUID
+	Script            *multipart.FileHeader
+	Label             string
+	Description       string
 }
 
 func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate) (uuid.UUID, error) {
@@ -1850,6 +1687,12 @@ func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate)
 		return uuid.Nil, err
 	}
 
+	transform_id, err := uuid.NewV7()
+	if err != nil {
+		s.logger.With("error", err).Error("could not create transform id")
+		return uuid.Nil, err
+	}
+
 	tx, err := s.db.Conn.Begin(s.ctx)
 	if err != nil {
 		s.logger.With("error", err).Error("could not begin transaction")
@@ -1857,19 +1700,25 @@ func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate)
 	}
 	defer tx.Rollback(s.ctx)
 
-	var id uuid.UUID
+	script_ext := filepath.Ext(transform.Script.Filename)
+	transform_path := filepath.Join(app_dir, AppTransformDir)
+	transform_script_name := fmt.Sprintf("%s%s", transform_id, script_ext)
+	script_path := filepath.Join(transform_path, transform_script_name)
+
 	query :=
-		`INSERT INTO transform_ (_input, _output, _creator, label, description) 
-		VALUES ($1, $2, $3, $4, $5) RETURNING _id`
-	err = tx.QueryRow(
+		`INSERT INTO transform_ (_id, _source, _destination, _script, _creator, label, description) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	_, err = tx.Exec(
 		s.ctx,
 		query,
-		transform.Input,
-		transform.Output,
+		transform_id,
+		transform.SourceSchema,
+		transform.DestinationSchema,
+		script_path,
 		user,
 		transform.Label,
 		transform.Description,
-	).Scan(&id)
+	)
 	if err != nil {
 		s.logger.With(
 			"error", err,
@@ -1879,7 +1728,7 @@ func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate)
 		return uuid.Nil, err
 	}
 
-	trigger_fn_name := fmt.Sprintf("enqueue_transform_job_%s", id.String())
+	trigger_fn_name := fmt.Sprintf("enqueue_transform_job_%s", uuid_to_sql_string(transform_id))
 	trigger_fn_query := fmt.Sprintf(
 		`CREATE FUNCTION %s()
 		RETURNS TRIGGER
@@ -1888,20 +1737,20 @@ func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate)
 		BEGIN
 			INSERT INTO _transform_queue_ (_transform, _payload)
 			VALUES (
-				NEW._transform,
-				NEW._id
+				'%s'::uuid,
+				NEW._sample_data
 			);
 
 			RETURN NEW;
 		END;
 		$$;`,
 		trigger_fn_name,
+		transform_id,
 	)
 	_, err = tx.Exec(s.ctx, trigger_fn_query)
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"transform", id,
 		).Error("could not create transform trigger function")
 		return uuid.Nil, err
 	}
@@ -1912,19 +1761,17 @@ func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate)
 		FOR EACH ROW
 		EXECUTE FUNCTION %s();`,
 		trigger_fn_name,
-
+		data_storage_table_name_from_schema_id(transform.SourceSchema),
 		trigger_fn_name,
 	)
 	_, err = tx.Exec(s.ctx, trigger_query)
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"transform", id,
 		).Error("could not create transform trigger")
 		return uuid.Nil, err
 	}
 
-	transform_path := filepath.Join(app_dir, AppTransformDir)
 	err = os.MkdirAll(transform_path, os.ModePerm)
 	if err != nil {
 		s.logger.With(
@@ -1934,7 +1781,6 @@ func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate)
 		return uuid.Nil, err
 	}
 
-	script_path := filepath.Join(transform_path, uuid.New().String())
 	dst, err := os.Create(script_path)
 	if err != nil {
 		s.logger.With(
@@ -1969,5 +1815,5 @@ func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate)
 		s.logger.With("error", err).Error("could not commit transaction")
 		return uuid.Nil, err
 	}
-	return id, nil
+	return transform_id, nil
 }

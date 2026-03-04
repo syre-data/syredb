@@ -31,25 +31,34 @@ export function project_user_permission_string_to_variant(
     }
 }
 
-export function is_admin_or_owner(
-    user_permission: types.ProjectUserPermission,
+export function has_db_permission(
+    needle: types.DbUserPermission,
+    haystack: types.DbUserPermission[],
 ): boolean {
     return (
-        user_permission === types.ProjectUserPermissionAdmin ||
-        user_permission === types.ProjectUserPermissionOwner
+        haystack.includes(types.DbUserPermissionOwner) ||
+        haystack.includes(needle)
     );
 }
 
-export function user_role_string_to_variant(
+export function user_db_permission_string_to_variant(
     value: string,
-): types.UserRole | undefined {
+): types.DbUserPermission | undefined {
     switch (value) {
         case "owner":
-            return types.UserRoleOwner;
-        case "admin":
-            return types.UserRoleAdmin;
-        case "user":
-            return types.UserRoleUser;
+            return types.DbUserPermissionOwner;
+        case "add_user":
+            return types.DbUserPermissionAddUser;
+        case "modify_user":
+            return types.DbUserPermissionModifyUser;
+        case "create_data_schema":
+            return types.DbUserPermissionCreateDataSchema;
+        case "modify_data_schema":
+            return types.DbUserPermissionModifyDataSchema;
+        case "create_transform":
+            return types.DbUserPermissionCreateTransform;
+        case "create_project":
+            return types.DbUserPermissionCreateProject;
         default:
             return undefined;
     }
@@ -97,19 +106,6 @@ export function data_storage_string_to_variant(
             return types.DataStorageInternal;
         case "file":
             return types.DataStorageExternal;
-        default:
-            return undefined;
-    }
-}
-
-export function data_schema_type_string_to_variant(
-    value: string,
-): types.DataSchemaType | undefined {
-    switch (value) {
-        case "raw":
-            return types.DataSchemaTypeRaw;
-        case "transform":
-            return types.DataSchemaTypeTransform;
         default:
             return undefined;
     }

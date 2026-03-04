@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"syredb/database"
-
-	"errors"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -18,12 +17,16 @@ const AppEmailUsernameKey = "app:email:username"
 const AppEmailPasswordKey = "app:email:password"
 const AppEmailFromKey = "app:email:from"
 
-type UserRole string
+type DbPermission string
 
 const (
-	UserRoleOwner UserRole = "owner"
-	UserRoleAdmin UserRole = "admin"
-	UserRoleUser  UserRole = "user"
+	DbPermissionOwner            DbPermission = "owner"
+	DbPermissionAddUser          DbPermission = "add_user"
+	DbPermissionModifyUser       DbPermission = "modify_user"
+	DbPermissionCreateDataSchema DbPermission = "create_data_schema"
+	DbPermissionModifyDataSchema DbPermission = "modify_data_schema"
+	DbPermissionCreateTransform  DbPermission = "create_transform"
+	DbPermissionCreateProject    DbPermission = "create_project"
 )
 
 type AccountStatus string
@@ -59,17 +62,16 @@ type User struct {
 	AccountStatus AccountStatus
 	Email         string
 	Name          string
-	Role          UserRole
+	DbPermissions []DbPermission
 }
 
 func (s *UserService) UserById(user_id uuid.UUID) (User, error) {
 	user := User{Id: user_id}
-	user_query := "SELECT account_status, email, name, role FROM user_ WHERE _id=$1"
+	user_query := "SELECT account_status, email, name FROM user_ WHERE _id=$1"
 	err := s.db.Conn.QueryRow(s.ctx, user_query, user_id).Scan(
 		&user.AccountStatus,
 		&user.Email,
 		&user.Name,
-		&user.Role,
 	)
 	if err != nil {
 		s.logger.With(
@@ -79,14 +81,38 @@ func (s *UserService) UserById(user_id uuid.UUID) (User, error) {
 		return User{}, err
 	}
 
+	user.DbPermissions, err = s.UserPermissions(user_id)
+	if err != nil {
+		return User{}, err
+	}
+
 	return user, nil
 }
 
+func (s *UserService) UserPermissions(user_id uuid.UUID) ([]DbPermission, error) {
+	query := "SELECT _permission FROM db_user_permission_ WHERE _user=$1"
+	rows, _ := s.db.Conn.Query(s.ctx, query, user_id)
+	permissions, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DbPermission, error) {
+		var permission DbPermission
+		err := row.Scan(&permission)
+		return permission, err
+	})
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"user", user_id,
+		).Error("could not get user db permissions")
+		return nil, err
+	}
+
+	return permissions, nil
+}
+
 type UserCreate struct {
-	Email    string
-	Name     string
-	Password string
-	Role     string
+	Email         string
+	Name          string
+	Password      string
+	DbPermissions []DbPermission
 }
 
 func (s *UserService) CreateUser(user UserCreate) (uuid.UUID, error) {
@@ -98,8 +124,8 @@ func (s *UserService) CreateUser(user UserCreate) (uuid.UUID, error) {
 	defer tx.Rollback(s.ctx)
 
 	var user_id uuid.UUID
-	insert_user_query := "INSERT INTO user_ (email, name, role) VALUES ($1, $2, $3) RETURNING _id"
-	err = tx.QueryRow(s.ctx, insert_user_query, user.Email, user.Name, user.Role).Scan(&user_id)
+	insert_user_query := "INSERT INTO user_ (email, name) VALUES ($1, $2) RETURNING _id"
+	err = tx.QueryRow(s.ctx, insert_user_query, user.Email, user.Name).Scan(&user_id)
 	if err != nil {
 		s.logger.With("error", err).Error("error inserting user")
 		return uuid.Nil, err
@@ -110,6 +136,13 @@ func (s *UserService) CreateUser(user UserCreate) (uuid.UUID, error) {
 	if err != nil {
 		s.logger.With("error", err).Error("error inserting user authentication data")
 		return uuid.Nil, err
+	}
+
+	if len(user.DbPermissions) > 0 {
+		err = s.SetUserPermissions(tx, user_id, user.DbPermissions)
+		if err != nil {
+			return uuid.Nil, err
+		}
 	}
 
 	err = tx.Commit(s.ctx)
@@ -156,51 +189,106 @@ func (s *UserService) DeactivateUser(user_id uuid.UUID) error {
 }
 
 func (s *UserService) UpdateUser(update User) error {
-	update_user_query := "UPDATE user_ SET account_status=$2, email=$3, name=$4, role=$5 WHERE _id=$1"
-	_, err := s.db.Conn.Exec(
+	tx, err := s.db.Conn.Begin(s.ctx)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not begin transaction")
+		return err
+	}
+	defer tx.Rollback(s.ctx)
+
+	update_user_query := "UPDATE user_ SET account_status=$2, email=$3, name=$4 WHERE _id=$1"
+	_, err = tx.Exec(
 		s.ctx,
 		update_user_query,
 		update.Id,
 		update.AccountStatus,
 		update.Email,
 		update.Name,
-		update.Role,
 	)
-
 	if err != nil {
 		s.logger.With("error", err).Error("could not update user")
 		return err
 	}
 
-	return nil
-}
+	err = s.SetUserPermissions(tx, update.Id, update.DbPermissions)
+	if err != nil {
+		return err
+	}
 
-func (s *UserService) GetUserById(user_id uuid.UUID) (User, error) {
-	user := User{Id: user_id}
-	user_query := "SELECT account_status, email, name, role FROM user_ WHERE _id=$1"
-	err := s.db.Conn.QueryRow(s.ctx, user_query, user_id).Scan(
-		&user.AccountStatus,
-		&user.Email,
-		&user.Name,
-		&user.Role,
-	)
+	err = tx.Commit(s.ctx)
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"user", user_id,
-		).Error("could not get user")
-		return User{}, err
+		).Error("could not commit transaction")
+		return err
 	}
-
-	return user, nil
+	return nil
 }
 
-func (s *UserService) GetUsersAll() ([]User, error) {
-	users_query := "SELECT _id, account_status, email, name, role FROM user_ ORDER BY _id"
+func (s *UserService) SetUserPermissions(tx pgx.Tx, user uuid.UUID, permissions []DbPermission) error {
+	add_permission := []DbPermission{}
+	remove_permission := []DbPermission{}
+	current, err := s.UserPermissions(user)
+	if err != nil {
+		return err
+	}
+	for _, permission := range permissions {
+		if !slices.Contains(current, permission) {
+			add_permission = append(add_permission, permission)
+		}
+	}
+	for _, permission := range current {
+		if !slices.Contains(permissions, permission) {
+			remove_permission = append(remove_permission, permission)
+		}
+	}
+
+	remove_permission_query := "DELETE FROM db_user_permission_ WHERE _user=$1 AND _permissions=ANY($2)"
+	_, err = tx.Exec(s.ctx, remove_permission_query, user, remove_permission)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"user", user,
+			"permissions", remove_permission,
+		).Error("could not remove db user permissions")
+		return err
+	}
+
+	if len(add_permission) > 0 {
+		const argIdxOffset = 1
+		add_args := make([]any, len(add_permission)+argIdxOffset)
+		add_args[0] = user
+		var add_permission_query strings.Builder
+		add_permission_query.WriteString("INSERT INTO db_user_permission_ (_user, _permission) VALUES ")
+		for idx, permission := range add_permission {
+			arg_idx := idx + argIdxOffset
+			add_args[arg_idx] = permission
+			if idx > 0 {
+				add_permission_query.WriteString(", ")
+			}
+			fmt.Fprintf(&add_permission_query, "($1, $%d)", arg_idx+1)
+		}
+		_, err = tx.Exec(s.ctx, add_permission_query.String(), add_args...)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"user", user,
+				"permissions", add_permission,
+			).Error("could not add db user permissions")
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *UserService) AllUsers() ([]User, error) {
+	users_query := "SELECT _id, account_status, email, name FROM user_ ORDER BY _id"
 	user_rows, _ := s.db.Conn.Query(s.ctx, users_query)
 	users, err := pgx.CollectRows(user_rows, func(row pgx.CollectableRow) (User, error) {
 		var user User
-		err := row.Scan(&user.Id, &user.AccountStatus, &user.Email, &user.Name, &user.Role)
+		err := row.Scan(&user.Id, &user.AccountStatus, &user.Email, &user.Name)
 		return user, err
 	})
 	if err != nil {
@@ -208,17 +296,19 @@ func (s *UserService) GetUsersAll() ([]User, error) {
 		return nil, err
 	}
 
+	// TODO: get user permissions
+
 	return users, nil
 }
 
-func (s *UserService) GetUsersById(user_ids []uuid.UUID) ([]User, error) {
+func (s *UserService) UsersById(user_ids []uuid.UUID) ([]User, error) {
 	user_ids_str := make([]string, len(user_ids))
 	for idx, id := range user_ids {
 		user_ids_str[idx] = fmt.Sprintf("'%s'", id)
 	}
 
 	users_query := fmt.Sprintf(
-		`SELECT _id, account_status, email, name, role FROM user_
+		`SELECT _id, account_status, email, name FROM user_
 		WHERE _id IN (%s)`,
 		strings.Join(user_ids_str, ", "),
 	)
@@ -226,7 +316,7 @@ func (s *UserService) GetUsersById(user_ids []uuid.UUID) ([]User, error) {
 	rows, _ := s.db.Conn.Query(s.ctx, users_query)
 	users, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (User, error) {
 		var user User
-		err := row.Scan(&user.Id, &user.AccountStatus, &user.Email, &user.Name, &user.Role)
+		err := row.Scan(&user.Id, &user.AccountStatus, &user.Email, &user.Name)
 		return user, err
 	})
 	if err != nil {
@@ -237,33 +327,13 @@ func (s *UserService) GetUsersById(user_ids []uuid.UUID) ([]User, error) {
 	return users, nil
 }
 
-func (s *UserService) UserRole(user uuid.UUID) (UserRole, error) {
-	if user == uuid.Nil {
-		return UserRole(""), errors.New("nil id")
-	}
-
-	var user_role UserRole
-	user_role_query := "SELECT role FROM user_ WHERE _id=$1"
-	err := s.db.Conn.QueryRow(
-		s.ctx,
-		user_role_query,
-		user,
-	).Scan(&user_role)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return UserRole(""), nil
-		} else {
-			return UserRole(""), err
-		}
-	}
-
-	return user_role, nil
-}
-
-func (s *UserService) UserHasRole(user uuid.UUID, role UserRole) (bool, error) {
-	user_role_query := "SELECT 1 FROM user_ WHERE _id=$1 AND role=$2"
-	user_row := s.db.Conn.QueryRow(s.ctx, user_role_query, user, role)
+func (s *UserService) UserHasPermission(user uuid.UUID, permission DbPermission) (bool, error) {
+	query := fmt.Sprintf(
+		"SELECT 1 FROM db_user_permission_ WHERE _user=$1 AND _permission=ANY('{%s, $2}')",
+		DbPermissionOwner,
+	)
+	user_row := s.db.Conn.QueryRow(s.ctx, query, user, permission)
 	err := user_row.Scan()
-	has_role := err != nil
-	return has_role, nil
+	has_permission := err != nil
+	return has_permission, nil
 }

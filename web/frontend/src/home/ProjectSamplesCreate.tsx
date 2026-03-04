@@ -60,7 +60,10 @@ function ProjectSamplesCreateError({
     const err = error as common.BackendError;
     console.error(err);
     return (
-        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="pt-4 text-center"
+        >
             <div>Could not load project data</div>
             <div>{err.message}</div>
         </SuspenseError>

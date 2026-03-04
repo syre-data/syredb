@@ -48,8 +48,11 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 	user_id_query := "SELECT _id FROM user_ WHERE email=$1"
 	err := h.db.Conn.QueryRow(c.Request().Context(), user_id_query, email).Scan(&user_id)
 	if err != nil {
-		c.Logger().With("error", err).Error("could not retrieve user id")
-		return c.NoContent(http.StatusNotFound)
+		c.Logger().With(
+			"error", err,
+			"email", email,
+		).Error("could not retrieve user id")
+		return c.NoContent(http.StatusUnauthorized)
 	}
 
 	var hash string
@@ -57,7 +60,7 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 	err = h.db.Conn.QueryRow(c.Request().Context(), auth_query, user_id).Scan(&hash)
 	if err != nil {
 		c.Logger().With("error", err).Error("could not retrieve user auth hash")
-		return c.NoContent(http.StatusNotFound)
+		return c.NoContent(http.StatusUnauthorized)
 	}
 
 	authenticated, err := h.auth_service.ComparePasswordAndHash(password, hash)

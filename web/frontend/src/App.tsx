@@ -3,7 +3,6 @@ import "./App.css";
 import * as appStateCtx from "./AppStateContext";
 import Home from "./home/Home";
 import * as types from "@/types";
-import icon from "@/icon";
 import {
     QueryClient,
     QueryClientProvider,
@@ -13,6 +12,7 @@ import type { FallbackProps } from "react-error-boundary";
 import Loading from "./components/Loading";
 import { ErrorBoundary } from "react-error-boundary";
 import user_service from "@/service/user.service";
+import { SuspenseError } from "./components";
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -37,27 +37,12 @@ export default function App() {
 function AppError({ error, resetErrorBoundary }: FallbackProps) {
     console.error(error);
     return (
-        <div className="flex flex-col gap-2 items-center pt-4">
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="pt-4 text-center"
+        >
             <div>An error occurred</div>
-            <div className="flex gap-2 items-center">
-                <div>
-                    <a href="/">
-                        <button type="button" className="btn-cmd">
-                            <icon.Home />
-                        </button>
-                    </a>
-                </div>
-                <div>
-                    <button
-                        type="button"
-                        onMouseDown={resetErrorBoundary}
-                        className="btn-cmd"
-                    >
-                        <icon.Reload />
-                    </button>
-                </div>
-            </div>
-        </div>
+        </SuspenseError>
     );
 }
 
@@ -82,29 +67,13 @@ function ProvideAppState({ children }: ProvideAppStateProps) {
 }
 
 function LoadUserError({ error, resetErrorBoundary }: FallbackProps) {
-    console.error(error);
     return (
-        <div className="flex flex-col gap-2 items-center pt-4">
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="pt-4 text-center"
+        >
             <div>Could not get user</div>
-            <div className="flex gap-2 items-center">
-                <div>
-                    <a href="/">
-                        <button type="button" className="btn-cmd">
-                            <icon.Home />
-                        </button>
-                    </a>
-                </div>
-                <div>
-                    <button
-                        type="button"
-                        onMouseDown={resetErrorBoundary}
-                        className="btn-cmd"
-                    >
-                        <icon.Reload />
-                    </button>
-                </div>
-            </div>
-        </div>
+        </SuspenseError>
     );
 }
 

@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -24,12 +26,13 @@ import (
 	"syredb/service"
 )
 
-const DevFrontendPath = "../frontend/dist"
+const devFrontendPath = "../frontend/dist"
 const JWTContextKey string = "user"
 const EnvKey = "SYREDB_ENV"
 const IncludePath = "../frontend/dist"
 
 func main() {
+	ctx := context.Background()
 	db_credentials, err := database.CollectCredentialsFromEnvAndFlags()
 	if err != nil {
 		panic(fmt.Errorf("could not obtain database credentials: #%v", err))
@@ -41,7 +44,6 @@ func main() {
 	}
 	defer db.Close()
 
-	ctx := context.Background()
 	e := echo.New()
 	api_middleware := NewApiMiddleware(ctx, db)
 
@@ -57,6 +59,10 @@ func main() {
 	user_handler := handler.NewUserHandler(db, user_service, app_service)
 	project_handler := handler.NewProjectHandler(db, project_service, sample_service)
 	data_handler := handler.NewDataHandler(db, data_service, user_service, project_service)
+
+	transform_daemon_logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	transform_daemon := NewTransformDaemon(ctx, transform_daemon_logger, db, data_service)
+	go transform_daemon.Start(ctx)
 
 	env_session_secret, env_session_secret_exists := os.LookupEnv(handler.EnvSessionSecretKey)
 	if !env_session_secret_exists {
@@ -94,8 +100,13 @@ func main() {
 		},
 		ContinueOnIgnoredError: true,
 	}))
+
+	static_root, err := filepath.Abs(devFrontendPath)
+	if err != nil {
+		panic(err)
+	}
 	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
-		Root:       DevFrontendPath,
+		Root:       static_root,
 		Index:      "index.html",
 		HTML5:      true,
 		Browse:     false,
@@ -112,7 +123,7 @@ func main() {
 		}),
 	}))
 
-	e.Static("public", "public")
+	e.Static("public", "_public")
 	e.Renderer = &echo.TemplateRenderer{
 		Template: template.Must(template.ParseGlob("templates/*.tmpl")),
 	}
@@ -224,8 +235,8 @@ func register_routes(
 	api.GET("/data-schemas", data.GetDataSchemasAll)
 	api.POST("/data-schema", data.CreateDataSchema)
 	api.GET("/data-schema", data.GetDataSchemaResources)
-	api.GET("/sample-data/single", data.DownloadSampleDataSingle)
-	api.GET("/sample-data/project", data.DownloadSampleDataProject)
+	api.GET("/sample-data/single", data.DownloadRawDataSingle)
+	api.GET("/sample-data/project", data.DownloadRawDataProject)
 	api.POST("/transform", data.CreateTransform)
 }
 
@@ -236,7 +247,7 @@ func proxy_to_vite(e *echo.Echo) {
 	e.GET("/*", echo.WrapHandler(proxy))
 }
 
-// //go:embed include/*
+// //go:embed _include/*
 // var embeddedFiles embed.FS
 
 // env_production := os.Getenv(ENV_KEY) == "production"

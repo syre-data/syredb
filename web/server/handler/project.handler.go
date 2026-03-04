@@ -121,22 +121,25 @@ func (h *ProjectHandler) GetProjectResources(c *echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	_, err = h.project_service.ProjectUserPermission(project_id, user_id)
+	sufficient_permission, err := h.project_service.UserHasProjectPermission(
+		service.ProjectPermissionRead,
+		user_id,
+		project_id,
+	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			c.Logger().With(
-				"user", user_id,
-				"project", project_id,
-			).Error("insufficient permission for project resources")
-			return c.NoContent(http.StatusUnauthorized)
-		}
-
 		c.Logger().With(
 			"error", err,
 			"user", user_id,
 			"project", project_id,
 		).Error("could not get user project permissions")
 		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !sufficient_permission {
+		c.Logger().With(
+			"user", user_id,
+			"project", project_id,
+		).Error("insufficient permission for project resources")
+		return c.NoContent(http.StatusUnauthorized)
 	}
 
 	resources, err := h.project_service.GetProjectResources(user_id, project_id)
@@ -186,7 +189,11 @@ func (h *ProjectHandler) CreateProjectSamples(c *echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	user_permission, err := h.project_service.ProjectUserPermission(payload.Project, user_id)
+	sufficient_permission, err := h.project_service.UserHasProjectPermission(
+		service.ProjectPermissionCreateSample,
+		payload.Project,
+		user_id,
+	)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -194,9 +201,7 @@ func (h *ProjectHandler) CreateProjectSamples(c *echo.Context) error {
 			"project", payload.Project,
 		).Error("could not get project user permission")
 	}
-	if user_permission != service.ProjectUserPermissionOwner &&
-		user_permission != service.ProjectUserPermissionAdmin &&
-		user_permission != service.ProjectUserPermissionReadWrite {
+	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
 			"project", payload.Project,
@@ -316,7 +321,7 @@ func (h *ProjectHandler) GetProjectSampleResources(c *echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	_, err = h.project_service.ProjectUserPermission(project_id, user_id)
+	_, err = h.project_service.ProjectUserPermissions(project_id, user_id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.Logger().With(
@@ -406,7 +411,7 @@ func (h *ProjectHandler) UpdateProjectSample(c *echo.Context) error {
 	user_permissions := resources.ProjectSampleUserPermissions[user_permissions_idx].Permissions
 
 	if payload.Update.Label != resources.ProjectMembership.Label &&
-		!slices.Contains(user_permissions, service.ProjectSampleUserPermissionModifyLabel) {
+		!slices.Contains(user_permissions, service.ProjectSamplePermissionModifyLabel) {
 		c.Logger().With(
 			"user", user_id,
 			"project", payload.Project,
@@ -425,7 +430,7 @@ func (h *ProjectHandler) UpdateProjectSample(c *echo.Context) error {
 		}
 	}
 	if !tags_equal &&
-		!slices.Contains(user_permissions, service.ProjectSampleUserPermissionModifyTags) {
+		!slices.Contains(user_permissions, service.ProjectSamplePermissionModifyTags) {
 		c.Logger().With(
 			"user", user_id,
 			"project", payload.Project,

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"syredb/database"
@@ -17,21 +16,20 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type ProjectUserPermission string
+type ProjectPermission string
 
 const (
-	ProjectUserPermissionRead      ProjectUserPermission = "read"
-	ProjectUserPermissionReadWrite ProjectUserPermission = "read_write"
-	ProjectUserPermissionAdmin     ProjectUserPermission = "admin"
-	ProjectUserPermissionOwner     ProjectUserPermission = "owner"
+	ProjectPermissionOwner        ProjectPermission = "owner"
+	ProjectPermissionCreateSample ProjectPermission = "create_sample"
+	ProjectPermissionRead         ProjectPermission = "read"
 )
 
-type ProjectSampleUserPermission string
+type ProjectSamplePermission string
 
 const (
-	ProjectSampleUserPermissionModifyLabel      ProjectSampleUserPermission = "modify_label"
-	ProjectSampleUserPermissionModifyTags       ProjectSampleUserPermission = "modify_tags"
-	ProjectSampleUserPermissionModifyProperties ProjectSampleUserPermission = "modify_properties"
+	ProjectSamplePermissionModifyLabel      ProjectSamplePermission = "modify_label"
+	ProjectSamplePermissionModifyTags       ProjectSamplePermission = "modify_tags"
+	ProjectSamplePermissionModifyProperties ProjectSamplePermission = "modify_properties"
 )
 
 type Visibility string
@@ -66,11 +64,11 @@ func NewProjectService(
 }
 
 type Project struct {
-	Id          uuid.UUID
-	Creator     uuid.UUID
-	Label       string
-	Description string
-	Visibility  Visibility
+	Id          uuid.UUID  `db:"_id"`
+	Creator     uuid.UUID  `db:"_creator"`
+	Label       string     `db:"label"`
+	Description string     `db:"description"`
+	Visibility  Visibility `db:"visibility"`
 }
 
 func (s *ProjectService) GetUserProjects(user uuid.UUID) ([]Project, error) {
@@ -143,7 +141,7 @@ func (s *ProjectService) CreateProject(
 		set_user_permission_query,
 		project_id,
 		user_id,
-		ProjectUserPermissionOwner,
+		ProjectPermissionOwner,
 	)
 	if err != nil {
 		s.logger.With("error", err).Error("could not create user project permission")
@@ -159,30 +157,46 @@ func (s *ProjectService) CreateProject(
 	return project_id, nil
 }
 
-func (s *ProjectService) ProjectUserPermission(
+func (s *ProjectService) ProjectUserPermissions(
 	project uuid.UUID,
 	user uuid.UUID,
-) (ProjectUserPermission, error) {
-	var permission ProjectUserPermission
-	query := "SELECT permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2"
-	err := s.db.Conn.QueryRow(
+) ([]ProjectPermission, error) {
+	query := "SELECT _permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2"
+	rows, _ := s.db.Conn.Query(
 		s.ctx,
 		query,
 		project,
 		user,
-	).Scan(&permission)
+	)
+	permissions, err := pgx.CollectRows(rows, pgx.RowTo[ProjectPermission])
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			s.logger.With(
 				"error", err,
 				"user", user,
 				"project", project,
-			).Error("could not retrieve project user permission")
+			).Error("could not retrieve project user permissions")
 		}
-		return "", err
+		return nil, err
 	}
 
-	return permission, nil
+	return permissions, nil
+}
+
+func (s *ProjectService) UserHasProjectPermission(
+	needle ProjectPermission,
+	user uuid.UUID,
+	project uuid.UUID,
+) (bool, error) {
+	permissions, err := s.ProjectUserPermissions(project, user)
+	if err != nil {
+		return false, err
+	}
+
+	sufficient := slices.Contains(permissions, ProjectPermissionOwner) ||
+		slices.Contains(permissions, needle)
+
+	return sufficient, nil
 }
 
 type PropertyType string
@@ -223,14 +237,23 @@ type ProjectSample struct {
 	NoteCount         uint
 }
 
-type SampleData struct {
-	Id         uuid.UUID
-	Sample     uuid.UUID
+type RawDataRecord struct {
+	Id         uuid.UUID  `db:"_id"`
+	Sample     uuid.UUID  `db:"_sample"`
+	Creator    uuid.UUID  `db:"_creator"`
+	Path       string     `db:"_path"`
+	Type       uuid.UUID  `db:"_type"`
+	Filename   *string    `db:"_filename"`
+	Label      *string    `db:"label"`
+	Timestamp  time.Time  `db:"timestamp"`
+	Visibility Visibility `db:"visibility"`
+}
+
+type DerivedData struct {
+	Parent     uuid.UUID
+	Transform  uuid.UUID
+	SampleData uuid.UUID
 	Schema     uuid.UUID
-	Creator    uuid.UUID
-	Timestamp  time.Time
-	Visibility Visibility
-	Label      *string
 }
 
 type ProjectSampleGroup struct {
@@ -248,15 +271,15 @@ type SampleGroupRelation struct {
 }
 
 type ProjectResources struct {
-	Project               Project
-	ProjectTags           []string
-	Samples               []ProjectSample
-	SampleData            []SampleData
-	DataSchemas           []DataSchema
-	SampleGroups          []ProjectSampleGroup
-	SampleGroupRelations  []SampleGroupRelation
-	ProjectNoteCount      uint
-	ProjectUserPermission ProjectUserPermission
+	Project              Project
+	ProjectTags          []string
+	Samples              []ProjectSample
+	RawData              []RawDataRecord
+	DataSchemas          []DataSchema
+	SampleGroups         []ProjectSampleGroup
+	SampleGroupRelations []SampleGroupRelation
+	ProjectNoteCount     uint
+	ProjectPermissions   []ProjectPermission
 }
 
 func (s *ProjectService) GetProjectResources(
@@ -286,15 +309,7 @@ func (s *ProjectService) GetProjectResources(
 		return ProjectResources{}, err
 	}
 
-	project_user_permission_query :=
-		`SELECT permission FROM project_user_permission_ 
-		WHERE _project=$1 AND _user=$2`
-	err = s.db.Conn.QueryRow(
-		s.ctx,
-		project_user_permission_query,
-		project_id,
-		user_id,
-	).Scan(&project_resources.ProjectUserPermission)
+	project_resources.ProjectPermissions, err = s.ProjectUserPermissions(project_id, user_id)
 	if err != nil {
 		s.logger.With(
 			"error", err,
@@ -308,11 +323,7 @@ func (s *ProjectService) GetProjectResources(
 	project_tag_rows, _ := s.db.Conn.Query(s.ctx, project_tags_query, project_id)
 	project_resources.ProjectTags, err = pgx.CollectRows(
 		project_tag_rows,
-		func(row pgx.CollectableRow) (string, error) {
-			var tag string
-			err := row.Scan(&tag)
-			return tag, err
-		},
+		pgx.RowTo[string],
 	)
 	if err != nil {
 		s.logger.With(
@@ -336,12 +347,11 @@ func (s *ProjectService) GetProjectResources(
 		).Error("could not get project note count")
 	}
 
-	project_sample_membership_query := `
-		SELECT _sample, _creator, _timestamp, label 
+	project_sample_membership_query :=
+		`SELECT _sample, _creator, _timestamp, label 
 		FROM project_sample_membership_ 
 		WHERE _project=$1
-		ORDER BY label
-	`
+		ORDER BY label`
 	project_sample_membership_rows, _ := s.db.Conn.Query(
 		s.ctx,
 		project_sample_membership_query,
@@ -392,39 +402,25 @@ func (s *ProjectService) GetProjectResources(
 		project_resources.Samples[idx].NoteCount = info.NoteCount
 	}
 
-	sample_data_query :=
-		`SELECT _id, _sample, _schema, _creator, timestamp FROM sample_data_ 
+	raw_data_query :=
+		`SELECT _id, _sample, _creator, _path, _type, _filename, label, timestamp, visibility FROM raw_data_ 
 		WHERE _sample=ANY($1)`
-	sample_data_rows, _ := s.db.Conn.Query(s.ctx, sample_data_query, sample_ids)
-	project_resources.SampleData, err = pgx.CollectRows(
-		sample_data_rows,
-		func(row pgx.CollectableRow) (SampleData, error) {
-			var sample_data SampleData
-			err := row.Scan(
-				&sample_data.Id,
-				&sample_data.Sample,
-				&sample_data.Schema,
-				&sample_data.Creator,
-				&sample_data.Timestamp,
-			)
-			return sample_data, err
-		},
+	raw_data_rows, _ := s.db.Conn.Query(s.ctx, raw_data_query, sample_ids)
+	project_resources.RawData, err = pgx.CollectRows(
+		raw_data_rows,
+		pgx.RowToStructByName[RawDataRecord],
 	)
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"query", sample_data_query,
+			"query", raw_data_query,
 			"samples", sample_ids,
 		).Error("could not get sample data")
 		return ProjectResources{}, err
 	}
 
 	data_schema_ids := []uuid.UUID{}
-	for _, sample_data := range project_resources.SampleData {
-		if !slices.Contains(data_schema_ids, sample_data.Schema) {
-			data_schema_ids = append(data_schema_ids, sample_data.Schema)
-		}
-	}
+	// TODO: Get relevent data schemas
 	project_resources.DataSchemas, err = s.data_service.GetDataSchemasById(data_schema_ids)
 	if err != nil {
 		return ProjectResources{}, err
@@ -569,12 +565,12 @@ func (s *ProjectService) get_project_resources_sample_info(
 }
 
 type ProjectWithUserPermission struct {
-	Id             uuid.UUID
-	Creator        uuid.UUID
-	Label          string
-	Description    string
-	Visibility     Visibility
-	UserPermission ProjectUserPermission
+	Id          uuid.UUID  `db:"_id"`
+	Creator     uuid.UUID  `db:"_creator"`
+	Label       string     `db:"label"`
+	Description string     `db:"description"`
+	Visibility  Visibility `db:"visibility"`
+	Permissions []ProjectPermission
 }
 
 func (s *ProjectService) GetProjectWithUserPermission(
@@ -584,37 +580,23 @@ func (s *ProjectService) GetProjectWithUserPermission(
 	var project ProjectWithUserPermission
 	project_query :=
 		"SELECT _id, _creator, label, description, visibility FROM project_ WHERE _id=$1"
-	err := s.db.Conn.QueryRow(
+	rows, _ := s.db.Conn.Query(
 		s.ctx,
 		project_query,
 		project_id,
-	).Scan(
-		&project.Id,
-		&project.Creator,
-		&project.Label,
-		&project.Description,
-		&project.Visibility,
 	)
-	if err != nil {
-		s.logger.With("error", err).Error("could not get project")
-		return ProjectWithUserPermission{}, err
-	}
-
-	project_user_permission_query :=
-		`SELECT permission FROM project_user_permission_ WHERE _project=$1 AND _user=$2`
-	err = s.db.Conn.QueryRow(
-		s.ctx,
-		project_user_permission_query,
-		project_id,
-		user_id,
-	).Scan(&project.UserPermission)
+	project, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByNameLax[ProjectWithUserPermission])
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"query", project_user_permission_query,
-			"project", project_id,
 			"user", user_id,
-		).Error("could not get project user permission")
+			"project", project_id,
+		).Error("could not get project")
+		return ProjectWithUserPermission{}, err
+	}
+
+	project.Permissions, err = s.ProjectUserPermissions(project_id, user_id)
+	if err != nil {
 		return ProjectWithUserPermission{}, err
 	}
 
@@ -638,13 +620,6 @@ type ProjectSampleDataPropertyCreate struct {
 	Key   string
 	Type  PropertyType
 	Value any // TODO: match type
-}
-
-type sampleDataParsed struct {
-	SampleIndex int
-	DataIndex   int
-	Timestamp   time.Time
-	Payload     any
 }
 
 type SampleDataPayloadExternal struct {
@@ -672,19 +647,6 @@ func (s *ProjectService) CreateProjectSamples(
 ) error {
 	if len(samples) == 0 {
 		return nil
-	}
-
-	data_schemas, err := s.create_project_samples_sample_data_schemas(samples)
-	if err != nil {
-		return err
-	}
-
-	schema_data, err := s.create_project_samples_parse_sample_data_to_schema(
-		samples,
-		data_schemas,
-	)
-	if err != nil {
-		return err
 	}
 
 	tx, err := s.db.Conn.Begin(s.ctx)
@@ -720,9 +682,8 @@ func (s *ProjectService) CreateProjectSamples(
 		return err
 	}
 
-	sample_data_ids, err := s.create_project_samples_create_sample_data(
+	raw_data_ids, err := s.create_project_samples_create_raw_data(
 		tx,
-		schema_data,
 		sample_ids,
 		user_id,
 	)
@@ -730,28 +691,20 @@ func (s *ProjectService) CreateProjectSamples(
 		return err
 	}
 
-	err = s.create_project_samples_create_sample_data_properties(
+	err = s.create_project_samples_create_raw_data_properties(
 		tx,
-		sample_data_ids,
+		raw_data_ids,
 		samples,
 	)
 	if err != nil {
 		return err
 	}
 
-	err = s.create_project_samples_store_sample_data(
-		tx,
-		schema_data,
-		sample_data_ids,
-		data_schemas,
-	)
-	if err != nil {
-		return err
-	}
+	// TODO: Store raw data
 
-	err = s.create_project_samples_sample_data_user_permisson_as_owner(
+	err = s.create_project_samples_raw_data_user_permisson_as_owner(
 		tx,
-		sample_data_ids,
+		raw_data_ids,
 		user_id,
 	)
 	if err != nil {
@@ -785,105 +738,6 @@ func (s *ProjectService) CreateProjectSamples(
 	}
 
 	return nil
-}
-
-func (s *ProjectService) create_project_samples_sample_data_schemas(
-	samples []ProjectSampleCreate,
-) ([]DataSchema, error) {
-	schema_ids := []uuid.UUID{}
-	for _, sample := range samples {
-		for _, data := range sample.Data {
-			present := slices.Index(schema_ids, data.Schema) > -1
-			if !present {
-				schema_ids = append(schema_ids, data.Schema)
-			}
-		}
-	}
-
-	data_schemas, err := s.data_service.GetDataSchemasById(schema_ids)
-	if err != nil {
-		s.logger.With("error", err).Error("could not get data schemas")
-		return nil, err
-	}
-
-	return data_schemas, nil
-}
-
-func (s *ProjectService) create_project_samples_parse_sample_data_to_schema(
-	samples []ProjectSampleCreate,
-	data_schemas []DataSchema,
-) (map[uuid.UUID][]sampleDataParsed, error) {
-	schema_id_counts := make(map[uuid.UUID]int)
-	for _, sample := range samples {
-		for _, data := range sample.Data {
-			count, present := schema_id_counts[data.Schema]
-			if !present {
-				schema_id_counts[data.Schema] = 1
-			} else {
-				schema_id_counts[data.Schema] = count + 1
-			}
-		}
-	}
-
-	errs := ParseSampleDataErrors{}
-	schema_data_idx := make(map[uuid.UUID]int, len(data_schemas))
-	schema_data := make(map[uuid.UUID][]sampleDataParsed, len(data_schemas))
-	for schema_id, count := range schema_id_counts {
-		schema_data[schema_id] = make([]sampleDataParsed, count)
-	}
-	for sample_idx, sample := range samples {
-		for data_idx, data := range sample.Data {
-			data_schema_idx := slices.IndexFunc(data_schemas, func(schema DataSchema) bool {
-				return schema.Id == data.Schema
-			})
-			data_schema := data_schemas[data_schema_idx]
-			ext := filepath.Ext(data.File.Name)
-			data_parsed, err := parse_data_file_to_schema(ext, data.File.File, data_schema)
-			if err != nil {
-				s.logger.With(
-					"error", err,
-					"sample", sample.Label,
-					"data_idx", data_idx,
-				).Error("invalid sample data")
-				errs.errors = append(errs.errors, err)
-				continue
-			}
-
-			var payload any
-			switch data_schema.Storage {
-			case DataStorageInternal:
-				payload = data_parsed
-			case DataStorageExternal:
-				payload = SampleDataPayloadExternal{
-					Path:     "TODO",
-					Filename: data.File.Name,
-				}
-			default:
-				s.logger.With(
-					"data_schema", data.Schema,
-					"storage", data_schema.Storage,
-				).Error("invalid storage type")
-				panic("invalid storage type")
-			}
-
-			sample_data_parsed := sampleDataParsed{
-				SampleIndex: sample_idx,
-				DataIndex:   data_idx,
-				Timestamp:   data.Timestamp,
-				Payload:     payload,
-			}
-			schema_idx := schema_data_idx[data.Schema]
-			schema_data[data.Schema][schema_idx] = sample_data_parsed
-			schema_data_idx[data.Schema] += 1
-		}
-	}
-
-	if len(errs.errors) > 0 {
-		s.logger.With("errors", errs.errors).Error("invalid data")
-		return nil, &errs
-	}
-
-	return schema_data, nil
 }
 
 func (s *ProjectService) create_project_samples_create_samples(
@@ -1071,166 +925,35 @@ func (s *ProjectService) create_project_samples_create_sample_properties(
 	return nil
 }
 
-type sampleDataIdx struct {
-	SampleIndex int
-	DataIndex   int
+type rawDataIdx struct {
+	RawIndex  int
+	DataIndex int
 }
 
-func (s *ProjectService) create_project_samples_create_sample_data(
+func (s *ProjectService) create_project_samples_create_raw_data(
 	tx pgx.Tx,
-	schema_data map[uuid.UUID][]sampleDataParsed,
 	sample_ids []uuid.UUID,
 	user_id uuid.UUID,
-) (map[sampleDataIdx]uuid.UUID, error) {
-	const QUERY_ARGS_SCHEMA_ID_OFFSET = 1
-	var QUERY_ARGS_SAMPLE_ID_OFFSET = QUERY_ARGS_SCHEMA_ID_OFFSET + len(schema_data)
-	var QUERY_ARGS_SAMPLE_DATA_OFFSET = QUERY_ARGS_SAMPLE_ID_OFFSET + len(sample_ids)
-
-	sample_data_count := 0
-	for _, data := range schema_data {
-		sample_data_count += len(data)
-	}
-	if sample_data_count == 0 {
-		return map[sampleDataIdx]uuid.UUID{}, nil
-	}
-
-	args_size := 1 + len(schema_data) + len(sample_ids) + sample_data_count
-	args := make([]any, args_size)
-	args[0] = user_id
-	idx := QUERY_ARGS_SCHEMA_ID_OFFSET
-	for schema_id := range schema_data {
-		args[idx] = schema_id
-		idx += 1
-	}
-	for idx, sample_id := range sample_ids {
-		args[idx+QUERY_ARGS_SAMPLE_ID_OFFSET] = sample_id
-	}
-
-	var sample_data_create_query strings.Builder
-	sample_data_create_query.WriteString(
-		"INSERT INTO sample_data_ (_sample, _schema, _creator, timestamp) VALUES ",
-	)
-
-	sample_data_id_idx := make(map[sampleDataIdx]int, sample_data_count)
-	sample_data_arg_idx := 0
-	for schema_id, sample_data := range schema_data {
-		schema_arg_idx := slices.IndexFunc(args, func(value any) bool {
-			return value == schema_id
-		})
-
-		for _, sample_data_parsed := range sample_data {
-			if sample_data_arg_idx > 0 {
-				sample_data_create_query.WriteString(", ")
-			}
-
-			sample_id_arg_idx := sample_data_parsed.SampleIndex + QUERY_ARGS_SAMPLE_ID_OFFSET
-			timestamp_arg_idx := sample_data_arg_idx + QUERY_ARGS_SAMPLE_DATA_OFFSET
-			args[timestamp_arg_idx] = sample_data_parsed.Timestamp
-			fmt.Fprintf(
-				&sample_data_create_query,
-				"($%d, $%d, $1, $%d)",
-				sample_id_arg_idx+1,
-				schema_arg_idx+1,
-				timestamp_arg_idx+1,
-			)
-
-			data_key := sampleDataIdx{
-				SampleIndex: sample_data_parsed.SampleIndex,
-				DataIndex:   sample_data_parsed.DataIndex,
-			}
-			sample_data_id_idx[data_key] = sample_data_arg_idx
-
-			sample_data_arg_idx += 1
-		}
-	}
-	sample_data_create_query.WriteString(" RETURNING _id")
-
-	rows, err := tx.Query(s.ctx, sample_data_create_query.String(), args...)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"query", sample_data_create_query.String(),
-			"args", args,
-		).Error("could not create samples")
-		return nil, err
-	}
-
-	ids, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (uuid.UUID, error) {
-		var id uuid.UUID
-		err := row.Scan(&id)
-		return id, err
-	})
-	if err != nil {
-		s.logger.With("error", err).Error("could not collect user projects")
-		return nil, err
-	}
-
-	sample_data_ids := make(map[sampleDataIdx]uuid.UUID, sample_data_count)
-	for key, id_idx := range sample_data_id_idx {
-		sample_data_ids[key] = ids[id_idx]
-	}
-	return sample_data_ids, nil
+) (map[rawDataIdx]uuid.UUID, error) {
+	panic("")
 }
 
-func (s *ProjectService) create_project_samples_store_sample_data(
+func (s *ProjectService) create_project_samples_raw_data_user_permisson_as_owner(
 	tx pgx.Tx,
-	schema_data map[uuid.UUID][]sampleDataParsed,
-	sample_data_ids map[sampleDataIdx]uuid.UUID,
-	data_schemas []DataSchema,
-) error {
-	for schema_id, parsed_data := range schema_data {
-		data_schema_idx := slices.IndexFunc(data_schemas, func(schema DataSchema) bool {
-			return schema.Id == schema_id
-		})
-		if data_schema_idx < 0 {
-			s.logger.With("data schema", schema_id).Error("invalid data schema")
-			panic("invalid data schema")
-		}
-		data_schema := data_schemas[data_schema_idx]
-
-		var err error
-		switch data_schema.Storage {
-		case DataStorageInternal:
-			err = s.create_project_samples_store_sample_data_internal(
-				tx,
-				data_schema,
-				parsed_data,
-				sample_data_ids,
-			)
-		case DataStorageExternal:
-			err = s.create_project_samples_store_sample_data_external(
-				tx,
-				data_schema,
-				parsed_data,
-				sample_data_ids,
-			)
-		default:
-			panic("unexpected app.Storage")
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (s *ProjectService) create_project_samples_sample_data_user_permisson_as_owner(
-	tx pgx.Tx,
-	sample_data_ids map[sampleDataIdx]uuid.UUID,
+	raw_data_ids map[rawDataIdx]uuid.UUID,
 	user uuid.UUID,
 ) error {
-	if len(sample_data_ids) == 0 {
+	if len(raw_data_ids) == 0 {
 		return nil
 	}
 
-	args := make([]any, len(sample_data_ids)+2)
+	args := make([]any, len(raw_data_ids)+2)
 	args[0] = user
 	args[1] = SampleDataUserPermissionOwner
 	arg_idx := 2
 	var query strings.Builder
-	query.WriteString("INSERT INTO sample_data_user_permission_ (_sample_data, _user, _permission) VALUES ")
-	for _, sample_data := range sample_data_ids {
+	query.WriteString("INSERT INTO raw_data_user_permission_ (_sample_data, _user, _permission) VALUES ")
+	for _, sample_data := range raw_data_ids {
 		args[arg_idx] = sample_data
 		fmt.Fprintf(&query, "($%d, $1, $2)", arg_idx+1)
 		arg_idx += 1
@@ -1240,150 +963,18 @@ func (s *ProjectService) create_project_samples_sample_data_user_permisson_as_ow
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"sample data", sample_data_ids,
+			"raw data", raw_data_ids,
 			"user", user,
-		).Error("could not insert sample data user permission")
+		).Error("could not insert raw data user permission")
 		return err
 	}
 
 	return nil
 }
 
-func (s *ProjectService) create_project_samples_store_sample_data_internal(
+func (s *ProjectService) create_project_samples_create_raw_data_properties(
 	tx pgx.Tx,
-	data_schema DataSchema,
-	parsed_data []sampleDataParsed,
-	sample_data_ids map[sampleDataIdx]uuid.UUID,
-) error {
-	col_labels := make([]string, len(data_schema.Schema))
-	for idx, col := range data_schema.Schema {
-		col_labels[idx] = col.Label
-	}
-
-	var store_data_query strings.Builder
-	fmt.Fprintf(
-		&store_data_query,
-		"INSERT INTO %s (_sample_data, %s) VALUES ",
-		data_storage_table_name_from_schema_id(data_schema.Id),
-		strings.Join(col_labels, ", "),
-	)
-
-	args_per_sample_data := len(data_schema.Schema) + 1
-	args := make([]any, len(parsed_data)*args_per_sample_data)
-	for data_idx, data := range parsed_data {
-		sample_data_id_key := sampleDataIdx{
-			SampleIndex: data.SampleIndex,
-			DataIndex:   data.DataIndex,
-		}
-		sample_data_id := sample_data_ids[sample_data_id_key]
-		payload := data.Payload.([]ColumnData)
-		if len(payload) != len(data_schema.Schema) {
-			panic("invalid payload")
-		}
-
-		args_offset := data_idx * args_per_sample_data
-		args[args_offset] = sample_data_id
-		for _, col_data := range payload {
-			col_idx := slices.IndexFunc(col_labels, func(label string) bool {
-				return label == col_data.Label
-			})
-			if col_idx < 0 {
-				s.logger.With("column", col_data.Label).Error("invalid column label")
-				panic("invalid column label")
-			}
-
-			data_arg_idx := args_offset + col_idx + 1
-			args[data_arg_idx] = col_data.Values
-		}
-
-		if data_idx > 0 {
-			store_data_query.WriteString(", ")
-		}
-		args_idx := make([]string, len(payload)+1)
-		for idx := 0; idx < len(payload)+1; idx++ {
-			args_idx[idx] = fmt.Sprintf("$%d", idx+args_offset+1)
-		}
-		fmt.Fprintf(
-			&store_data_query,
-			"(%s)",
-			strings.Join(args_idx, ", "),
-		)
-	}
-
-	_, err := tx.Exec(s.ctx, store_data_query.String(), args...)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"query", store_data_query.String(),
-			"args", args,
-		).Error("could not insert data")
-		return err
-	}
-
-	return nil
-}
-
-func (s *ProjectService) create_project_samples_store_sample_data_external(
-	tx pgx.Tx,
-	data_schema DataSchema,
-	parsed_data []sampleDataParsed,
-	sample_data_ids map[sampleDataIdx]uuid.UUID,
-) error {
-	const ARGS_PER_SAMPLE_DATA = 3
-	var store_data_query strings.Builder
-	fmt.Fprintf(
-		&store_data_query,
-		"INSERT INTO %s (_sample_data, %s, %s) VALUES ",
-		data_storage_table_name_from_schema_id(data_schema.Id),
-		DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL,
-		DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL,
-	)
-
-	args := make([]any, len(parsed_data)*ARGS_PER_SAMPLE_DATA)
-	for data_idx, data := range parsed_data {
-		sample_data_id_key := sampleDataIdx{
-			SampleIndex: data.SampleIndex,
-			DataIndex:   data.DataIndex,
-		}
-		sample_data_id := sample_data_ids[sample_data_id_key]
-		payload := data.Payload.(SampleDataPayloadExternal)
-
-		args_offset := data_idx * ARGS_PER_SAMPLE_DATA
-		arg_idx_id := args_offset
-		arg_idx_path := arg_idx_id + 1
-		arg_idx_filename := arg_idx_path + 1
-		args[arg_idx_id] = sample_data_id
-		args[arg_idx_path] = payload.Path
-		args[arg_idx_filename] = payload.Filename
-
-		if data_idx > 0 {
-			store_data_query.WriteString(", ")
-		}
-		fmt.Fprintf(
-			&store_data_query,
-			"($%d, $%d, $%d)",
-			arg_idx_id+1,
-			arg_idx_path+1,
-			arg_idx_filename+1,
-		)
-	}
-
-	_, err := tx.Exec(s.ctx, store_data_query.String(), args...)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"query", store_data_query.String(),
-			"args", args,
-		).Error("could not insert data")
-		return err
-	}
-
-	return nil
-}
-
-func (s *ProjectService) create_project_samples_create_sample_data_properties(
-	tx pgx.Tx,
-	sample_data_ids map[sampleDataIdx]uuid.UUID,
+	raw_data_ids map[rawDataIdx]uuid.UUID,
 	samples []ProjectSampleCreate,
 ) error {
 	const NUM_VALUES_PER_PROPERTY = 4
@@ -1407,14 +998,14 @@ func (s *ProjectService) create_project_samples_create_sample_data_properties(
 	)
 	for sample_idx, sample := range samples {
 		for data_idx, data := range sample.Data {
-			sample_data_idx := sampleDataIdx{
-				SampleIndex: sample_idx,
-				DataIndex:   data_idx,
+			sample_data_idx := rawDataIdx{
+				RawIndex:  sample_idx,
+				DataIndex: data_idx,
 			}
-			sample_data_id, present := sample_data_ids[sample_data_idx]
+			sample_data_id, present := raw_data_ids[sample_data_idx]
 			if !present {
 				s.logger.With(
-					"sample data ids", sample_data_ids,
+					"sample data ids", raw_data_ids,
 					"sample index", sample_idx,
 					"data index", data_idx,
 				).Error("invalid sample data index")
@@ -1577,9 +1168,9 @@ func (s *ProjectService) create_project_samples_create_project_sample_user_permi
 	args := make([]any, len(sample_ids)+PROJECT_SAMPLE_USER_PERMISSION_COUNT+2)
 	args[0] = project_id
 	args[1] = user_id
-	args[2] = ProjectSampleUserPermissionModifyLabel
-	args[3] = ProjectSampleUserPermissionModifyTags
-	args[4] = ProjectSampleUserPermissionModifyProperties
+	args[2] = ProjectSamplePermissionModifyLabel
+	args[3] = ProjectSamplePermissionModifyTags
+	args[4] = ProjectSamplePermissionModifyProperties
 
 	var query strings.Builder
 	query.WriteString(
@@ -1636,7 +1227,7 @@ type SampleUserPermissions struct {
 
 type ProjectSampleUserPermissions struct {
 	User        uuid.UUID
-	Permissions []ProjectSampleUserPermission
+	Permissions []ProjectSamplePermission
 }
 
 type ProjectSampleResources struct {
@@ -1646,7 +1237,8 @@ type ProjectSampleResources struct {
 	ProjectMembership            ProjectSampleMembershipAsResource
 	ProjectTags                  []string
 	ProjectNotes                 []ProjectSampleNote
-	Data                         []SampleData
+	RawData                      []RawDataRecord
+	DerivedData                  []DerivedData
 	DataSchemas                  []DataSchema
 	Users                        []User
 	SampleUserPermissions        []SampleUserPermissions
@@ -1697,15 +1289,25 @@ func (s *ProjectService) GetProjectSampleResources(
 		return ProjectSampleResources{}, nil
 	}
 
-	resources.Data, err = s.get_project_sample_resources_sample_data(resources.Id)
+	resources.RawData, err = s.get_project_sample_resources_sample_data(resources.Id)
+	if err != nil {
+		return ProjectSampleResources{}, nil
+	}
+
+	sample_data_ids := []uuid.UUID{}
+	for _, data := range resources.RawData {
+		sample_data_ids = append(sample_data_ids, data.Id)
+	}
+	resources.DerivedData, err = s.get_project_sample_resources_derived_data(sample_data_ids)
 	if err != nil {
 		return ProjectSampleResources{}, nil
 	}
 
 	data_schema_ids := []uuid.UUID{}
-	for _, data := range resources.Data {
+	for _, data := range resources.DerivedData {
 		data_schema_ids = append(data_schema_ids, data.Schema)
 	}
+
 	resources.DataSchemas, err = s.data_service.GetDataSchemasById(data_schema_ids)
 	if err != nil {
 		s.logger.With(
@@ -1719,10 +1321,10 @@ func (s *ProjectService) GetProjectSampleResources(
 	for _, note := range resources.ProjectNotes {
 		user_ids = append(user_ids, note.Creator)
 	}
-	for _, data := range resources.Data {
+	for _, data := range resources.RawData {
 		user_ids = append(user_ids, data.Creator)
 	}
-	resources.Users, err = s.user_service.GetUsersById(user_ids)
+	resources.Users, err = s.user_service.UsersById(user_ids)
 	if err != nil {
 		return ProjectSampleResources{}, err
 	}
@@ -1808,7 +1410,7 @@ func (s *ProjectService) get_project_sample_resources_project_membership(
 		return ProjectSampleMembershipAsResource{}, err
 	}
 
-	membership.Creator, err = s.user_service.GetUserById(user_id)
+	membership.Creator, err = s.user_service.UserById(user_id)
 	if err != nil {
 		return ProjectSampleMembershipAsResource{}, err
 	}
@@ -1872,17 +1474,58 @@ func (s *ProjectService) get_project_sample_resources_sample_notes(
 
 func (s *ProjectService) get_project_sample_resources_sample_data(
 	sample_id uuid.UUID,
-) ([]SampleData, error) {
+) ([]RawDataRecord, error) {
 	data_query := "SELECT _id, _sample, _schema, _creator, timestamp FROM sample_data_ WHERE _sample=$1"
 	rows, _ := s.db.Conn.Query(s.ctx, data_query, sample_id)
-	data, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleData, error) {
-		var data SampleData
-		err := row.Scan(&data.Id, &data.Sample, &data.Schema, &data.Creator, &data.Timestamp)
-		return data, err
-	})
+	data, err := pgx.CollectRows(rows, pgx.RowToStructByName[RawDataRecord])
 	if err != nil {
 		s.logger.With("error", err, "query", data_query).Error("could not get sample data")
 		return nil, err
+	}
+
+	return data, nil
+}
+
+// TODO: Make better
+func (s *ProjectService) get_project_sample_resources_derived_data(
+	sample_data_ids []uuid.UUID,
+) ([]DerivedData, error) {
+	all_schema_query := "SELECT _id FROM data_schema_"
+	rows, _ := s.db.Conn.Query(s.ctx, all_schema_query)
+	schema_ids, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (uuid.UUID, error) {
+		var id uuid.UUID
+		err := row.Scan(&id)
+		return id, err
+	})
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get data schema ids")
+		return nil, err
+	}
+
+	var data []DerivedData
+	for _, schema_id := range schema_ids {
+		query := fmt.Sprintf(
+			"SELECT _parent, _transform, _sample_data FROM %s WHERE _sample_data=ANY($1)",
+			data_storage_table_name_from_schema_id(schema_id),
+		)
+		rows, _ = s.db.Conn.Query(s.ctx, query, sample_data_ids)
+		schema_data, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DerivedData, error) {
+			sdata := DerivedData{Schema: schema_id}
+			err := row.Scan(&sdata.Parent, &sdata.Transform, &sdata.SampleData)
+			return sdata, err
+		})
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"schema", schema_id,
+			).Error("could not get derived data")
+			// return nil, err
+			continue
+		}
+
+		data = slices.Concat(data, schema_data)
 	}
 
 	return data, nil
@@ -1936,7 +1579,7 @@ func (s *ProjectService) get_project_sample_resources_project_sample_user_permis
 	var permissions []ProjectSampleUserPermissions
 	for rows.Next() {
 		var user uuid.UUID
-		var permission ProjectSampleUserPermission
+		var permission ProjectSamplePermission
 		err := rows.Scan(&user, &permission)
 		if err != nil {
 			s.logger.With("error", err).Error("could not get sample user permissions")
@@ -1949,7 +1592,7 @@ func (s *ProjectService) get_project_sample_resources_project_sample_user_permis
 		if idx < 0 {
 			permissions = append(
 				permissions,
-				ProjectSampleUserPermissions{User: user, Permissions: []ProjectSampleUserPermission{permission}},
+				ProjectSampleUserPermissions{User: user, Permissions: []ProjectSamplePermission{permission}},
 			)
 		} else {
 			permissions[idx].Permissions = append(permissions[idx].Permissions, permission)

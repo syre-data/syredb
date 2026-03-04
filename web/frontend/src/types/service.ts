@@ -46,7 +46,6 @@ export const DataStorageExternal = "external";
 export type DataStorage = typeof DataStorageInternal | typeof DataStorageExternal;
 export interface DataSchema {
   Id: uuid.UUIDTypes;
-  Type: DataSchemaType;
   Creator: uuid.UUIDTypes;
   Schema: ColumnSchema[];
   Storage: DataStorage;
@@ -57,11 +56,7 @@ export interface InvalidSampleDataColumnLabels {
   Labels: string[];
 }
 export const PATTERN = `^[\\w_]+\$`;
-export const DataSchemaTypeRaw = "raw";
-export const DataSchemaTypeTransform = "transform";
-export type DataSchemaType = typeof DataSchemaTypeRaw | typeof DataSchemaTypeTransform;
 export interface DataSchemaCreate {
-  Type: DataSchemaType;
   Schema: ColumnSchema[];
   Storage: DataStorage;
   Label: string;
@@ -164,8 +159,8 @@ export interface SampleDataUserPermissions {
   Permissions: SampleDataUserPermission[];
 }
 export interface TransformCreate {
-  Input: uuid.UUIDTypes;
-  Output: uuid.UUIDTypes;
+  SourceSchema: uuid.UUIDTypes;
+  DestinationSchema: uuid.UUIDTypes;
   Script?: any /* multipart.FileHeader */;
   Label: string;
   Description: string;
@@ -174,15 +169,14 @@ export interface TransformCreate {
 //////////
 // source: project.service.go
 
-export const ProjectUserPermissionRead = "read";
-export const ProjectUserPermissionReadWrite = "read_write";
-export const ProjectUserPermissionAdmin = "admin";
-export const ProjectUserPermissionOwner = "owner";
-export type ProjectUserPermission = typeof ProjectUserPermissionRead | typeof ProjectUserPermissionReadWrite | typeof ProjectUserPermissionAdmin | typeof ProjectUserPermissionOwner;
-export const ProjectSampleUserPermissionModifyLabel = "modify_label";
-export const ProjectSampleUserPermissionModifyTags = "modify_tags";
-export const ProjectSampleUserPermissionModifyProperties = "modify_properties";
-export type ProjectSampleUserPermission = typeof ProjectSampleUserPermissionModifyLabel | typeof ProjectSampleUserPermissionModifyTags | typeof ProjectSampleUserPermissionModifyProperties;
+export const ProjectPermissionOwner = "owner";
+export const ProjectPermissionCreateSample = "create_sample";
+export const ProjectPermissionRead = "read";
+export type ProjectPermission = typeof ProjectPermissionOwner | typeof ProjectPermissionCreateSample | typeof ProjectPermissionRead;
+export const ProjectSamplePermissionModifyLabel = "modify_label";
+export const ProjectSamplePermissionModifyTags = "modify_tags";
+export const ProjectSamplePermissionModifyProperties = "modify_properties";
+export type ProjectSamplePermission = typeof ProjectSamplePermissionModifyLabel | typeof ProjectSamplePermissionModifyTags | typeof ProjectSamplePermissionModifyProperties;
 export const VisibilityPublic = "public";
 export const VisibilityPrivate = "private";
 export type Visibility = typeof VisibilityPublic | typeof VisibilityPrivate;
@@ -231,14 +225,22 @@ export interface ProjectSample {
   Properties: Property[];
   NoteCount: number /* uint */;
 }
-export interface SampleData {
+export interface RawDataRecord {
   Id: uuid.UUIDTypes;
   Sample: uuid.UUIDTypes;
-  Schema: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
+  Path: string;
+  Type: uuid.UUIDTypes;
+  Filename?: string;
+  Label?: string;
   Timestamp: Date;
   Visibility: Visibility;
-  Label?: string;
+}
+export interface DerivedData {
+  Parent: uuid.UUIDTypes;
+  Transform: uuid.UUIDTypes;
+  SampleData: uuid.UUIDTypes;
+  Schema: uuid.UUIDTypes;
 }
 export interface ProjectSampleGroup {
   Id: uuid.UUIDTypes;
@@ -256,12 +258,12 @@ export interface ProjectResources {
   Project: Project;
   ProjectTags: string[];
   Samples: ProjectSample[];
-  SampleData: SampleData[];
+  RawData: RawDataRecord[];
   DataSchemas: DataSchema[];
   SampleGroups: ProjectSampleGroup[];
   SampleGroupRelations: SampleGroupRelation[];
   ProjectNoteCount: number /* uint */;
-  ProjectUserPermission: ProjectUserPermission;
+  ProjectPermissions: ProjectPermission[];
 }
 export interface ProjectSampleInfo {
   Id: uuid.UUIDTypes;
@@ -275,7 +277,7 @@ export interface ProjectWithUserPermission {
   Label: string;
   Description: string;
   Visibility: Visibility;
-  UserPermission: ProjectUserPermission;
+  Permissions: ProjectPermission[];
 }
 export interface FileInfo {
   Name: string;
@@ -309,8 +311,6 @@ export interface ProjectSampleCreate {
   Notes: ProjectSampleNoteCreate[];
 }
 export const NUM_PROPERTY_VALUES = 3;
-export const QUERY_ARGS_SCHEMA_ID_OFFSET = 1;
-export const ARGS_PER_SAMPLE_DATA = 3;
 export const NUM_VALUES_PER_PROPERTY = 4;
 export const NUM_NOTE_VALUES = 2;
 export const PROJECT_SAMPLE_USER_PERMISSION_COUNT = 3;
@@ -327,7 +327,7 @@ export interface SampleUserPermissions {
 }
 export interface ProjectSampleUserPermissions {
   User: uuid.UUIDTypes;
-  Permissions: ProjectSampleUserPermission[];
+  Permissions: ProjectSamplePermission[];
 }
 export interface ProjectSampleResources {
   Id: uuid.UUIDTypes;
@@ -336,7 +336,8 @@ export interface ProjectSampleResources {
   ProjectMembership: ProjectSampleMembershipAsResource;
   ProjectTags: string[];
   ProjectNotes: ProjectSampleNote[];
-  Data: SampleData[];
+  RawData: RawDataRecord[];
+  DerivedData: DerivedData[];
   DataSchemas: DataSchema[];
   Users: User[];
   SampleUserPermissions: SampleUserPermissions[];
@@ -384,10 +385,14 @@ export const AppEmailUrlKey = "app:email:url";
 export const AppEmailUsernameKey = "app:email:username";
 export const AppEmailPasswordKey = "app:email:password";
 export const AppEmailFromKey = "app:email:from";
-export const UserRoleOwner = "owner";
-export const UserRoleAdmin = "admin";
-export const UserRoleUser = "user";
-export type UserRole = typeof UserRoleOwner | typeof UserRoleAdmin | typeof UserRoleUser;
+export const DbPermissionOwner = "owner";
+export const DbPermissionAddUser = "add_user";
+export const DbPermissionModifyUser = "modify_user";
+export const DbPermissionCreateDataSchema = "create_data_schema";
+export const DbPermissionModifyDataSchema = "modify_data_schema";
+export const DbPermissionCreateTransform = "create_transform";
+export const DbPermissionCreateProject = "create_project";
+export type DbPermission = typeof DbPermissionOwner | typeof DbPermissionAddUser | typeof DbPermissionModifyUser | typeof DbPermissionCreateDataSchema | typeof DbPermissionModifyDataSchema | typeof DbPermissionCreateTransform | typeof DbPermissionCreateProject;
 export const AccountStatusActive = "active";
 export const AccountStatusDeactivated = "deactivated";
 export type AccountStatus = typeof AccountStatusActive | typeof AccountStatusDeactivated;
@@ -398,11 +403,11 @@ export interface User {
   AccountStatus: AccountStatus;
   Email: string;
   Name: string;
-  Role: UserRole;
+  DbPermissions: DbPermission[];
 }
 export interface UserCreate {
   Email: string;
   Name: string;
   Password: string;
-  Role: string;
+  DbPermissions: DbPermission[];
 }

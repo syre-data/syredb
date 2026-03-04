@@ -47,11 +47,11 @@ func (h *UserHandler) GetUser(c *echo.Context) error {
 	return c.JSON(http.StatusOK, user)
 }
 
-func (h *UserHandler) guard_user_must_be_owner_role(c *echo.Context) error {
+func (h *UserHandler) guard_user_must_be_owner(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	is_owner, err := h.user_service.UserHasRole(user_id, service.UserRoleOwner)
+	is_owner, err := h.user_service.UserHasPermission(user_id, service.DbPermissionOwner)
 	if err != nil {
-		c.Logger().With("error", err).Error("could not verify user role")
+		c.Logger().With("error", err).Error("could not verify user permission")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 	if !is_owner {
@@ -62,12 +62,12 @@ func (h *UserHandler) guard_user_must_be_owner_role(c *echo.Context) error {
 }
 
 func (h *UserHandler) GetUsersAll(c *echo.Context) error {
-	err := h.guard_user_must_be_owner_role(c)
+	err := h.guard_user_must_be_owner(c)
 	if err != nil {
 		return err
 	}
 
-	users, err := h.user_service.GetUsersAll()
+	users, err := h.user_service.AllUsers()
 	if err != nil {
 		c.Logger().With("error", err).Error("could not get user")
 		return c.NoContent(http.StatusInternalServerError)
@@ -77,7 +77,7 @@ func (h *UserHandler) GetUsersAll(c *echo.Context) error {
 }
 
 func (h *UserHandler) CreateUser(c *echo.Context) error {
-	err := h.guard_user_must_be_owner_role(c)
+	err := h.guard_user_must_be_owner(c)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (h *UserHandler) CreateUser(c *echo.Context) error {
 }
 
 func (h *UserHandler) UpdateUser(c *echo.Context) error {
-	err := h.guard_user_must_be_owner_role(c)
+	err := h.guard_user_must_be_owner(c)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func (h *UserHandler) UpdateUser(c *echo.Context) error {
 }
 
 func (h *UserHandler) DeactivateUser(c *echo.Context) error {
-	err := h.guard_user_must_be_owner_role(c)
+	err := h.guard_user_must_be_owner(c)
 	if err != nil {
 		return err
 	}

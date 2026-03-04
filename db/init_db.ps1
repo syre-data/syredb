@@ -7,8 +7,8 @@ $APP_EMAIL_URL_KEY = "app:email:url"
 $APP_EMAIL_USERNAME_KEY = "app:email:username"
 $APP_EMAIL_PASSWORD_KEY = "app:email:password"
 $APP_EMAIL_FROM_KEY = "app:email:from"
-$APP_ACCOUNT_NAME = "app:acount:name"
-$APP_ACCOUNT_LOGO = "app:acount:logo"
+$APP_ACCOUNT_NAME = "app:account:name"
+$APP_ACCOUNT_LOGO = "app:account:logo"
 $APP_DATA_PATH = "app:data:path"
 
 Write-Host "Initializing Postgres database $DB_NAME"
@@ -29,7 +29,12 @@ Write-Host "Postgres database initialized"
 
 # ---
 
-$ownerExists = psql -U $pgUser -d $DB_NAME -tAc "SELECT 1 FROM user_ WHERE role='owner'"
+$ownerExists = psql -U $pgUser -d $DB_NAME -tAc `
+    "SELECT 1 
+    FROM db_user_permission_ as p
+    JOIN user_ as u
+    ON p._user=u._id
+    WHERE p._permission='owner' AND u.account_status='active'"
 if (-not $ownerExists) {
     Write-Host "Initializing $DB_NAME owner"
     $userEmail = Read-Host -Prompt "Email"

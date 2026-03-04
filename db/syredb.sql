@@ -16,49 +16,61 @@ CREATE TYPE property_type AS ENUM (
     'timestamp'
 );
 
--- TODO: change role to permissions
-CREATE TABLE IF NOT EXISTS user_role_ (
-    name VARCHAR(64) PRIMARY KEY
-);
-INSERT INTO user_role_ VALUES
-    ('owner'), 
-    ('admin'), 
-    ('user')
-ON CONFLICT (name) DO NOTHING;
-
 CREATE TYPE user_account_status AS ENUM ('active', 'deactivated');
 CREATE TABLE IF NOT EXISTS user_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     account_status user_account_status DEFAULT 'active' NOT NULL,
     email VARCHAR(256) NOT NULL UNIQUE,
-    name VARCHAR(512) NOT NULL,
-    role VARCHAR(64) REFERENCES user_role_(name) DEFAULT 'user' NOT NULL
+    name VARCHAR(512) NOT NULL
 );
 
-CREATE OR REPLACE FUNCTION enforce_at_least_one_user_owner()
+CREATE TABLE IF NOT EXISTS _db_permission_ (
+    _id VARCHAR(128) PRIMARY KEY,
+    label VARCHAR(128) UNIQUE NOT NULL, 
+    description TEXT
+);
+INSERT INTO _db_permission_ VALUES
+    ('owner', 'Owner', 'Full permissions'),
+    ('add_user', 'Add user', 'Add new users'),
+    ('modify_user', 'Modify users', 'Modify users'),
+    ('create_data_schema', 'Create data schema', 'Create new data schemas'),
+    ('modify_data_schema', 'Modify data schema', 'Modify existing data schema'),
+    ('create_project', 'Create project', 'Create new projects'),
+    ('create_transform', 'Create transofrm', 'Create new transforms');
+
+CREATE TABLE IF NOT EXISTS db_user_permission_ (
+    _user UUID REFERENCES user_(_id) NOT NULL,
+    _permission VARCHAR(128) REFERENCES _db_permission_(_id) NOT NULL,
+    PRIMARY KEY (_user, _permission)
+);
+
+CREATE OR REPLACE FUNCTION enforce_at_least_one_db_owner()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM user_ WHERE role = 'owner'
+        SELECT 1 
+        FROM db_user_permission_ as p 
+        JOIN user_ as u ON p._user=u._id 
+        WHERE p._permission = 'owner' AND u.account_status='active'
     ) THEN
-        RAISE EXCEPTION 'NO_USER_WITH_OWNER_ROLE';
+        RAISE EXCEPTION 'NO_ACTIVE_USER_WITH_OWNER_ROLE';
     END IF;
 
     RETURN NULL;
 END;
 $$;
 
-CREATE CONSTRAINT TRIGGER users_must_have_owner
-AFTER UPDATE OR DELETE ON user_
+CREATE CONSTRAINT TRIGGER db_must_have_owner
+AFTER UPDATE OR DELETE ON db_user_permission_
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
-EXECUTE PROCEDURE enforce_at_least_one_user_owner();
+EXECUTE PROCEDURE enforce_at_least_one_db_owner();
 
 CREATE TABLE IF NOT EXISTS user_auth_ (
     _id UUID REFERENCES user_(_id) NOT NULL UNIQUE,
-    auth VARCHAR(2048) NOT NULL,
+    auth VARCHAR(2048) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS _user_session_ (
@@ -68,13 +80,11 @@ CREATE TABLE IF NOT EXISTS _user_session_ (
     active boolean DEFAULT true NOT NULL
 );
 
-CREATE TYPE data_schema_type AS ENUM ('raw', 'transform');
 CREATE TYPE data_storage AS ENUM ('internal', 'external');
 CREATE TYPE data_type AS ENUM ('string', 'int', 'uint', 'float', 'boolean', 'timestamp');
 
 CREATE TABLE IF NOT EXISTS data_schema_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _type data_schema_type NOT NULL,
     _creator UUID REFERENCES user_(_id) NOT NULL,
     _schema JSONB NOT NULL,
     _storage data_storage NOT NULL,
@@ -108,8 +118,8 @@ CHECK (data_schema_schema_is_valid(_schema));
 CREATE TABLE IF NOT EXISTS sample_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _creator UUID REFERENCES user_(_id) NOT NULL,
-    visibility visibility DEFAULT 'private' NOT NULL
-    frozen boolean DEFAULT false NOT NULL, -- indicates no more changes are allowed to the sample
+    visibility visibility DEFAULT 'private' NOT NULL,
+    frozen boolean DEFAULT false NOT NULL -- indicates no more changes are allowed to the sample
 );
 
 CREATE TABLE IF NOT EXISTS sample_property_ (
@@ -139,25 +149,30 @@ CREATE TABLE IF NOT EXISTS sample_note_ (
 
 
 CREATE TABLE IF NOT EXISTS sample_note_history_ (
-    _note UUID REFERENCES project_sample_note_(_id) NOT NULL,
+    _note UUID REFERENCES sample_note_(_id) NOT NULL,
     _version INT NOT NULL,
     _content TEXT NOT NULL,
     _editor UUID REFERENCES user_(_id) NOT NULL,
     _timestamp TIMESTAMP(3) WITH TIME ZONE DEFAULT NOW() NOT NULL,
     PRIMARY KEY (_note, _version)
-)
-
-CREATE TYPE sample_user_permission AS ENUM (
-    'owner',
-    'read', 
-    'add_data', 
-    'create_note', 
-    'modify_properties'
 );
+
+CREATE TABLE IF NOT EXISTS _sample_permission_ (
+    _id VARCHAR(128) PRIMARY KEY,
+    label VARCHAR(128) UNIQUE NOT NULL,
+    description TEXT
+);
+INSERT INTO _sample_permission_ (_id, label, description) VALUES
+    ('owner', 'Owner', 'Full permissions'),
+    ('read', 'Read', 'Sample is visible'), 
+    ('add_data', 'Add data', 'Can add data to the sample'), 
+    ('create_note', 'Create note', 'Can create notes for the sample'), 
+    ('modify_properties', 'Modify properties', 'Can add, remove, and modify sample properties');
+
 CREATE TABLE IF NOT EXISTS sample_user_permission_ (
     _sample UUID REFERENCES sample_(_id) NOT NULL,
     _user UUID REFERENCES user_(_id) NOT NULL,
-    _permission sample_user_permission NOT NULL,
+    _permission VARCHAR(128) REFERENCES _sample_permission_(_id) NOT NULL,
     PRIMARY KEY (_sample, _user, _permission)
 );
 
@@ -184,69 +199,81 @@ DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION enforce_sample_has_owner();
 
-CREATE TABLE IF NOT EXISTS sample_data_ (
+CREATE TABLE IF NOT EXISTS raw_data_type_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    label VARCHAR(128) UNIQUE NOT NULL,
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS raw_data_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _sample UUID REFERENCES sample_(_id) NOT NULL,
-    _schema UUID REFERENCES data_schema_(_id) NOT NULL,
     _creator UUID REFERENCES user_(_id) NOT NULL,
+    _path VARCHAR(1024) NOT NULL,
+    _type UUID REFERENCES raw_data_type_(_id) NOT NULL,
+    _filename VARCHAR(256),
     label VARCHAR(128),
     timestamp TIMESTAMP(3) WITH TIME ZONE NOT NULL,
     visibility visibility DEFAULT 'private' NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS sample_data_property_ (
-    _sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
+CREATE TABLE IF NOT EXISTS raw_data_property_ (
+    _raw_data UUID REFERENCES raw_data_(_id) NOT NULL,
     _key VARCHAR(512) NOT NULL,
     _type property_type NOT NULL,
     value JSONB NOT NULL,
-    PRIMARY KEY (_sample_data, _key)
+    PRIMARY KEY (_raw_data, _key)
 );
 
-CREATE TABLE IF NOT EXISTS sample_data_note_ (
+CREATE TABLE IF NOT EXISTS raw_data_note_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
+    _raw_data UUID REFERENCES raw_data_(_id) NOT NULL,
     _creator UUID REFERENCES user_(_id) NOT NULL,
     timestamp TIMESTAMP(3) WITH TIME ZONE DEFAULT NOW() NOT NULL, 
     visibility visibility DEFAULT 'private' NOT NULL,
     content TEXT NOT NULL
 );
 
-CREATE TYPE sample_data_user_permission AS ENUM (
-    'owner',
-    'read', 
-    'create_note', 
-    'modify_properties'
+CREATE TABLE IF NOT EXISTS _raw_data_permission_ (
+    _id VARCHAR(128) PRIMARY KEY,
+    label VARCHAR(128) NOT NULL UNIQUE,
+    description TEXT
 );
-CREATE TABLE IF NOT EXISTS sample_data_user_permission_ (
-    _sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
+INSERT INTO _raw_data_permission_ (_id, label, description) VALUES
+    ('owner', 'Owner', 'Full permission'),
+    ('read', 'Read', 'Data is visible'), 
+    ('create_note', 'Create note', 'Create notes on the data'), 
+    ('modify_properties', 'Modify properties', 'Add, remove, and modify data properties');
+
+CREATE TABLE IF NOT EXISTS raw_data_user_permission_ (
+    _raw_data UUID REFERENCES raw_data_(_id) NOT NULL,
     _user UUID REFERENCES user_(_id) NOT NULL,
-    _permission sample_data_user_permission NOT NULL,
-    PRIMARY KEY (_sample_data, _user)
+    _permission VARCHAR(128) REFERENCES _raw_data_permission_(_id) NOT NULL,
+    PRIMARY KEY (_raw_data, _user)
 );
 
-CREATE OR REPLACE FUNCTION enforce_sample_data_has_owner()
+CREATE OR REPLACE FUNCTION enforce_raw_data_has_owner()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
-DECLARE sample_data_id UUID;
-BEGIN sample_data_id := COALESCE(NEW._sample_data, OLD._sample_data);
+DECLARE raw_data_id UUID;
+BEGIN raw_data_id := COALESCE(NEW._raw_data, OLD._raw_data);
     IF NOT EXISTS (
-        SELECT 1 FROM sample_data_user_permission_
-        WHERE _sample_data = sample_data_id AND _permission = 'owner'
+        SELECT 1 FROM raw_data_user_permission_
+        WHERE _raw_data = raw_data_id AND _permission = 'owner'
     ) THEN
-        RAISE EXCEPTION 'SAMPLE_DATA_WITH_NO_OWNER (%s)', sample_data_id;
-            -- USING ERRCODE = '23514'; -- check_violation
+        RAISE EXCEPTION 'RAW_DATA_WITH_NO_OWNER (%s)', raw_data_id;
     END IF;
     RETURN NULL;
 END;
 $$;
 
-CREATE CONSTRAINT TRIGGER sample_data_must_have_owner
+CREATE CONSTRAINT TRIGGER raw_data_must_have_owner
 AFTER INSERT OR UPDATE OR DELETE
-ON sample_data_user_permission_
+ON raw_data_user_permission_
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
-EXECUTE FUNCTION enforce_sample_data_has_owner();
+EXECUTE FUNCTION enforce_raw_data_has_owner();
 
 CREATE TABLE IF NOT EXISTS project_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
@@ -256,16 +283,20 @@ CREATE TABLE IF NOT EXISTS project_ (
     visibility visibility DEFAULT 'private' NOT NULL
 );
 
-CREATE TYPE project_user_permission AS ENUM (
-    'owner',
-    'admin', 
-    'read_write', 
-    'read'
+CREATE TABLE IF NOT EXISTS _project_permission_ (
+    _id VARCHAR(128) PRIMARY KEY,
+    label VARCHAR(128) UNIQUE NOT NULL,
+    description TEXT
 );
+INSERT INTO _project_permission_ (_id, label, description) VALUES 
+    ('owner', 'Owner', 'Full permission'),
+    ('create_sample', 'Create samples', 'Create samples in the project') 
+    ('read', 'Read', 'Project is visible');
+
 CREATE TABLE IF NOT EXISTS project_user_permission_ (
     _project UUID REFERENCES project_(_id) NOT NULL,
     _user UUID REFERENCES user_(_id) NOT NULL,
-    permission project_user_permission NOT NULL,
+    _permission VARCHAR(128) REFERENCES _project_permission_(_id) NOT NULL,
     PRIMARY KEY (_project, _user)
 );
 
@@ -306,7 +337,7 @@ CREATE TABLE IF NOT EXISTS project_sample_note_history_ (
     _editor UUID REFERENCES user_(_id) NOT NULL,
     _timestamp TIMESTAMP(3) WITH TIME ZONE DEFAULT NOW() NOT NULL,
     PRIMARY KEY (_note, _version)
-)
+);
 
 CREATE TABLE IF NOT EXISTS project_sample_membership_ (
     _project UUID REFERENCES project_(_id) NOT NULL,
@@ -318,17 +349,22 @@ CREATE TABLE IF NOT EXISTS project_sample_membership_ (
     UNIQUE (_project, label)
 );
 
-CREATE TYPE project_sample_user_permission AS ENUM (
-    'modify_label',
-    'modify_tags',
-    'modify_properties'
+
+CREATE TABLE IF NOT EXISTS _project_sample_permission_ (
+    _id VARCHAR(128) PRIMARY KEY,
+    label VARCHAR(128) UNIQUE NOT NULL,
+    description TEXT
 );
+INSERT INTO _project_sample_permission_ (_id, label, description) VALUES
+    ('modify_label', 'Modify label', 'Change the sample label'),
+    ('modify_tags', 'Modify tags', 'Add or remove tags'),
+    ('modify_properties', 'Modify properties', 'Add, remove, or change sample properties');
 
 CREATE TABLE IF NOT EXISTS project_sample_user_permission_ (
     _project UUID REFERENCES project_(_id) NOT NULL,
     _sample UUID REFERENCES sample_(_id) NOT NULL,
     _user UUID REFERENCES user_(_id) NOT NULL,
-    _permission project_sample_user_permission NOT NULL,
+    _permission VARCHAR(128) REFERENCES _project_sample_permission_(_id) NOT NULL,
     PRIMARY KEY (_project, _sample, _user, _permission)
 );
 
@@ -364,8 +400,9 @@ CREATE TABLE IF NOT EXISTS sample_group_sample_membership_ (
 
 CREATE TABLE IF NOT EXISTS transform_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _input UUID REFERENCES data_schema_(_id) NOT NULL,
-    _output UUID REFERENCES data_schema_(_id) NOT NULL,
+    _source UUID REFERENCES data_schema_(_id) NOT NULL,
+    _destination UUID REFERENCES data_schema_(_id) NOT NULL,
+    _script VARCHAR(1024) NOT NULL,
     _creator UUID REFERENCES user_(_id) NOT NULL,
     label VARCHAR(128) NOT NULL,
     description TEXT
@@ -389,3 +426,23 @@ CREATE TABLE IF NOT EXISTS _transform_queue_ (
 );
 CREATE INDEX IF NOT EXISTS _transform_queue__status ON _transform_queue_ (status);
 
+CREATE OR REPLACE FUNCTION notify_transform_job()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM pg_notify(
+        'new_transform_job',
+        json_build_object(
+            'id', NEW.id
+        )::text
+    );
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER new_transform_job
+AFTER INSERT ON _transform_queue_
+FOR EACH ROW
+EXECUTE FUNCTION notify_transform_job();

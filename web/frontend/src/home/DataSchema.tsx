@@ -39,8 +39,11 @@ function DataSchemaError({ error, resetErrorBoundary }: FallbackProps) {
     const err = error as types.AppError;
 
     return (
-        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
-            <div>Could not load project</div>
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="pt-4 text-center"
+        >
+            <div>Could not load data schema</div>
             <div>{err.Message}</div>
         </SuspenseError>
     );
@@ -59,7 +62,7 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
     });
     const { data: data_schemas } = useSuspenseQuery({
         queryKey: ["data_schemas"],
-        queryFn: async () => data_service.getDataSchemasAll(),
+        queryFn: async () => data_service.getDataSchemasTransform(),
     });
     const data_schema = data_schema_resources.DataSchema;
 
@@ -86,14 +89,16 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
 
         await data_service
             .transformCreate({
-                Input: data_schema.Id,
-                Output: schema_id,
+                SourceSchema: data_schema.Id,
+                DestinationSchema: schema_id,
                 Script: script_file,
                 Label: label,
                 Description: description,
             } satisfies types.TransformCreate)
             .then((res) => {
                 if (res.status !== 200) {
+                    console.error("could not create transform", res);
+                    return;
                 }
                 queryClient.invalidateQueries({
                     queryKey: ["data_schema_resources", data_schema_id],
@@ -151,6 +156,7 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
                 {createTransformEditor && (
                     <div className="px-4">
                         <TransformCreate
+                            source={data_schema_id}
                             dataSchemas={data_schemas}
                             onSubmit={createTransform}
                             onCancel={() => setCreateTransformEditor(false)}
@@ -158,14 +164,14 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
                     </div>
                 )}
                 <div className="px-4">
-                    <ul>
+                    <ul className="grid grid-cols-[repeat(3,min-content)] gap-2">
                         {data_schema_resources.Transforms.map((transform) => (
                             <li
                                 key={transform.Id.toString()}
-                                className="flex gap-2"
+                                className="col-span-full grid grid-cols-subgrid"
                             >
-                                <div>{transform.Label}</div>
-                                <div>
+                                <div className="col-1">{transform.Label}</div>
+                                <div className="col-2">
                                     (
                                     {
                                         data_schemas.find(
@@ -173,6 +179,9 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
                                         )!.Label
                                     }
                                     )
+                                </div>
+                                <div className="col-3">
+                                    {transform.Description}
                                 </div>
                             </li>
                         ))}
@@ -201,12 +210,14 @@ function data_type_to_string(data_type: types.DataType): string {
 }
 
 interface TransformCreateProps {
+    source: uuid.UUIDTypes;
     dataSchemas: types.DataSchema[];
     onSubmit: (e: FormData) => void;
     onCancel: () => void;
 }
 function TransformCreate({
-    dataSchemas: data_schemas,
+    source,
+    dataSchemas,
     onSubmit,
     onCancel,
 }: TransformCreateProps) {
@@ -251,14 +262,16 @@ function TransformCreate({
                             <option value="" disabled>
                                 Select output schema
                             </option>
-                            {data_schemas.map((schema) => (
-                                <option
-                                    key={schema.Id.toString()}
-                                    value={schema.Id.toString()}
-                                >
-                                    {schema.Label}
-                                </option>
-                            ))}
+                            {dataSchemas
+                                .filter((schema) => schema.Id !== source)
+                                .map((schema) => (
+                                    <option
+                                        key={schema.Id.toString()}
+                                        value={schema.Id.toString()}
+                                    >
+                                        {schema.Label}
+                                    </option>
+                                ))}
                         </select>
                     </label>
                 </div>

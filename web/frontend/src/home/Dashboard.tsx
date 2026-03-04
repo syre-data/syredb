@@ -14,11 +14,19 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
 import project_service from "@/service/project.service";
 import data_service from "@/service/data.service";
+import { SuspenseError } from "@/components";
 
 export default function Dashboard() {
     const appState = useContext(appStateCtx.Context);
-    const isAdminOrOwnerRole =
-        appState.user.Role === "admin" || appState.user.Role === "owner";
+    const canCreateOrModifyDataSchema =
+        common.has_db_permission(
+            types.DbUserPermissionCreateDataSchema,
+            appState.user.DbPermissions,
+        ) ||
+        common.has_db_permission(
+            types.DbUserPermissionModifyDataSchema,
+            appState.user.DbPermissions,
+        );
 
     return (
         <div>
@@ -28,7 +36,9 @@ export default function Dashboard() {
             </div>
             <main>
                 <UserProjects />
-                {isAdminOrOwnerRole ? <DataSchemas className="pt-4" /> : null}
+                {canCreateOrModifyDataSchema ? (
+                    <DataSchemas className="pt-4" />
+                ) : null}
             </main>
         </div>
     );
@@ -36,12 +46,15 @@ export default function Dashboard() {
 
 function Nav() {
     const appState = useContext(appStateCtx.Context);
-    const isOwnerRole = appState.user.Role === "owner";
+    const canModifyUsers = common.has_db_permission(
+        types.DbUserPermissionModifyUser,
+        appState.user.DbPermissions,
+    );
 
     return (
         <div className="flex gap-2">
             <div>
-                {isOwnerRole ? (
+                {canModifyUsers ? (
                     <Link to="/users" title="Users">
                         <button type="button" className="btn-cmd">
                             <icon.Users />
@@ -93,10 +106,13 @@ function UserProjectsError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
     console.error(err);
 
     return (
-        <div>
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="text-center"
+        >
             <div>Could not get your projects</div>
             <div>{err.message}</div>
-        </div>
+        </SuspenseError>
     );
 }
 
@@ -233,7 +249,6 @@ function DataSchemaInner() {
         return (
             <ul className="grid gap-2 grid-cols-[repeat(4,min-content)]">
                 {data_schemas.map((schema, index) => (
-                    // TODO: Change to subgrid
                     <li
                         key={schema.Id.toString()}
                         className="grid grid-cols-subgrid col-span-full"
@@ -271,7 +286,7 @@ function DataSchemaContent({ index, schema }: DataSchemaProps) {
             >
                 <div
                     className={classNames({
-                        "col-start-1 pl-4 row-1": true,
+                        "col-1 pl-4 row-1": true,
                         "invisible hover:visible group-hover/schema-row:visible":
                             !expanded,
                     })}
@@ -286,14 +301,12 @@ function DataSchemaContent({ index, schema }: DataSchemaProps) {
                         <icon.CaretDown />
                     </button>
                 </div>
-                <div className="row-1 col-start-2 whitespace-nowrap cursor-pointer">
+                <div className="row-1 col-2 whitespace-nowrap cursor-pointer">
                     {schema.Label}
                 </div>
             </div>
-            <div className="row-1 col-start-3 whitespace-nowrap">
-                {description}
-            </div>
-            <div className="row-1 col-start-4 invisible group-hover/schema-row:visible">
+            <div className="row-1 col-3 whitespace-nowrap">{description}</div>
+            <div className="row-1 col-4 invisible group-hover/schema-row:visible">
                 <Link to={`/data_schema/${schema.Id}`}>
                     <button
                         type="button"

@@ -44,8 +44,8 @@ function SampleError({ error, resetErrorBoundary }: FallbackProps) {
 
     return (
         <SuspenseError
-            className="flex flex-col gap-2 items-center pt-4"
             resetErrorBoundary={resetErrorBoundary}
+            className="flex flex-col gap-2 items-center pt-4"
         >
             <div>Could not load project</div>
             <div>{err.message}</div>
@@ -263,9 +263,16 @@ function Sample({ project_id, sample_id }: SampleProps) {
                         <SampleProperties properties={sampleState.properties} />
                     )}
                     {user_can_add_data ? (
-                        <SampleDataEditable data={sampleState.data} />
+                        <SampleDataEditable
+                            data={sampleState.data}
+                            derived_data={sample_resources.DerivedData}
+                            data_schemas={sample_resources.DataSchemas}
+                        />
                     ) : (
-                        <SampleData data={sample_resources.Data} />
+                        <SampleData
+                            data={sample_resources.Data}
+                            data_schemas={sample_resources.DataSchemas}
+                        />
                     )}
                 </div>
                 <div className="flex gap-2 justify-center">
@@ -891,8 +898,9 @@ function NewProperty({ id, className, onRemove }: NewPropertyProps) {
 
 interface SampleDataProps {
     data: types.SampleData[];
+    data_schemas: types.DataSchema[];
 }
-function SampleData({ data }: SampleDataProps) {
+function SampleData({ data, data_schemas }: SampleDataProps) {
     return (
         <section>
             <div>
@@ -904,8 +912,15 @@ function SampleData({ data }: SampleDataProps) {
 
 interface SampleDataEditableProps {
     data: types.SampleData[];
+    derived_data: types.DerivedData[];
+    data_schemas: types.DataSchema[];
 }
-function SampleDataEditable({ data }: SampleDataEditableProps) {
+function SampleDataEditable({
+    data,
+    derived_data,
+    data_schemas,
+}: SampleDataEditableProps) {
+    console.debug(data, data_schemas);
     return (
         <section>
             <div className="flex gap-1 px-4">
@@ -916,6 +931,50 @@ function SampleDataEditable({ data }: SampleDataEditableProps) {
                     </button>
                 </div>
             </div>
+            <div>
+                <ul className="grid gap-2 grid-cols-[repeat(3,min-content)]">
+                    {data.map((data) => {
+                        const data_schema = data_schemas.find(
+                            (schema) => schema.Id === data.Schema,
+                        )!;
+
+                        const children_data = derived_data.filter(
+                            (child) => child.SampleData === data.Id,
+                        );
+
+                        return (
+                            <li key={data.Id.toString()} className="contents">
+                                <SampleDataEditableListItem
+                                    data={data}
+                                    children={children_data}
+                                    data_schema={data_schema}
+                                />
+                            </li>
+                        );
+                    })}
+                </ul>
+            </div>
         </section>
+    );
+}
+
+interface SampleDataEditableListItemProps {
+    data: types.SampleData;
+    children: types.DerivedData[];
+    data_schema: types.DataSchema;
+}
+function SampleDataEditableListItem({
+    data,
+    children,
+    data_schema,
+}: SampleDataEditableListItemProps) {
+    return (
+        <div className="grid col-span-full grid-cols-subgrid">
+            <div className="col-1 pl-4">
+                {data.Label ?? data.Timestamp.toLocaleString()}
+            </div>
+            <div className="col-2">{data_schema.Label}</div>
+            <div className="col-3">{children.length} children</div>
+        </div>
     );
 }

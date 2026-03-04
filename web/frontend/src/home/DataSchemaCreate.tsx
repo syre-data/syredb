@@ -19,7 +19,6 @@ export default function () {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
     const [error, setError] = useState("");
-    const [schemaType, setSchemaType] = useState(types.DataSchemaTypeRaw);
     const [cols, setCols] = useState([{ id: 0 }] as ColumnSchema[]);
 
     function add_column(e: MouseEvent<HTMLButtonElement>) {
@@ -127,14 +126,6 @@ export default function () {
             }
         }
 
-        const schema_type = common.data_schema_type_string_to_variant(
-            data.get("schema_type")!.toString(),
-        );
-        if (schema_type === undefined) {
-            console.error(`invalid schema type: ${schema_type}`);
-            return;
-        }
-
         const label = data.get("label")!.toString().trim();
         const description = data.get("description")!.toString().trim();
         const storage_str = data.get("storage")!.toString();
@@ -204,7 +195,6 @@ export default function () {
 
         form.reportValidity();
         const data_schema = {
-            Type: schema_type,
             Schema: columns,
             Storage: storage!,
             Label: label,
@@ -258,47 +248,6 @@ export default function () {
                                     required
                                 />
                             </label>
-                        </div>
-                        <div>
-                            <fieldset className="flex gap-8">
-                                <legend>Schema type</legend>
-                                <label>
-                                    <input
-                                        type="radio"
-                                        name="schema_type"
-                                        value={types.DataSchemaTypeRaw}
-                                        title="Holds raw sample data"
-                                        checked={
-                                            schemaType ===
-                                            types.DataSchemaTypeRaw
-                                        }
-                                        onChange={() =>
-                                            setSchemaType(
-                                                types.DataSchemaTypeRaw,
-                                            )
-                                        }
-                                    />
-                                    <span className="pl-2">Raw</span>
-                                </label>
-                                <label>
-                                    <input
-                                        type="radio"
-                                        name="schema_type"
-                                        value={types.DataSchemaTypeTransform}
-                                        title="Holds data that was transformed"
-                                        checked={
-                                            schemaType ===
-                                            types.DataSchemaTypeTransform
-                                        }
-                                        onChange={() =>
-                                            setSchemaType(
-                                                types.DataSchemaTypeTransform,
-                                            )
-                                        }
-                                    />
-                                    <span className="pl-2">Transform</span>
-                                </label>
-                            </fieldset>
                         </div>
                         <div>
                             <label>
