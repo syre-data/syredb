@@ -118,7 +118,7 @@ function LoadingUserProjects() {
 
 function UserProjectsInner() {
     const { data: projects } = useSuspenseQuery({
-        queryKey: ["user_projects"],
+        queryKey: [common.QUERY_KEY_USER_PROJECTS],
         queryFn: project_service.getUserProjects,
     });
 

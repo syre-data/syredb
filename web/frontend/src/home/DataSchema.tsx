@@ -56,12 +56,12 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
     const queryClient = useQueryClient();
 
     const { data: data_schema_resources } = useSuspenseQuery({
-        queryKey: ["data_schema_resources", data_schema_id],
+        queryKey: [common.QUERY_KEY_DATA_SCHEMA_RESOURCES, data_schema_id],
         queryFn: async () =>
             data_service.dataSchemaResourcesGet(data_schema_id),
     });
     const { data: data_schemas } = useSuspenseQuery({
-        queryKey: ["data_schemas"],
+        queryKey: [common.QUERY_KEY_DATA_SCHEMAS],
         queryFn: async () => data_service.getDataSchemasTransform(),
     });
     const data_schema = data_schema_resources.DataSchema;
@@ -101,7 +101,10 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
                     return;
                 }
                 queryClient.invalidateQueries({
-                    queryKey: ["data_schema_resources", data_schema_id],
+                    queryKey: [
+                        common.QUERY_KEY_DATA_SCHEMA_RESOURCES,
+                        data_schema_id,
+                    ],
                 });
                 setCreateTransformEditor(false);
             })

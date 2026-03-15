@@ -389,11 +389,11 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
     const navigate = useNavigate();
     const [searchParams, _] = useSearchParams();
     const { data: project } = useSuspenseQuery({
-        queryKey: ["project", project_id],
+        queryKey: [common.QUERY_KEY_PROJECT, project_id],
         queryFn: () => project_service.getProjectWithUserPermission(project_id),
     });
     const { data: project_resources } = useSuspenseQuery({
-        queryKey: ["project_resources", project_id],
+        queryKey: [common.QUERY_KEY_PROJECT_RESOURCES, project_id],
         queryFn: async () => project_service.getProjectResources(project_id),
     });
     const { data: data_schemas } = useSuspenseQuery({
@@ -706,7 +706,7 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
             .createProjectSamples(project_id, samples)
             .then((resp) => {
                 queryClient.invalidateQueries({
-                    queryKey: ["project_resources", project_id],
+                    queryKey: [common.QUERY_KEY_PROJECT_RESOURCES, project_id],
                 });
                 if (resp.ok) {
                     navigate(-1);

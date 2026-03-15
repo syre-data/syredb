@@ -64,7 +64,6 @@ function Loading() {
     return <div className="text-center pt-2">Loading users</div>;
 }
 
-const QUERY_KEY_USER_LIST = "get_users_list";
 function UserListError({ error, resetErrorBoundary }: FallbackProps) {
     const err = error as common.BackendError;
     return (
@@ -87,7 +86,7 @@ function UserListError({ error, resetErrorBoundary }: FallbackProps) {
 function UserList() {
     const [editing, setEditing] = useState<string | null>(null);
     const { data: users } = useSuspenseQuery({
-        queryKey: [QUERY_KEY_USER_LIST],
+        queryKey: [common.QUERY_KEY_USER_LIST],
         queryFn: user_service.get_users,
     });
     const [usersOptimistic, setUsersOptimistic] = useOptimistic<

@@ -39,7 +39,7 @@ interface UserProps {
 }
 function User({ user_id }: UserProps) {
     const { data: user } = useSuspenseQuery({
-        queryKey: ["user", user_id],
+        queryKey: [common.QUERY_KEY_USER, user_id],
         queryFn: async () => user_service.user(user_id),
     });
     const navigate = useNavigate();

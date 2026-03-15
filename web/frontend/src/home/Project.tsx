@@ -126,7 +126,7 @@ interface ProjectProps {
 }
 function Project({ id }: ProjectProps) {
     const { data: project_resources_data } = useSuspenseQuery({
-        queryKey: ["project_resources", id],
+        queryKey: [common.QUERY_KEY_PROJECT_RESOURCES, id],
         queryFn: async () => project_service.getProjectResources(id),
     });
     const project_resources = createProjectResources(project_resources_data);
@@ -889,7 +889,7 @@ function SampleDetailInner({
 }: SampleDetailInnerProps) {
     const project_data = useContext(CommonProjectDataCtx);
     const { data: sample_resources } = useSuspenseQuery({
-        queryKey: ["project_sample_resources", sample.Id],
+        queryKey: [common.QUERY_KEY_PROJECT_SAMPLE_RESOURCES, sample.Id],
         queryFn: async () =>
             project_service.getProjectSampleResources(
                 project_data.project_id,

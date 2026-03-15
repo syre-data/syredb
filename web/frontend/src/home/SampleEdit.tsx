@@ -111,7 +111,11 @@ interface SampleProps {
 }
 function Sample({ project_id, sample_id }: SampleProps) {
     const { data: sample_resources } = useSuspenseQuery({
-        queryKey: ["project_sample_resources", project_id, sample_id],
+        queryKey: [
+            common.QUERY_KEY_PROJECT_SAMPLE_RESOURCES,
+            project_id,
+            sample_id,
+        ],
         queryFn: async () =>
             project_service.getProjectSampleResources(project_id, sample_id),
     });

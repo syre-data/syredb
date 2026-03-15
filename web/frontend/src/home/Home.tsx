@@ -26,6 +26,7 @@ export default function Home() {
                 <Route path="/user/create" element={<UserCreate />} />
                 <Route path="/user/:user_id" element={<User />} />
                 <Route path="/user/:user_id/edit" element={<UserEdit />} />
+                <Route path="/data-schemas" element={<DataSchemas />} />
                 <Route path="/data-types" element={<DataTypes />} />
                 <Route
                     path="/data-schema/create"

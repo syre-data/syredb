@@ -11,6 +11,7 @@ import {
 import type { FallbackProps } from "react-error-boundary";
 import Loading from "./components/Loading";
 import { ErrorBoundary } from "react-error-boundary";
+import * as common from "@/common";
 import user_service from "@/service/user.service";
 import { SuspenseError } from "./components";
 
@@ -51,7 +52,7 @@ interface ProvideAppStateProps {
 }
 function ProvideAppState({ children }: ProvideAppStateProps) {
     const { data: user } = useSuspenseQuery({
-        queryKey: ["user"],
+        queryKey: [common.QUERY_KEY_USER],
         queryFn: user_service.get_user_by_jwt_token,
     });
 

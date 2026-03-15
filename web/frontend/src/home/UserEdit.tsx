@@ -50,7 +50,7 @@ interface UserEditProps {
 }
 function UserEdit({ user_id }: UserEditProps) {
     const { data: user } = useSuspenseQuery({
-        queryKey: ["user", user_id],
+        queryKey: [common.QUERY_KEY_USER, user_id],
         queryFn: async () => user_service.user(user_id),
     });
     const { data: db_permissions } = useSuspenseQuery({
@@ -161,7 +161,7 @@ function UserEdit({ user_id }: UserEditProps) {
         await user_service.userUpdate(update).then(async (resp: Response) => {
             if (resp.ok) {
                 queryClient.invalidateQueries({
-                    queryKey: ["user", user.Id.toString()],
+                    queryKey: [common.QUERY_KEY_USER, user.Id.toString()],
                 });
                 return navigate(-1);
             }

@@ -1,9 +1,16 @@
 import * as types from "@/types";
 
 export const QUERY_KEY_DB_PERMISSIONS = "db_permissions";
-export const QUERY_KEY_DATA_TYPES = "data_types";
+export const QUERY_KEY_USER = "user";
+export const QUERY_KEY_USER_LIST = "get_users_list";
+export const QUERY_KEY_DATA_SCHEMAS = "data_schemas";
 export const QUERY_KEY_DATA_SCHEMA = "data_schema";
-export const QUERY_KEY_TRANSFORM_SCHEMA = "transform_schema";
+export const QUERY_KEY_DATA_SCHEMA_RESOURCES = "data_schema_resources";
+export const QUERY_KEY_DATA_TYPES = "data_types";
+export const QUERY_KEY_USER_PROJECTS = "user_projects";
+export const QUERY_KEY_PROJECT_RESOURCES = "project_resources";
+export const QUERY_KEY_PROJECT_SAMPLE_RESOURCES = "project_sample_resources";
+export const QUERY_KEY_PROJECT = "project";
 
 export interface BackendError {
     message: string;
