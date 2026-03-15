@@ -58,7 +58,7 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
     const { data: data_schema_resources } = useSuspenseQuery({
         queryKey: ["data_schema_resources", data_schema_id],
         queryFn: async () =>
-            data_service.getDataSchemaResources(data_schema_id),
+            data_service.dataSchemaResourcesGet(data_schema_id),
     });
     const { data: data_schemas } = useSuspenseQuery({
         queryKey: ["data_schemas"],
@@ -240,7 +240,7 @@ function TransformCreate({
             <div className="flex flex-col gap-2">
                 <div>
                     <label>
-                        <span className="hidden">Label</span>
+                        <span className="sr-only">Label</span>
                         <input
                             type="text"
                             name="label"
@@ -252,7 +252,7 @@ function TransformCreate({
                 </div>
                 <div>
                     <label>
-                        <span className="hidden">Output schema</span>
+                        <span className="sr-only">Output schema</span>
                         <select
                             name="schema"
                             className="input-basic"
@@ -289,7 +289,7 @@ function TransformCreate({
                 </div>
                 <div>
                     <label>
-                        <span className="hidden">Description</span>
+                        <span className="sr-only">Description</span>
                         <textarea
                             name="description"
                             placeholder="Description"
@@ -355,7 +355,7 @@ function ColumnSchema({ schema, onRemove, onChangeLabel }: ColumnSchemaProps) {
         <div className="flex gap-2">
             <div>
                 <label>
-                    <span className="hidden">Label</span>
+                    <span className="sr-only">Label</span>
                     <input
                         ref={labelNode}
                         type="text"
@@ -370,7 +370,7 @@ function ColumnSchema({ schema, onRemove, onChangeLabel }: ColumnSchemaProps) {
             </div>
             <div>
                 <label>
-                    <span className="hidden">Data type</span>
+                    <span className="sr-only">Data type</span>
                     <select
                         id={`column[${schema.id}][dtype]`}
                         name={`column[${schema.id}][dtype]`}

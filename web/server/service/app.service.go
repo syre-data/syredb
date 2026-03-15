@@ -9,6 +9,7 @@ import (
 
 	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/wneessen/go-mail"
 )
 
@@ -120,4 +121,24 @@ func (s *AppService) SendMail(to string, subject string, body string) error {
 	}
 
 	return nil
+}
+
+type DbPermissionRecord struct {
+	Id          string `db:"_id"`
+	Label       string `db:"label"`
+	Description string `db:"description"`
+}
+
+func (s *AppService) DbPermissionsAll() ([]DbPermissionRecord, error) {
+	query := "SELECT _id, label, description FROM _db_permission_"
+	rows, _ := s.db.Conn.Query(s.ctx, query)
+	permissions, err := pgx.CollectRows(rows, pgx.RowToStructByName[DbPermissionRecord])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get db permissions")
+		return nil, err
+	}
+
+	return permissions, nil
 }

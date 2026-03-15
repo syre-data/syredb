@@ -1,70 +1,107 @@
-import { Suspense, useState } from "react";
-import type { SubmitEvent, MouseEvent, ChangeEvent } from "react";
-import { useNavigate } from "react-router";
-import { MouseButton } from "../common";
+import { Loading, SuspenseError } from "@/components";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import {
+    Suspense,
+    useEffect,
+    useState,
+    type ChangeEvent,
+    type MouseEvent,
+    type SubmitEvent,
+} from "react";
+import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
+import { Link, redirect, useNavigate, useParams } from "react-router";
+import * as uuid from "uuid";
+import icon from "@/icon";
+import * as common from "@/common";
+import app_service from "@/service/app.service";
+import user_service from "@/service/user.service";
 import isEmail from "validator/lib/isEmail";
 import { StatusCodes } from "http-status-codes";
-import icon from "../icon";
-import * as common from "@/common";
 import * as types from "@/types";
-import user_service from "@/service/user.service";
-import app_service from "@/service/app.service";
-import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { SuspenseError } from "@/components";
-import { Loading } from "@/components";
 
 export default function () {
+    const { user_id: user_id_value } = useParams();
+    if (!user_id_value) {
+        throw redirect("/");
+    }
+    const user_id = uuid.parse(user_id_value);
     return (
-        <ErrorBoundary FallbackComponent={Error}>
+        <ErrorBoundary FallbackComponent={UserEditError}>
             <Suspense fallback={<Loading />}>
-                <UserCreate />
+                <UserEdit user_id={user_id} />
             </Suspense>
         </ErrorBoundary>
     );
 }
 
-function Error({ resetErrorBoundary, error }: FallbackProps) {
+function UserEditError({ error, resetErrorBoundary }: FallbackProps) {
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}
             className="text-center pt-4"
         >
-            <div>Could not load database permissions</div>
+            <div>Could not load user.</div>
         </SuspenseError>
     );
 }
 
-function UserCreate() {
+interface UserEditProps {
+    user_id: uuid.UUIDTypes;
+}
+function UserEdit({ user_id }: UserEditProps) {
+    const { data: user } = useSuspenseQuery({
+        queryKey: ["user", user_id],
+        queryFn: async () => user_service.user(user_id),
+    });
     const { data: db_permissions } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_DB_PERMISSIONS],
         queryFn: app_service.getDbPermissions,
     });
+    const queryClient = useQueryClient();
 
     const navigate = useNavigate();
     const [error, setError] = useState("");
     const [pending, setPending] = useState(false);
-    const [password, setPassword] = useState("");
+
+    const owner_permission = db_permissions.find(
+        (permission) => permission.Id === types.DbPermissionIdOwner,
+    )!;
 
     function cancel(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != MouseButton.Primary) {
+        if (e.button != common.MouseButton.Primary) {
             return;
         }
 
         navigate(-1);
     }
 
-    function owner_permission_toggled(e: ChangeEvent<HTMLInputElement>) {
+    function disable_standard_db_permissions(disable: boolean) {
         const others = document.querySelectorAll(
             "input[name='permission'][data-standard-permission]",
         ) as NodeListOf<HTMLInputElement>;
-        const disable_others = e.target.checked;
         for (const other of others) {
-            other.disabled = disable_others;
+            other.disabled = disable;
         }
     }
 
-    async function create_user(e: SubmitEvent<HTMLFormElement>) {
+    function owner_permission_toggled(e: ChangeEvent<HTMLInputElement>) {
+        const disable_standard = e.target.checked;
+        disable_standard_db_permissions(disable_standard);
+    }
+
+    useEffect(
+        () =>
+            disable_standard_db_permissions(
+                user.DbPermissions.includes(
+                    common.db_permission_id_string_to_variant(
+                        owner_permission.Id,
+                    )!,
+                ),
+            ),
+        [],
+    );
+
+    async function update_user(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault();
         setError("");
         const btn_submit = document.getElementById(
@@ -112,16 +149,20 @@ function UserCreate() {
             (permission) => permission !== undefined,
         );
 
-        const user = {
+        const update = {
+            Id: user.Id,
+            AccountStatus: user.AccountStatus,
             Email: email,
             Name: name,
             DbPermissions: permissions,
-            Password: "",
         };
 
         setPending(true);
-        await user_service.userCreate(user).then(async (resp: Response) => {
+        await user_service.userUpdate(update).then(async (resp: Response) => {
             if (resp.ok) {
+                queryClient.invalidateQueries({
+                    queryKey: ["user", user.Id.toString()],
+                });
                 return navigate(-1);
             }
             if (resp.status == StatusCodes.CONFLICT) {
@@ -134,76 +175,50 @@ function UserCreate() {
             }
 
             const err = (await resp.json()) as types.AppError;
-            if (err.Code == types.AppErrCodeUserWelcomeEmailNotSent) {
-                setPassword(err.Payload);
-                return;
-            }
-
             setError(err.Message);
             btn_submit.disabled = false;
         });
         setPending(false);
     }
 
-    const owner_permission = db_permissions.find(
-        (permission) => permission.Id === types.DbPermissionIdOwner,
-    )!;
     return (
-        <div className="flex flex-col gap-2 items-center">
-            <h2 className="px-4 pt-2 text-xl font-bold">New user</h2>
-            {error.length > 0 ? (
-                <div className="text-red-600">
-                    <div>{error}</div>
-                </div>
-            ) : null}
-            {password.length > 0 ? (
-                <div className="text-blue-700 dark:text-blue-300 text-center">
-                    <div>Could not send welcome email</div>
-                    <div>
-                        Please inform the user their password is&nbsp;
-                        <span className="font-bold cursor-pointer select-all">
-                            {password}
-                        </span>
-                    </div>
-                </div>
-            ) : null}
-            <form
-                onSubmit={create_user}
-                className="flex flex-col gap-2 items-center"
-            >
-                <div className="flex flex-col gap-2 items-center">
-                    <div>
+        <div>
+            <div className="px-4 pt-2 flex gap-2">
+                <h2 className="text-xl">Edit user</h2>
+            </div>
+            <form onSubmit={update_user}>
+                <div className="flex flex-col gap-2">
+                    <div className="px-4">
                         <label>
                             <span className="sr-only">Email</span>
                             <input
+                                type="text"
                                 id="email"
                                 name="email"
-                                type="text"
                                 placeholder="Email"
                                 className="input-basic"
-                                autoComplete="email"
-                                required
+                                defaultValue={user.Email}
+                                onChange={(e) => e.target.setCustomValidity("")}
                             />
                         </label>
                     </div>
-                    <div>
+                    <div className="px-4">
                         <label>
                             <span className="sr-only">Name</span>
                             <input
+                                type="text"
                                 id="name"
                                 name="name"
-                                type="text"
                                 placeholder="Name"
                                 className="input-basic"
-                                autoComplete="name"
-                                required
+                                defaultValue={user.Name}
                             />
                         </label>
                     </div>
                     <div className="w-full">
                         <fieldset>
                             <label
-                                className="flex gap-2"
+                                className="flex gap-2 px-4"
                                 title={owner_permission.Description}
                             >
                                 <input
@@ -212,6 +227,11 @@ function UserCreate() {
                                     name="permission"
                                     value={owner_permission.Id}
                                     onChange={owner_permission_toggled}
+                                    defaultChecked={user.DbPermissions.includes(
+                                        common.db_permission_id_string_to_variant(
+                                            owner_permission.Id,
+                                        )!,
+                                    )}
                                 />
 
                                 <span className="whitespace-nowrap">
@@ -226,7 +246,8 @@ function UserCreate() {
                                 )
                                 .map((permission) => (
                                     <label
-                                        className="flex gap-2"
+                                        key={permission.Id}
+                                        className="flex gap-2 px-4"
                                         title={permission.Description}
                                     >
                                         <input
@@ -235,6 +256,11 @@ function UserCreate() {
                                             name="permission"
                                             value={permission.Id}
                                             data-standard-permission
+                                            defaultChecked={user.DbPermissions.includes(
+                                                common.db_permission_id_string_to_variant(
+                                                    permission.Id,
+                                                )!,
+                                            )}
                                         />
 
                                         <span className="whitespace-nowrap">
@@ -245,51 +271,35 @@ function UserCreate() {
                         </fieldset>
                     </div>
                 </div>
-                <div className="flex gap-2 justify-center">
-                    {password.length > 0 ? (
-                        <div>
-                            <button
-                                type="button"
-                                id="submit"
-                                onMouseDown={cancel}
-                                className="btn-submit flex gap-2 items-center"
-                            >
-                                <icon.LeftArrow />
-                                Back
-                            </button>
-                        </div>
-                    ) : (
-                        <>
-                            <div>
-                                <button
-                                    type="submit"
-                                    className="btn-submit"
-                                    disabled={pending}
-                                >
-                                    {pending ? (
-                                        <>
-                                            <span className="pr-2 inline-block">
-                                                <icon.Spinner className="animate-spin" />
-                                            </span>
-                                            Creating user
-                                        </>
-                                    ) : (
-                                        <>Add user</>
-                                    )}
-                                </button>
-                            </div>
-                            <div>
-                                <button
-                                    type="button"
-                                    id="submit"
-                                    onMouseDown={cancel}
-                                    className="btn-submit"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </>
-                    )}
+                <div className="flex gap-2 pt-4 px-4">
+                    <div>
+                        <button
+                            type="submit"
+                            className="btn-submit"
+                            disabled={pending}
+                        >
+                            {pending ? (
+                                <>
+                                    <span className="pr-2 inline-block">
+                                        <icon.Spinner className="animate-spin" />
+                                    </span>
+                                    Updating user
+                                </>
+                            ) : (
+                                <>Update user</>
+                            )}
+                        </button>
+                    </div>
+                    <div>
+                        <button
+                            type="button"
+                            id="submit"
+                            onMouseDown={cancel}
+                            className="btn-submit"
+                        >
+                            Cancel
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -17,16 +18,19 @@ const AppEmailUsernameKey = "app:email:username"
 const AppEmailPasswordKey = "app:email:password"
 const AppEmailFromKey = "app:email:from"
 
-type DbPermission string
+type DbPermissionId string
 
 const (
-	DbPermissionOwner            DbPermission = "owner"
-	DbPermissionAddUser          DbPermission = "add_user"
-	DbPermissionModifyUser       DbPermission = "modify_user"
-	DbPermissionCreateDataSchema DbPermission = "create_data_schema"
-	DbPermissionModifyDataSchema DbPermission = "modify_data_schema"
-	DbPermissionCreateTransform  DbPermission = "create_transform"
-	DbPermissionCreateProject    DbPermission = "create_project"
+	DbPermissionIdOwner            DbPermissionId = "owner"
+	DbPermissionIdUserCreate       DbPermissionId = "user_create"
+	DbPermissionIdUserModify       DbPermissionId = "user_modify"
+	DbPermissionIdDataSchemaCreate DbPermissionId = "data_schema_create"
+	DbPermissionIdDataSchemaModify DbPermissionId = "data_schema_modify"
+	DbPermissionIdDataTypeCreate   DbPermissionId = "data_type_create"
+	DbPermissionIdDataTypeModify   DbPermissionId = "data_type_modify"
+	DbPermissionIdTransformCreate  DbPermissionId = "transform_create"
+	DbPermissionIdTransformModify  DbPermissionId = "transform_modify"
+	DbPermissionIdProjectCreate    DbPermissionId = "project_create"
 )
 
 type AccountStatus string
@@ -58,11 +62,11 @@ func NewUserService(
 }
 
 type User struct {
-	Id            uuid.UUID
-	AccountStatus AccountStatus
-	Email         string
-	Name          string
-	DbPermissions []DbPermission
+	Id            uuid.UUID        `form:"id"`
+	AccountStatus AccountStatus    `form:"account_status"`
+	Email         string           `form:"email"`
+	Name          string           `form:"name"`
+	DbPermissions []DbPermissionId `form:"db_permissions"`
 }
 
 func (s *UserService) UserById(user_id uuid.UUID) (User, error) {
@@ -89,11 +93,11 @@ func (s *UserService) UserById(user_id uuid.UUID) (User, error) {
 	return user, nil
 }
 
-func (s *UserService) UserPermissions(user_id uuid.UUID) ([]DbPermission, error) {
+func (s *UserService) UserPermissions(user_id uuid.UUID) ([]DbPermissionId, error) {
 	query := "SELECT _permission FROM db_user_permission_ WHERE _user=$1"
 	rows, _ := s.db.Conn.Query(s.ctx, query, user_id)
-	permissions, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DbPermission, error) {
-		var permission DbPermission
+	permissions, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DbPermissionId, error) {
+		var permission DbPermissionId
 		err := row.Scan(&permission)
 		return permission, err
 	})
@@ -109,13 +113,17 @@ func (s *UserService) UserPermissions(user_id uuid.UUID) ([]DbPermission, error)
 }
 
 type UserCreate struct {
-	Email         string
-	Name          string
-	Password      string
-	DbPermissions []DbPermission
+	Email         string           `form:"email"`
+	Name          string           `form:"name"`
+	Password      string           `form:"password"`
+	DbPermissions []DbPermissionId `form:"db_permissions"`
 }
 
 func (s *UserService) CreateUser(user UserCreate) (uuid.UUID, error) {
+	if len(user.Email) == 0 || len(user.Name) == 0 {
+		return uuid.Nil, errors.New("invalid user")
+	}
+
 	tx, err := s.db.Conn.Begin(s.ctx)
 	if err != nil {
 		s.logger.With("error", err).Error("unable to begin create user transaction")
@@ -188,7 +196,7 @@ func (s *UserService) DeactivateUser(user_id uuid.UUID) error {
 	return nil
 }
 
-func (s *UserService) UpdateUser(update User) error {
+func (s *UserService) UserUpdate(update User) error {
 	tx, err := s.db.Conn.Begin(s.ctx)
 	if err != nil {
 		s.logger.With(
@@ -227,9 +235,9 @@ func (s *UserService) UpdateUser(update User) error {
 	return nil
 }
 
-func (s *UserService) SetUserPermissions(tx pgx.Tx, user uuid.UUID, permissions []DbPermission) error {
-	add_permission := []DbPermission{}
-	remove_permission := []DbPermission{}
+func (s *UserService) SetUserPermissions(tx pgx.Tx, user uuid.UUID, permissions []DbPermissionId) error {
+	add_permission := []DbPermissionId{}
+	remove_permission := []DbPermissionId{}
 	current, err := s.UserPermissions(user)
 	if err != nil {
 		return err
@@ -245,15 +253,17 @@ func (s *UserService) SetUserPermissions(tx pgx.Tx, user uuid.UUID, permissions 
 		}
 	}
 
-	remove_permission_query := "DELETE FROM db_user_permission_ WHERE _user=$1 AND _permissions=ANY($2)"
-	_, err = tx.Exec(s.ctx, remove_permission_query, user, remove_permission)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"user", user,
-			"permissions", remove_permission,
-		).Error("could not remove db user permissions")
-		return err
+	if len(remove_permission) > 0 {
+		remove_permission_query := "DELETE FROM db_user_permission_ WHERE _user=$1 AND _permission=ANY($2)"
+		_, err = tx.Exec(s.ctx, remove_permission_query, user, remove_permission)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"user", user,
+				"permissions", remove_permission,
+			).Error("could not remove db user permissions")
+			return err
+		}
 	}
 
 	if len(add_permission) > 0 {
@@ -327,10 +337,10 @@ func (s *UserService) UsersById(user_ids []uuid.UUID) ([]User, error) {
 	return users, nil
 }
 
-func (s *UserService) UserHasPermission(user uuid.UUID, permission DbPermission) (bool, error) {
+func (s *UserService) UserHasPermission(user uuid.UUID, permission DbPermissionId) (bool, error) {
 	query := fmt.Sprintf(
 		"SELECT 1 FROM db_user_permission_ WHERE _user=$1 AND _permission=ANY('{%s, $2}')",
-		DbPermissionOwner,
+		DbPermissionIdOwner,
 	)
 	user_row := s.db.Conn.QueryRow(s.ctx, query, user, permission)
 	err := user_row.Scan()

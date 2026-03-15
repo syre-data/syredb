@@ -6,19 +6,22 @@ import (
 	"net/http"
 	"path/filepath"
 	"syredb/database"
+	"syredb/service"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v5"
 )
 
 type AppHandler struct {
-	db *database.DBConnection
+	db          *database.DBConnection
+	app_service *service.AppService
 }
 
 func NewAppHandler(
 	db *database.DBConnection,
+	app_service *service.AppService,
 ) *AppHandler {
-	return &AppHandler{db: db}
+	return &AppHandler{db: db, app_service: app_service}
 }
 
 func (h AppHandler) Index(c *echo.Context) error {
@@ -83,4 +86,13 @@ func (h *AppHandler) indexUnauthenticatedHandler(c *echo.Context) error {
 		LogoPath:    template.HTMLAttr(fmt.Sprintf(`src="%s"`, logo_path)),
 	}
 	return c.Render(http.StatusOK, "index", data)
+}
+
+func (h *AppHandler) DbPermissions(c *echo.Context) error {
+	permissions, err := h.app_service.DbPermissionsAll()
+	if err != nil {
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.JSON(http.StatusOK, permissions)
 }

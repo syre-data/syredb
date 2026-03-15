@@ -32,14 +32,70 @@ func NewDataHandler(
 	}
 }
 
-func (h *DataHandler) GetDataSchemasAll(c *echo.Context) error {
+func (h *DataHandler) CreateDataType(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	schemas, err := h.data_service.GetDataSchemasAll()
+	sufficient_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdDataTypeCreate)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"user", user_id,
-		).Error("could not get user data schemas")
+		).Error("could not validate user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !sufficient_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Error("insuffiecient permission to create raw data type")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	label := c.FormValue("label")
+	description := c.FormValue("description")
+	if len(label) == 0 {
+		return c.NoContent(http.StatusBadRequest)
+	}
+	recipe, err := c.FormFile("recipe")
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not get recipe")
+		return c.NoContent(http.StatusBadRequest)
+	}
+	err = h.data_service.DataTypeCreate(recipe, label, description)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not create raw data type")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+func (h *DataHandler) DataTypesGetAll(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	schemas, err := h.data_service.DataTypesGetAll()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not get data types")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.JSON(http.StatusOK, schemas)
+
+}
+
+func (h *DataHandler) DataSchemasGetAll(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	schemas, err := h.data_service.DataSchemasGetAll()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not get data schemas")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
@@ -59,7 +115,7 @@ func (h *DataHandler) CreateDataSchema(c *echo.Context) error {
 		).Error("could not bind data")
 	}
 
-	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionCreateDataSchema)
+	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdDataSchemaCreate)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -106,7 +162,7 @@ func (h *DataHandler) GetDataSchemaResources(c *echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	resources, err := h.data_service.GetDataSchemaResources(data_schema_id)
+	resources, err := h.data_service.DataSchemaGetResources(data_schema_id)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -487,7 +543,7 @@ func (h *DataHandler) DownloadRawDataProject(c *echo.Context) error {
 
 func (h *DataHandler) CreateTransform(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionCreateTransform)
+	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdTransformCreate)
 	if err != nil {
 		c.Logger().With(
 			"error", err,

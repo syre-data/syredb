@@ -275,7 +275,7 @@ type ProjectResources struct {
 	ProjectTags          []string
 	Samples              []ProjectSample
 	RawData              []RawDataRecord
-	DataSchemas          []DataSchema
+	DataSchemas          []DataSchemaRecord
 	SampleGroups         []ProjectSampleGroup
 	SampleGroupRelations []SampleGroupRelation
 	ProjectNoteCount     uint
@@ -421,7 +421,7 @@ func (s *ProjectService) GetProjectResources(
 
 	data_schema_ids := []uuid.UUID{}
 	// TODO: Get relevent data schemas
-	project_resources.DataSchemas, err = s.data_service.GetDataSchemasById(data_schema_ids)
+	project_resources.DataSchemas, err = s.data_service.DataSchemasGetById(data_schema_ids)
 	if err != nil {
 		return ProjectResources{}, err
 	}
@@ -1239,7 +1239,7 @@ type ProjectSampleResources struct {
 	ProjectNotes                 []ProjectSampleNote
 	RawData                      []RawDataRecord
 	DerivedData                  []DerivedData
-	DataSchemas                  []DataSchema
+	DataSchemas                  []DataSchemaRecord
 	Users                        []User
 	SampleUserPermissions        []SampleUserPermissions
 	ProjectSampleUserPermissions []ProjectSampleUserPermissions
@@ -1308,7 +1308,7 @@ func (s *ProjectService) GetProjectSampleResources(
 		data_schema_ids = append(data_schema_ids, data.Schema)
 	}
 
-	resources.DataSchemas, err = s.data_service.GetDataSchemasById(data_schema_ids)
+	resources.DataSchemas, err = s.data_service.DataSchemasGetById(data_schema_ids)
 	if err != nil {
 		s.logger.With(
 			"error", err,

@@ -238,7 +238,7 @@ export default function () {
                     <div className="flex flex-col gap-2">
                         <div>
                             <label>
-                                <span className="hidden">Label</span>
+                                <span className="sr-only">Label</span>
                                 <input
                                     type="text"
                                     id="label"
@@ -275,7 +275,7 @@ export default function () {
                         </div>
                         <div>
                             <label>
-                                <span className="hidden">Description</span>
+                                <span className="sr-only">Description</span>
                                 <textarea
                                     id="description"
                                     name="description"
@@ -371,7 +371,7 @@ function ColumnSchema({ schema, onRemove, onChangeLabel }: ColumnSchemaProps) {
         <div className="flex gap-2">
             <div>
                 <label>
-                    <span className="hidden">Label</span>
+                    <span className="sr-only">Label</span>
                     <input
                         ref={labelNode}
                         type="text"
@@ -386,7 +386,7 @@ function ColumnSchema({ schema, onRemove, onChangeLabel }: ColumnSchemaProps) {
             </div>
             <div>
                 <label>
-                    <span className="hidden">Data type</span>
+                    <span className="sr-only">Data type</span>
                     <select
                         id={`column[${schema.id}][dtype]`}
                         name={`column[${schema.id}][dtype]`}

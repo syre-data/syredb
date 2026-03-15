@@ -72,7 +72,7 @@ export default function () {
                 <div className="flex flex-col gap-2 items-center">
                     <div>
                         <label>
-                            <span className="hidden">Name</span>
+                            <span className="sr-only">Name</span>
                             <input
                                 type="text"
                                 id="label"
@@ -138,7 +138,7 @@ export default function () {
                     </div>
                     <div className="w-full">
                         <label>
-                            <span className="hidden">Description</span>
+                            <span className="sr-only">Description</span>
                             <textarea
                                 name="description"
                                 placeholder="Description"

@@ -12,6 +12,9 @@ import DataSchemaCreate from "./DataSchemaCreate";
 import DataSchema from "./DataSchema";
 import SampleEdit from "./SampleEdit";
 import NotFound from "./NotFound";
+import UserEdit from "./UserEdit";
+import User from "./User";
+import DataTypes from "./DataTypes";
 
 export default function Home() {
     return (
@@ -21,6 +24,17 @@ export default function Home() {
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/users" element={<Users />} />
                 <Route path="/user/create" element={<UserCreate />} />
+                <Route path="/user/:user_id" element={<User />} />
+                <Route path="/user/:user_id/edit" element={<UserEdit />} />
+                <Route path="/data-types" element={<DataTypes />} />
+                <Route
+                    path="/data-schema/create"
+                    element={<DataSchemaCreate />}
+                />
+                <Route
+                    path="/data-schema/:data_schema_id"
+                    element={<DataSchema />}
+                />
                 <Route path="/project">
                     <Route path="create" element={<ProjectCreate />} />
                     <Route path=":project_id">
@@ -35,16 +49,11 @@ export default function Home() {
                             element={<SampleEdit />}
                         />
                         <Route
-                            path="sample_group/create"
+                            path="sample-group/create"
                             element={<SampleGroupCreate />}
                         />
                     </Route>
                 </Route>
-                <Route path="/data_schema">
-                    <Route path="create" element={<DataSchemaCreate />} />
-                    <Route path=":data_schema_id" element={<DataSchema />} />
-                </Route>
-
                 <Route path="*" element={<NotFound />} />
             </Routes>
         </BrowserRouter>

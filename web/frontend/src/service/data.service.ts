@@ -1,26 +1,32 @@
 import * as types from "@/types";
 import type { UUIDTypes } from "uuid";
 
-function getDataSchemasAll(): Promise<types.DataSchema[]> {
+function dataTypesGetAll(): Promise<types.DataType[]> {
+    return fetch("/api/data-types", {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.DataType[]);
+}
+
+function dataTypeCreate(
+    transform: File,
+    label: string,
+    description?: string,
+): Promise<Response> {
+    const data = new FormData();
+    data.set("transform", transform);
+    data.set("label", label);
+    data.set("description", description ?? "");
+    return fetch("/api/data-type", {
+        credentials: "same-origin",
+        method: "post",
+        body: data,
+    });
+}
+
+function dataSchemasGetAll(): Promise<types.DataSchemaRecord[]> {
     return fetch("/api/data-schemas", {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataSchema[]);
-}
-
-function getDataSchemasRaw(): Promise<types.DataSchema[]> {
-    const params = new URLSearchParams();
-    params.append("type", "raw");
-    return fetch(`/api/data-schemas?${params}`, {
-        credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataSchema[]);
-}
-
-function getDataSchemasTransform(): Promise<types.DataSchema[]> {
-    const params = new URLSearchParams();
-    params.append("type", "transform");
-    return fetch(`/api/data-schemas?${params}`, {
-        credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataSchema[]);
+    }).then(async (resp) => (await resp.json()) as types.DataSchemaRecord[]);
 }
 
 function saveProjectDataAll(
@@ -72,8 +78,8 @@ function dataSchemaCreate(
 
 function transformCreate(transform: types.TransformCreate): Promise<Response> {
     const data = new FormData();
-    data.append("input", transform.Input.toString());
-    data.append("output", transform.Output.toString());
+    data.append("input", transform.SourceSchema.toString());
+    data.append("output", transform.DestinationSchema.toString());
     data.append("label", transform.Label);
     data.append("description", transform.Description);
     data.append("script", transform.Script);
@@ -86,7 +92,7 @@ function transformCreate(transform: types.TransformCreate): Promise<Response> {
 
 function parseDataFileToSchema(
     file: File,
-    schema: types.DataSchema,
+    schema: types.DataSchemaRecord,
 ): Promise<any> {
     switch (file.type) {
         case "text/csv":
@@ -96,7 +102,10 @@ function parseDataFileToSchema(
     }
 }
 
-async function parseDataFileToSchemaCsv(file: File, schema: types.DataSchema) {
+async function parseDataFileToSchemaCsv(
+    file: File,
+    schema: types.DataSchemaRecord,
+) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
 
@@ -129,7 +138,7 @@ async function parseDataFileToSchemaCsv(file: File, schema: types.DataSchema) {
 
 function parse_data_file_to_schema_csv(
     content: string,
-    schema: types.DataSchema,
+    schema: types.DataSchemaRecord,
 ) {
     if (content.length === 0) {
         throw new Error("NO_DATA");
@@ -173,14 +182,14 @@ function parse_data_file_to_schema_csv(
 
 function parse_data_file_parse_string_to_value(
     value: string,
-    dtype: types.DataType,
+    dtype: types.ValueType,
 ): any {
     switch (dtype) {
-        case types.DataTypeString:
+        case types.ValueTypeString:
             return value;
-        case types.DataTypeInt:
+        case types.ValueTypeInt:
             return parseInt(value);
-        case types.DataTypeUint:
+        case types.ValueTypeUint:
             const parsed = parseInt(value);
             if (parsed < 0) {
                 throw new Error(
@@ -188,16 +197,16 @@ function parse_data_file_parse_string_to_value(
                 );
             }
             return parsed;
-        case types.DataTypeFloat:
+        case types.ValueTypeFloat:
             return parseFloat(value);
-        case types.DataTypeBoolean:
+        case types.ValueTypeBoolean:
             return value === "true";
-        case types.DataTypeTimestamp:
+        case types.ValueTypeTimestamp:
             return new Date(value);
     }
 }
 
-function getDataSchemaResources(
+function dataSchemaResourcesGet(
     data_schema_id: UUIDTypes,
 ): Promise<types.DataSchemaResources> {
     const params = new URLSearchParams();
@@ -207,7 +216,7 @@ function getDataSchemaResources(
     }).then(async (resp) => (await resp.json()) as types.DataSchemaResources);
 }
 
-function getTransformSchemas(): Promise<types.TransformResources> {
+function transformSchemasGet(): Promise<types.TransformResources> {
     const params = new URLSearchParams();
     params.append("type", "transform");
     return fetch(`/api/data-schemas?${params}`, {
@@ -216,16 +225,16 @@ function getTransformSchemas(): Promise<types.TransformResources> {
 }
 
 export default {
-    getDataSchemasAll,
-    getDataSchemasRaw,
-    getDataSchemasTransform,
+    dataTypesGetAll,
+    dataTypeCreate,
+    dataSchemasGetAll,
     saveProjectDataAll,
     saveSampleDataSingle,
     saveSampleDataMultiple,
     saveDataSchemaSampleDataAll,
     dataSchemaCreate,
     parseDataFileToSchema,
-    getDataSchemaResources,
-    getTransformSchemas,
+    dataSchemaResourcesGet,
+    transformSchemasGet,
     transformCreate,
 };

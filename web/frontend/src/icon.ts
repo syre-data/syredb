@@ -1,5 +1,5 @@
 import { AiOutlinePlus, AiOutlineReload } from "react-icons/ai";
-import { FaUsersCog, FaCheck, FaFileUpload, FaSearch } from "react-icons/fa";
+import { FaUser, FaCheck, FaFileUpload, FaSearch } from "react-icons/fa";
 import {
     FaArrowLeft,
     FaCaretDown,
@@ -12,7 +12,8 @@ import {
     FaX,
 } from "react-icons/fa6";
 import { IoIosLogOut, IoMdHome, IoIosArrowRoundBack } from "react-icons/io";
-import { MdEdit } from "react-icons/md";
+import { MdEdit, MdOutlineCategory } from "react-icons/md";
+import { TbColumns3 } from "react-icons/tb";
 import { IoEyeOutline } from "react-icons/io5";
 
 export default {
@@ -21,6 +22,8 @@ export default {
     Check: FaCheck,
     CircleX: FaRegCircleXmark,
     Close: FaX,
+    DataType: MdOutlineCategory,
+    DataSchema: TbColumns3,
     Download: FaDownload,
     Eye: IoEyeOutline,
     FileUpload: FaFileUpload,
@@ -35,5 +38,5 @@ export default {
     Search: FaSearch,
     Spinner: FaSpinner,
     Trash: FaTrash,
-    Users: FaUsersCog,
+    User: FaUser,
 };

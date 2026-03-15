@@ -207,7 +207,7 @@ export default function () {
 //         <div className="inline-flex gap-2 pb-2">
 //             <div className="grow">
 //                 <label>
-//                     <span className="hidden">label</span>
+//                     <span className="sr-only">label</span>
 //                     <input
 //                         id={`sample[${id}][label]`}
 //                         name={`sample[${id}][label]`}

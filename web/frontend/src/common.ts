@@ -1,5 +1,7 @@
 import * as types from "@/types";
 
+export const QUERY_KEY_DB_PERMISSIONS = "db_permissions";
+export const QUERY_KEY_DATA_TYPES = "data_types";
 export const QUERY_KEY_DATA_SCHEMA = "data_schema";
 export const QUERY_KEY_TRANSFORM_SCHEMA = "transform_schema";
 
@@ -16,49 +18,53 @@ export enum MouseButton {
 
 export function project_user_permission_string_to_variant(
     value: string,
-): types.ProjectUserPermission | undefined {
+): types.ProjectPermission | undefined {
     switch (value) {
         case "owner":
-            return types.ProjectUserPermissionOwner;
-        case "admin":
-            return types.ProjectUserPermissionAdmin;
-        case "read_write":
-            return types.ProjectUserPermissionReadWrite;
+            return types.ProjectPermissionOwner;
+        case "create_sample":
+            return types.ProjectPermissionCreateSample;
         case "read":
-            return types.ProjectUserPermissionRead;
+            return types.ProjectPermissionRead;
         default:
             return undefined;
     }
 }
 
 export function has_db_permission(
-    needle: types.DbUserPermission,
-    haystack: types.DbUserPermission[],
+    needle: types.DbPermissionId,
+    haystack: types.DbPermissionId[],
 ): boolean {
     return (
-        haystack.includes(types.DbUserPermissionOwner) ||
+        haystack.includes(types.DbPermissionIdOwner) ||
         haystack.includes(needle)
     );
 }
 
-export function user_db_permission_string_to_variant(
+export function db_permission_id_string_to_variant(
     value: string,
-): types.DbUserPermission | undefined {
+): types.DbPermissionId | undefined {
     switch (value) {
         case "owner":
-            return types.DbUserPermissionOwner;
-        case "add_user":
-            return types.DbUserPermissionAddUser;
-        case "modify_user":
-            return types.DbUserPermissionModifyUser;
-        case "create_data_schema":
-            return types.DbUserPermissionCreateDataSchema;
-        case "modify_data_schema":
-            return types.DbUserPermissionModifyDataSchema;
-        case "create_transform":
-            return types.DbUserPermissionCreateTransform;
-        case "create_project":
-            return types.DbUserPermissionCreateProject;
+            return types.DbPermissionIdOwner;
+        case "user_create":
+            return types.DbPermissionIdUserCreate;
+        case "user_modify":
+            return types.DbPermissionIdUserModify;
+        case "data_schema_create":
+            return types.DbPermissionIdDataSchemaCreate;
+        case "data_schema_modify":
+            return types.DbPermissionIdDataSchemaModify;
+        case "data_type_create":
+            return types.DbPermissionIdDataTypeCreate;
+        case "data_type_modify":
+            return types.DbPermissionIdDataTypeModify;
+        case "transform_create":
+            return types.DbPermissionIdTransformCreate;
+        case "transform_modify":
+            return types.DbPermissionIdTransformModify;
+        case "project_create":
+            return types.DbPermissionIdProjectCreate;
         default:
             return undefined;
     }
@@ -66,20 +72,20 @@ export function user_db_permission_string_to_variant(
 
 export function data_type_string_to_variant(
     value: string,
-): types.DataType | undefined {
+): types.ValueType | undefined {
     switch (value) {
         case "string":
-            return types.DataTypeString;
+            return types.ValueTypeString;
         case "int":
-            return types.DataTypeInt;
+            return types.ValueTypeInt;
         case "uint":
-            return types.DataTypeUint;
+            return types.ValueTypeUint;
         case "float":
-            return types.DataTypeFloat;
+            return types.ValueTypeFloat;
         case "boolean":
-            return types.DataTypeBoolean;
+            return types.ValueTypeBoolean;
         case "timestamp":
-            return types.DataTypeTimestamp;
+            return types.ValueTypeTimestamp;
         default:
             return undefined;
     }

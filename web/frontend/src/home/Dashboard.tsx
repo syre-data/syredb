@@ -20,13 +20,27 @@ export default function Dashboard() {
     const appState = useContext(appStateCtx.Context);
     const canCreateOrModifyDataSchema =
         common.has_db_permission(
-            types.DbUserPermissionCreateDataSchema,
+            types.DbPermissionDataSchemaCreate,
             appState.user.DbPermissions,
         ) ||
         common.has_db_permission(
-            types.DbUserPermissionModifyDataSchema,
+            types.DbPermissionDataSchemaModify,
             appState.user.DbPermissions,
         );
+    const canCreateOrModifyDataTypes =
+        common.has_db_permission(
+            types.DbPermissionDataTypeCreate,
+            appState.user.DbPermissions,
+        ) ||
+        common.has_db_permission(
+            types.DbPermissionDataTypeModify,
+            appState.user.DbPermissions,
+        );
+
+    const canModifyUsers = common.has_db_permission(
+        types.DbPermissionUserModify,
+        appState.user.DbPermissions,
+    );
 
     return (
         <div>
@@ -36,32 +50,14 @@ export default function Dashboard() {
             </div>
             <main>
                 <UserProjects />
-                {canCreateOrModifyDataSchema ? (
-                    <DataSchemas className="pt-4" />
-                ) : null}
             </main>
         </div>
     );
 }
 
 function Nav() {
-    const appState = useContext(appStateCtx.Context);
-    const canModifyUsers = common.has_db_permission(
-        types.DbUserPermissionModifyUser,
-        appState.user.DbPermissions,
-    );
-
     return (
         <div className="flex gap-2">
-            <div>
-                {canModifyUsers ? (
-                    <Link to="/users" title="Users">
-                        <button type="button" className="btn-cmd">
-                            <icon.Users />
-                        </button>
-                    </Link>
-                ) : null}
-            </div>
             <div>
                 <Link to="/settings" title="Settings">
                     <button type="button" className="btn-cmd">
@@ -181,33 +177,122 @@ function ProjectCard({ project }: ProjectCardProps) {
     );
 }
 
-interface DataSchemasProps {
-    className: string;
+interface DataTypesProps {
+    className?: string;
 }
-function DataSchemas({ className }: DataSchemasProps) {
+function DataTypes({ className }: DataTypesProps) {
     return (
-        <div className={className}>
-            <div className="flex gap-2 items-baseline px-4">
-                <h3 className="text-lg font-bold">Data schemas</h3>
-                <div className="gap-1">
-                    <Link to="/data_schema/create">
+        <div className={className ?? ""}>
+            <ErrorBoundary FallbackComponent={DataTypesError}>
+                <Suspense fallback={<DataTypesLoading />}>
+                    <DataTypesInner />
+                </Suspense>{" "}
+            </ErrorBoundary>
+        </div>
+    );
+}
+
+function DataTypesError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
+    const err = error as common.BackendError;
+    console.error(err);
+
+    return (
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="text-center"
+        >
+            <div>Could not get data types</div>
+            <div>{err.message}</div>
+        </SuspenseError>
+    );
+}
+
+function DataTypesLoading() {
+    return (
+        <div>
+            <div className="flex gap-2 items-center px-4">
+                <h3 className="text-lg font-bold">Data types</h3>
+            </div>
+            <div className="text-center">Loading</div>
+        </div>
+    );
+}
+
+function DataTypesInner() {
+    const { data: data_types } = useSuspenseQuery({
+        queryKey: [common.QUERY_KEY_DATA_TYPES],
+        queryFn: data_service.dataTypesGetAll,
+    });
+
+    return (
+        <div className={`group`}>
+            <div className="flex gap-2 items-center px-4">
+                <h3 className="text-lg font-bold">Data types</h3>
+                <div
+                    className={classNames({
+                        "invisible group-hover:visible": data_types.length > 0,
+                    })}
+                >
+                    <Link to="/data-type">
                         <button
                             type="button"
                             className="btn-cmd"
-                            title="Create data schema"
+                            title="Edit data types"
                         >
-                            <icon.Plus />
+                            <icon.Pen />
                         </button>
                     </Link>
                 </div>
             </div>
+            {data_types.length === 0 ? (
+                <DataTypesEmpty />
+            ) : (
+                <DataTypesContent data_types={data_types} />
+            )}
+        </div>
+    );
+}
+
+function DataTypesEmpty() {
+    return (
+        <div className="px-4">
             <div>
-                <ErrorBoundary FallbackComponent={DataSchemaError}>
-                    <Suspense fallback={<DataSchemaLoading />}>
-                        <DataSchemaInner />
-                    </Suspense>
-                </ErrorBoundary>
+                <div>No data types</div>
+                <div>
+                    Create some by clicking the <icon.Pen className="inline" />{" "}
+                    above.
+                </div>
             </div>
+        </div>
+    );
+}
+
+interface DataTypesContentProps {
+    data_types: types.DataType[];
+}
+function DataTypesContent({ data_types }: DataTypesContentProps) {
+    return (
+        <ul>
+            {data_types.map((data_type) => (
+                <li key={data_type.Id.toString()} className="px-4">
+                    {data_type.Description}
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+interface DataSchemasProps {
+    className?: string;
+}
+function DataSchemas({ className }: DataSchemasProps) {
+    return (
+        <div className={className ?? ""}>
+            <ErrorBoundary FallbackComponent={DataSchemaError}>
+                <Suspense fallback={<DataSchemaLoading />}>
+                    <DataSchemaInner />
+                </Suspense>
+            </ErrorBoundary>
         </div>
     );
 }
@@ -224,48 +309,89 @@ function DataSchemaError({ error, resetErrorBoundary }: FallbackProps) {
 }
 
 function DataSchemaLoading() {
-    return <div className="text-center">Loading</div>;
+    return (
+        <div>
+            <h3 className="text-lg font-bold">Data schemas</h3>
+            <div className="text-center">Loading</div>
+        </div>
+    );
 }
 
 function DataSchemaInner() {
     const { data: data_schemas } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_DATA_SCHEMA],
-        queryFn: data_service.getDataSchemasAll,
+        queryFn: data_service.dataSchemasGetAll,
     });
 
-    if (data_schemas.length === 0) {
-        return (
-            <div className="px-4">
-                <div>
-                    <div>No data schemas</div>
-                    <div>
-                        Create your first data schema by clicking the{" "}
-                        <icon.Plus className="inline" /> above.
-                    </div>
+    return (
+        <div className={`group`}>
+            <div className="flex gap-2 items-center px-4">
+                <h3 className="text-lg font-bold">Data schemas</h3>
+                <div
+                    className={classNames({
+                        "invisible group-hover:visible":
+                            data_schemas.length > 0,
+                    })}
+                >
+                    <Link to="/data-schema/create">
+                        <button
+                            type="button"
+                            className="btn-cmd"
+                            title="Create data schema"
+                        >
+                            <icon.Plus />
+                        </button>
+                    </Link>
                 </div>
             </div>
-        );
-    } else {
-        return (
-            <ul className="grid gap-2 grid-cols-[repeat(4,min-content)]">
-                {data_schemas.map((schema, index) => (
-                    <li
-                        key={schema.Id.toString()}
-                        className="grid grid-cols-subgrid col-span-full"
-                    >
-                        <DataSchemaContent index={index} schema={schema} />
-                    </li>
-                ))}
-            </ul>
-        );
-    }
+            <div>
+                {data_schemas.length === 0 ? (
+                    <DataSchemasEmpty />
+                ) : (
+                    <DataSchemasContent data_schemas={data_schemas} />
+                )}
+            </div>
+        </div>
+    );
 }
 
-interface DataSchemaProps {
-    index: number;
-    schema: types.DataSchema;
+function DataSchemasEmpty() {
+    return (
+        <div className="px-4">
+            <div>
+                <div>No data schemas</div>
+                <div>
+                    Create your first data schema by clicking the{" "}
+                    <icon.Plus className="inline" /> above.
+                </div>
+            </div>
+        </div>
+    );
 }
-function DataSchemaContent({ index, schema }: DataSchemaProps) {
+
+interface DataSchemasContentProps {
+    data_schemas: types.DataSchemaRecord[];
+}
+function DataSchemasContent({ data_schemas }: DataSchemasContentProps) {
+    return (
+        <ul className="grid gap-2 grid-cols-[repeat(4,min-content)]">
+            {data_schemas.map((schema, index) => (
+                <li
+                    key={schema.Id.toString()}
+                    className="grid grid-cols-subgrid col-span-full"
+                >
+                    <DataSchemaContent index={index} schema={schema} />
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+interface DataSchemaContentProps {
+    index: number;
+    schema: types.DataSchemaRecord;
+}
+function DataSchemaContent({ index, schema }: DataSchemaContentProps) {
     const ROW_SPAN = 2;
     const [expanded, setExpanded] = useState(false);
 

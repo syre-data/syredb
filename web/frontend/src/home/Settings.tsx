@@ -3,7 +3,7 @@ import type { MouseEvent } from "react";
 import icon from "../icon";
 import { MouseButton } from "../common";
 import * as appStateCtx from "../AppStateContext";
-import { useNavigate } from "react-router";
+import { useNavigate, Link } from "react-router";
 import auth_service from "@/service/auth.service";
 
 export default function Settings() {
@@ -18,53 +18,44 @@ export default function Settings() {
 }
 
 function Nav() {
-    const navigate = useNavigate();
-
-    function close(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != MouseButton.Primary) {
-            return;
-        }
-
-        navigate(-1);
-    }
-
-    async function logout(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != MouseButton.Primary) {
-            return;
-        }
-
-        await auth_service
-            .logout()
-            .then(() => {
-                navigate("/");
-            })
-            .catch((err) => {
-                console.error("could not log out", err);
-                // TODO: alert user
-            });
-    }
-
     return (
         <div className="flex flex-col gap-4 text-2xl border-r">
             <div className="grow">
-                <button
-                    type="button"
-                    onMouseDown={close}
-                    title="Close"
-                    className="btn-cmd px-2"
-                >
-                    <icon.Close />
-                </button>
+                <Link to="/" title="Dashboard">
+                    <button type="button" className="btn-cmd">
+                        <icon.Home />
+                    </button>
+                </Link>
             </div>
             <div>
-                <button
-                    type="button"
-                    onMouseDown={logout}
-                    title="Log out"
-                    className="btn-cmd px-2"
-                >
-                    <icon.Logout />
-                </button>
+                <div>
+                    <Link to="/users" title="Users">
+                        <button type="button" className="btn-cmd">
+                            <icon.User />
+                        </button>
+                    </Link>
+                </div>
+                <div>
+                    <Link to="/data-schemas" title="Data schemas">
+                        <button type="button" className="btn-cmd">
+                            <icon.DataSchema />
+                        </button>
+                    </Link>
+                </div>
+                <div>
+                    <Link to="/data-types" title="Data types">
+                        <button type="button" className="btn-cmd">
+                            <icon.DataType />
+                        </button>
+                    </Link>
+                </div>
+            </div>
+            <div>
+                <Link to="/logout" title="Log out">
+                    <button type="button" className="btn-cmd">
+                        <icon.Logout />
+                    </button>
+                </Link>
             </div>
         </div>
     );

@@ -37,6 +37,8 @@ import project_service from "@/service/project.service";
 import data_service from "@/service/data.service";
 import { StatusCodes } from "http-status-codes";
 
+// TODO: Don't allow data to be uploaded if no raw data types are available.
+
 export default function () {
     const { project_id } = useParams();
     if (project_id === undefined) {
@@ -348,21 +350,21 @@ function project_sample_create_is_empty(
     );
 }
 
-interface SampleDataProperty {
-    id: string;
-    key?: string;
-    type?: types.PropertyType;
-    value: any;
-}
+// interface SampleDataProperty {
+//     id: string;
+//     key?: string;
+//     type?: types.PropertyType;
+//     value: any;
+// }
 
-interface SampleDataCreate {
-    id: string;
-    sample_id: string;
-    schema?: string;
-    file?: File;
-    timestamp?: Date;
-    properties: Map<string, SampleDataProperty>;
-}
+// interface SampleDataCreate {
+//     id: string;
+//     sample_id: string;
+//     schema?: string;
+//     file?: File;
+//     timestamp?: Date;
+//     properties: Map<string, SampleDataProperty>;
+// }
 
 interface SampleNoteCreate {
     id: string;
@@ -400,16 +402,13 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
     });
 
     const [error, setError] = useState("");
-    const user_permission = common.project_user_permission_string_to_variant(
-        project.UserPermission,
-    );
-    if (user_permission === undefined) {
-        console.error(`invalid user permission: ${project.UserPermission}`);
-        navigate("/");
-        return;
-    }
-    if (!common.is_admin_or_owner(user_permission)) {
-        console.error(`insufficient permission: ${project.UserPermission}`);
+    if (
+        !project_service.hasPermission(
+            types.ProjectPermissionCreateSample,
+            project.Permissions,
+        )
+    ) {
+        console.error(`invalid user permission: ${project.Permissions}`);
         navigate("/");
         return;
     }
@@ -533,125 +532,125 @@ function ProjectSamplesCreate({ project_id }: ProjectSamplesCreateProps) {
             }
         }
 
-        for (const data of sample_data.values()) {
-            if (data.file === undefined || !data.file.name) {
-                continue;
-            }
-            if (!data.schema) {
-                console.debug(data.file);
-                const input = document.getElementById(
-                    `sample[${data.sample_id}][data][${data.id}][schema]`,
-                )! as HTMLInputElement;
-                input.setCustomValidity("Data schema must be set");
-                continue;
-            }
+        // for (const data of sample_data.values()) {
+        //     if (data.file === undefined || !data.file.name) {
+        //         continue;
+        //     }
+        //     if (!data.schema) {
+        //         console.debug(data.file);
+        //         const input = document.getElementById(
+        //             `sample[${data.sample_id}][data][${data.id}][schema]`,
+        //         )! as HTMLInputElement;
+        //         input.setCustomValidity("Data schema must be set");
+        //         continue;
+        //     }
 
-            const data_properties = [];
-            for (const property of data.properties.values()) {
-                if (!property.key || !property.type) {
-                    console.error(`invalid sample data property`, property);
-                    submitBtn.disabled = false;
-                    return;
-                }
+        //     const data_properties = [];
+        //     for (const property of data.properties.values()) {
+        //         if (!property.key || !property.type) {
+        //             console.error(`invalid sample data property`, property);
+        //             submitBtn.disabled = false;
+        //             return;
+        //         }
 
-                if (!property.value) {
-                    continue;
-                }
+        //         if (!property.value) {
+        //             continue;
+        //         }
 
-                let value;
-                switch (property.type) {
-                    case types.PropertyTypeString:
-                        value = property.value;
-                        break;
-                    case types.PropertyTypeBool:
-                        switch (property.value) {
-                            case "true":
-                                value = true;
-                                break;
-                            case "false":
-                                value = false;
-                                break;
-                            default:
-                                console.error(
-                                    `invalid sample data property value: ${property.value}`,
-                                );
-                                submitBtn.disabled = false;
-                                return;
-                        }
-                        break;
-                    case types.PropertyTypeInt:
-                        value = parseInt(property.value);
-                        break;
-                    case types.PropertyTypeUint:
-                        value = parseInt(property.value);
-                        if (value < 0) {
-                            const input = document.getElementById(
-                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value]`,
-                            )! as HTMLInputElement;
-                            input.setCustomValidity(
-                                "invalid value, must be non-negative",
-                            );
-                        }
-                        break;
-                    case types.PropertyTypeFloat:
-                        value = parseFloat(property.value);
-                        break;
-                    case types.PropertyTypeTimestamp:
-                        // TODO
-                        break;
-                    case types.PropertyTypeQuantity:
-                        if (!property.value.magnitude && !property.value.unit) {
-                            continue;
-                        }
-                        if (!property.value.magnitude) {
-                            const input = document.getElementById(
-                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value][magnitude]`,
-                            )! as HTMLInputElement;
-                            input.setCustomValidity(
-                                "magnitude can not be empty",
-                            );
-                        } else if (!property.value.unit) {
-                            const input = document.getElementById(
-                                `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value][magnitude]`,
-                            )! as HTMLInputElement;
-                            input.setCustomValidity("unit can not be empty");
-                        }
+        //         let value;
+        //         switch (property.type) {
+        //             case types.PropertyTypeString:
+        //                 value = property.value;
+        //                 break;
+        //             case types.PropertyTypeBool:
+        //                 switch (property.value) {
+        //                     case "true":
+        //                         value = true;
+        //                         break;
+        //                     case "false":
+        //                         value = false;
+        //                         break;
+        //                     default:
+        //                         console.error(
+        //                             `invalid sample data property value: ${property.value}`,
+        //                         );
+        //                         submitBtn.disabled = false;
+        //                         return;
+        //                 }
+        //                 break;
+        //             case types.PropertyTypeInt:
+        //                 value = parseInt(property.value);
+        //                 break;
+        //             case types.PropertyTypeUint:
+        //                 value = parseInt(property.value);
+        //                 if (value < 0) {
+        //                     const input = document.getElementById(
+        //                         `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value]`,
+        //                     )! as HTMLInputElement;
+        //                     input.setCustomValidity(
+        //                         "invalid value, must be non-negative",
+        //                     );
+        //                 }
+        //                 break;
+        //             case types.PropertyTypeFloat:
+        //                 value = parseFloat(property.value);
+        //                 break;
+        //             case types.PropertyTypeTimestamp:
+        //                 // TODO
+        //                 break;
+        //             case types.PropertyTypeQuantity:
+        //                 if (!property.value.magnitude && !property.value.unit) {
+        //                     continue;
+        //                 }
+        //                 if (!property.value.magnitude) {
+        //                     const input = document.getElementById(
+        //                         `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value][magnitude]`,
+        //                     )! as HTMLInputElement;
+        //                     input.setCustomValidity(
+        //                         "magnitude can not be empty",
+        //                     );
+        //                 } else if (!property.value.unit) {
+        //                     const input = document.getElementById(
+        //                         `sample[${data.sample_id}][data][${data.id}][property][${property.id}][value][magnitude]`,
+        //                     )! as HTMLInputElement;
+        //                     input.setCustomValidity("unit can not be empty");
+        //                 }
 
-                        const magnitude_value = parseFloat(
-                            property.value.magnitude,
-                        );
-                        value = {
-                            MagnitudeString: property.value.magnitude,
-                            MagnitudeValue: magnitude_value,
-                            Unit: property.value.unit,
-                        } as property.QuantityProperty;
-                        break;
-                    default:
-                        throw new Error(
-                            `invalid property type: ${property.type}`,
-                        );
-                }
+        //                 const magnitude_value = parseFloat(
+        //                     property.value.magnitude,
+        //                 );
+        //                 value = {
+        //                     MagnitudeString: property.value.magnitude,
+        //                     MagnitudeValue: magnitude_value,
+        //                     Unit: property.value.unit,
+        //                 } as property.QuantityProperty;
+        //                 break;
+        //             default:
+        //                 throw new Error(
+        //                     `invalid property type: ${property.type}`,
+        //                 );
+        //         }
 
-                data_properties.push({
-                    Key: property.key,
-                    Type: property.type,
-                    Value: value,
-                } satisfies types.ProjectSampleDataPropertyCreate);
-            }
+        //         data_properties.push({
+        //             Key: property.key,
+        //             Type: property.type,
+        //             Value: value,
+        //         } satisfies types.ProjectSampleDataPropertyCreate);
+        //     }
 
-            const sample = sample_info.get(data.sample_id)!;
-            const file_info = {
-                Name: data.file.name,
-                Size: data.file.size,
-                File: data.file,
-            } satisfies types.FileInfo;
-            sample.Data.push({
-                Schema: data.schema,
-                File: file_info,
-                Timestamp: data.timestamp ?? new Date(),
-                Properties: data_properties,
-            } satisfies types.ProjectSampleDataCreate);
-        }
+        //     const sample = sample_info.get(data.sample_id)!;
+        //     const file_info = {
+        //         Name: data.file.name,
+        //         Size: data.file.size,
+        //         File: data.file,
+        //     } satisfies types.FileInfo;
+        //     sample.Data.push({
+        //         Schema: data.schema,
+        //         File: file_info,
+        //         Timestamp: data.timestamp ?? new Date(),
+        //         Properties: data_properties,
+        //     } satisfies types.ProjectSampleDataCreate);
+        // }
 
         for (const note of sample_notes.values()) {
             if (!note.content) {
@@ -794,18 +793,18 @@ function project_samples_create_parse_form_data(
     properties: PropertyInfo[],
 ): [
     Map<string, types.ProjectSampleCreate>,
-    Map<string, SampleDataCreate>,
+    // Map<string, SampleDataCreate>,
     Map<string, SampleNoteCreate>,
 ] {
     const SAMPLE_FORM_KEY_PATTERN = /sample\[(\d+?)\]\[(\w+?)\]/;
     const SAMPLE_PROPERTY_PATTERN = /sample\[\d+?\]\[property\]\[(\w+?)\]/;
-    const SAMPLE_DATA_PATTERN = /sample\[\d+?\]\[data\]\[(\d+?)\]\[(\w+?)\]/;
-    const SAMPLE_DATA_PROPERTY_PATTERN =
-        /sample\[\d+?\]\[data\]\[\d+?\]\[property\]\[(\d+)\]\[(\w+?)\]/;
+    // const SAMPLE_DATA_PATTERN = /sample\[\d+?\]\[data\]\[(\d+?)\]\[(\w+?)\]/;
+    // const SAMPLE_DATA_PROPERTY_PATTERN =
+    //     /sample\[\d+?\]\[data\]\[\d+?\]\[property\]\[(\d+)\]\[(\w+?)\]/;
     const SAMPLE_NOTE_PATTERN = /sample\[\d+?\]\[note\]\[(\d+?)\]\[(\w+?)\]/;
 
     const sample_info = new Map<string, types.ProjectSampleCreate>();
-    const sample_data = new Map<string, SampleDataCreate>();
+    // const sample_data = new Map<string, SampleDataCreate>();
     const sample_notes = new Map<string, SampleNoteCreate>();
 
     for (const [key, value] of data.entries()) {
@@ -996,99 +995,99 @@ function project_samples_create_parse_form_data(
                 } satisfies types.Property;
                 sample.Properties.push(prop);
                 break;
-            case "data":
-                const data_matches = key.match(SAMPLE_DATA_PATTERN);
-                if (data_matches === null) {
-                    throw new Error(`invalid sample data form key: ${key}`);
-                }
+            // case "data":
+            //     const data_matches = key.match(SAMPLE_DATA_PATTERN);
+            //     if (data_matches === null) {
+            //         throw new Error(`invalid sample data form key: ${key}`);
+            //     }
 
-                const data_id = data_matches[1]!;
-                const data_key = data_matches[2]!;
-                const data_map_key = `${sample_id}/${data_id}`;
-                if (!sample_data.has(data_map_key)) {
-                    sample_data.set(data_map_key, {
-                        id: data_id,
-                        sample_id: sample_id,
-                        file: undefined,
-                        timestamp: undefined,
-                        properties: new Map(),
-                    });
-                }
-                const sample_datum = sample_data.get(data_map_key)!;
-                switch (data_key) {
-                    case "schema":
-                        sample_datum.schema = value.toString().trim();
-                        break;
-                    case "file":
-                        const file = value as File;
-                        sample_datum.file = file;
-                        break;
-                    case "timestamp":
-                        sample_datum.timestamp = new Date(value.toString());
-                        break;
-                    case "property":
-                        const data_property_matches = key.match(
-                            SAMPLE_DATA_PROPERTY_PATTERN,
-                        );
-                        if (data_property_matches === null) {
-                            throw new Error(
-                                `invalid sample data form key: ${key}`,
-                            );
-                        }
-                        const data_property_id = data_property_matches[1]!;
-                        const data_property_key = data_property_matches[2]!;
-                        if (!sample_datum.properties.has(data_property_id)) {
-                            sample_datum.properties.set(data_property_id, {
-                                id: data_property_id,
-                                key: undefined,
-                                type: undefined,
-                                value: undefined,
-                            });
-                        }
+            //     const data_id = data_matches[1]!;
+            //     const data_key = data_matches[2]!;
+            //     const data_map_key = `${sample_id}/${data_id}`;
+            //     if (!sample_data.has(data_map_key)) {
+            //         sample_data.set(data_map_key, {
+            //             id: data_id,
+            //             sample_id: sample_id,
+            //             file: undefined,
+            //             timestamp: undefined,
+            //             properties: new Map(),
+            //         });
+            //     }
+            //     const sample_datum = sample_data.get(data_map_key)!;
+            //     switch (data_key) {
+            //         case "schema":
+            //             sample_datum.schema = value.toString().trim();
+            //             break;
+            //         case "file":
+            //             const file = value as File;
+            //             sample_datum.file = file;
+            //             break;
+            //         case "timestamp":
+            //             sample_datum.timestamp = new Date(value.toString());
+            //             break;
+            //         case "property":
+            //             const data_property_matches = key.match(
+            //                 SAMPLE_DATA_PROPERTY_PATTERN,
+            //             );
+            //             if (data_property_matches === null) {
+            //                 throw new Error(
+            //                     `invalid sample data form key: ${key}`,
+            //                 );
+            //             }
+            //             const data_property_id = data_property_matches[1]!;
+            //             const data_property_key = data_property_matches[2]!;
+            //             if (!sample_datum.properties.has(data_property_id)) {
+            //                 sample_datum.properties.set(data_property_id, {
+            //                     id: data_property_id,
+            //                     key: undefined,
+            //                     type: undefined,
+            //                     value: undefined,
+            //                 });
+            //             }
 
-                        const datum_property =
-                            sample_datum.properties.get(data_property_id)!;
-                        switch (data_property_key) {
-                            case "key":
-                                datum_property.key = value.toString();
-                                break;
-                            case "type":
-                                datum_property.type =
-                                    property.type_string_to_variant(
-                                        value.toString(),
-                                    );
-                                break;
-                            case "value":
-                                if (key.endsWith("[magnitude]")) {
-                                    if (datum_property.value === undefined) {
-                                        datum_property.value = {};
-                                    }
-                                    datum_property.value.magnitude = value
-                                        .toString()
-                                        .trim();
-                                } else if (key.endsWith("[unit]")) {
-                                    if (datum_property.value === undefined) {
-                                        datum_property.value = {};
-                                    }
-                                    datum_property.value.unit = value
-                                        .toString()
-                                        .trim();
-                                } else {
-                                    datum_property.value = value
-                                        .toString()
-                                        .trim();
-                                }
-                                break;
-                            default:
-                                throw new Error(
-                                    `invalid sample data property form key: ${key}`,
-                                );
-                        }
-                        break;
-                    default:
-                        throw new Error(`invalid sample data key: ${key}`);
-                }
-                break;
+            //             const datum_property =
+            //                 sample_datum.properties.get(data_property_id)!;
+            //             switch (data_property_key) {
+            //                 case "key":
+            //                     datum_property.key = value.toString();
+            //                     break;
+            //                 case "type":
+            //                     datum_property.type =
+            //                         property.type_string_to_variant(
+            //                             value.toString(),
+            //                         );
+            //                     break;
+            //                 case "value":
+            //                     if (key.endsWith("[magnitude]")) {
+            //                         if (datum_property.value === undefined) {
+            //                             datum_property.value = {};
+            //                         }
+            //                         datum_property.value.magnitude = value
+            //                             .toString()
+            //                             .trim();
+            //                     } else if (key.endsWith("[unit]")) {
+            //                         if (datum_property.value === undefined) {
+            //                             datum_property.value = {};
+            //                         }
+            //                         datum_property.value.unit = value
+            //                             .toString()
+            //                             .trim();
+            //                     } else {
+            //                         datum_property.value = value
+            //                             .toString()
+            //                             .trim();
+            //                     }
+            //                     break;
+            //                 default:
+            //                     throw new Error(
+            //                         `invalid sample data property form key: ${key}`,
+            //                     );
+            //             }
+            //             break;
+            //         default:
+            //             throw new Error(`invalid sample data key: ${key}`);
+            //     }
+            //     break;
             case "note":
                 const note_matches = key.match(SAMPLE_NOTE_PATTERN);
                 if (note_matches === null) {
@@ -1210,7 +1209,7 @@ function ProjectSamplesFormHeader({
                 <form className="flex gap-1" onSubmit={add_property}>
                     <div>
                         <label>
-                            <span className="hidden">Property key</span>
+                            <span className="sr-only">Property key</span>
                             <input
                                 ref={newPropertyKeyNode}
                                 type="text"
@@ -1223,7 +1222,7 @@ function ProjectSamplesFormHeader({
                         </label>
                     </div>
                     <div>
-                        <span className="hidden">Property type</span>
+                        <span className="sr-only">Property type</span>
                         <SelectPropertyType
                             ref={newPropertyTypeNode}
                             id="new-property-type"
@@ -1377,9 +1376,9 @@ interface SampleNoteInfo {
     id: number;
 }
 
-interface SampleDataInfo {
-    id: number;
-}
+// interface SampleDataInfo {
+//     id: number;
+// }
 
 interface SamplesFormListItemProps {
     sample: SampleInfo;
@@ -1394,7 +1393,7 @@ function SamplesFormListItem({
     const state = useContext(StateCtx);
     const stateDispatch = useContext(StateDispatchCtx);
     const [notes, setNotes] = useState<SampleNoteInfo[]>([{ id: 0 }]);
-    const [data, setData] = useState<SampleDataInfo[]>([{ id: 0 }]);
+    // const [data, setData] = useState<SampleDataInfo[]>([{ id: 0 }]);
 
     function update_label(e: ChangeEvent<HTMLInputElement>) {
         const input = e.target as HTMLInputElement;
@@ -1459,18 +1458,18 @@ function SamplesFormListItem({
         });
     }
 
-    function add_data(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != common.MouseButton.Primary) {
-            return;
-        }
+    // function add_data(e: MouseEvent<HTMLButtonElement>) {
+    //     if (e.button != common.MouseButton.Primary) {
+    //         return;
+    //     }
 
-        const id = data.length === 0 ? 0 : data[data.length - 1]!.id + 1;
-        setData([...data, { id }]);
-    }
+    //     const id = data.length === 0 ? 0 : data[data.length - 1]!.id + 1;
+    //     setData([...data, { id }]);
+    // }
 
-    function remove_data(id: number) {
-        setData(data.filter((data) => data.id !== id));
-    }
+    // function remove_data(id: number) {
+    //     setData(data.filter((data) => data.id !== id));
+    // }
 
     function add_note(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
@@ -1486,7 +1485,7 @@ function SamplesFormListItem({
     }
 
     const ROW_MAIN_IDX = 1;
-    const ROW_DATA_IDX = 2;
+    // const ROW_DATA_IDX = 2;
     const ROW_NOTES_IDX = 3;
     return (
         <div className="contents">
@@ -1529,7 +1528,7 @@ function SamplesFormListItem({
                 }}
             >
                 <label>
-                    <span className="hidden">Label</span>
+                    <span className="sr-only">Label</span>
                     <input
                         type="text"
                         id={`sample[${sample.id}][label]`}
@@ -1547,7 +1546,7 @@ function SamplesFormListItem({
                 style={{ gridRow: ROW_MAIN_IDX, gridColumn: SAMPLE_TAGS_COL }}
             >
                 <label>
-                    <span className="hidden">Tags</span>
+                    <span className="sr-only">Tags</span>
                     <input
                         type="text"
                         id={`sample[${sample.id}][tags]`}
@@ -1591,7 +1590,7 @@ function SamplesFormListItem({
                     </div>
                 )}
             </div>
-            <div
+            {/* <div
                 className="-col-end-1 overflow-hidden"
                 style={{
                     gridRow: ROW_DATA_IDX,
@@ -1622,7 +1621,7 @@ function SamplesFormListItem({
                         />
                     ))}
                 </ol>
-            </div>
+            </div> */}
             <div
                 className="-col-end-1 overflow-hidden"
                 style={{
@@ -1705,640 +1704,640 @@ function SampleProperty({ sample, gridRow, property }: SamplePropertyProps) {
     );
 }
 
-interface SampleDataListItemProps {
-    index: number;
-    sample: SampleInfo;
-    data: SampleDataInfo;
-    data_schemas: types.DataSchema[];
-    onRemove: (id: number) => void;
-}
-function SampleDataListItem({
-    index,
-    sample,
-    data,
-    data_schemas,
-    onRemove,
-}: SampleDataListItemProps) {
-    const [expanded, setExpanded] = useState(false);
+// interface SampleDataListItemProps {
+//     index: number;
+//     sample: SampleInfo;
+//     data: SampleDataInfo;
+//     data_schemas: types.DataSchema[];
+//     onRemove: (id: number) => void;
+// }
+// function SampleDataListItem({
+//     index,
+//     sample,
+//     data,
+//     data_schemas,
+//     onRemove,
+// }: SampleDataListItemProps) {
+//     const [expanded, setExpanded] = useState(false);
 
-    function toggle_expand(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != common.MouseButton.Primary) {
-            return;
-        }
+//     function toggle_expand(e: MouseEvent<HTMLButtonElement>) {
+//         if (e.button != common.MouseButton.Primary) {
+//             return;
+//         }
 
-        setExpanded(!expanded);
-    }
+//         setExpanded(!expanded);
+//     }
 
-    return (
-        <li
-            key={data.id}
-            className={classNames({
-                "col-span-full grid grid-cols-subgrid group/data-list-item border-l": true,
-                "border-l-transparent": !expanded,
-            })}
-        >
-            <div className="col-1">
-                <button
-                    type="button"
-                    className={classNames({
-                        "group-hover/data-list-item:visible btn-cmd": true,
-                        "invisible -rotate-90": !expanded,
-                    })}
-                    onMouseDown={toggle_expand}
-                >
-                    <icon.CaretDown />
-                </button>
-            </div>
-            <div className="col-2">{index + 1}.</div>
-            <SampleData
-                index={index}
-                id={data.id}
-                sample={sample}
-                data_schemas={data_schemas}
-                onRemove={onRemove}
-                expanded={expanded}
-                className="col-3"
-            />
-        </li>
-    );
-}
+//     return (
+//         <li
+//             key={data.id}
+//             className={classNames({
+//                 "col-span-full grid grid-cols-subgrid group/data-list-item border-l": true,
+//                 "border-l-transparent": !expanded,
+//             })}
+//         >
+//             <div className="col-1">
+//                 <button
+//                     type="button"
+//                     className={classNames({
+//                         "group-hover/data-list-item:visible btn-cmd": true,
+//                         "invisible -rotate-90": !expanded,
+//                     })}
+//                     onMouseDown={toggle_expand}
+//                 >
+//                     <icon.CaretDown />
+//                 </button>
+//             </div>
+//             <div className="col-2">{index + 1}.</div>
+//             <SampleData
+//                 index={index}
+//                 id={data.id}
+//                 sample={sample}
+//                 data_schemas={data_schemas}
+//                 onRemove={onRemove}
+//                 expanded={expanded}
+//                 className="col-3"
+//             />
+//         </li>
+//     );
+// }
 
-interface FilePreview {
-    state: "empty" | "loading" | "ok" | "error";
-    error?: string;
-    filename?: string;
-    data?: any[][];
-}
+// interface FilePreview {
+//     state: "empty" | "loading" | "ok" | "error";
+//     error?: string;
+//     filename?: string;
+//     data?: any[][];
+// }
 
-type FilePreviewAction =
-    | { type: "set_empty" }
-    | { type: "set_filename"; payload: { filename: string } }
-    | { type: "set_loading" }
-    | { type: "set_ok"; payload: { data: any[][] } }
-    | { type: "set_error"; payload: { error: string } };
-function filePreviewReducer(
-    state: FilePreview,
-    action: FilePreviewAction,
-): FilePreview {
-    switch (action.type) {
-        case "set_empty":
-            return { state: "empty" };
-        case "set_filename":
-            return { ...state, filename: action.payload.filename };
-        case "set_loading":
-            return { state: "loading", filename: state.filename };
-        case "set_ok":
-            // TODO: set data preview
-            return {
-                state: "ok",
-                filename: state.filename,
-                data: action.payload.data,
-            };
-        case "set_error":
-            return {
-                state: "error",
-                filename: state.filename,
-                error: action.payload.error,
-            };
-    }
-}
+// type FilePreviewAction =
+//     | { type: "set_empty" }
+//     | { type: "set_filename"; payload: { filename: string } }
+//     | { type: "set_loading" }
+//     | { type: "set_ok"; payload: { data: any[][] } }
+//     | { type: "set_error"; payload: { error: string } };
+// function filePreviewReducer(
+//     state: FilePreview,
+//     action: FilePreviewAction,
+// ): FilePreview {
+//     switch (action.type) {
+//         case "set_empty":
+//             return { state: "empty" };
+//         case "set_filename":
+//             return { ...state, filename: action.payload.filename };
+//         case "set_loading":
+//             return { state: "loading", filename: state.filename };
+//         case "set_ok":
+//             // TODO: set data preview
+//             return {
+//                 state: "ok",
+//                 filename: state.filename,
+//                 data: action.payload.data,
+//             };
+//         case "set_error":
+//             return {
+//                 state: "error",
+//                 filename: state.filename,
+//                 error: action.payload.error,
+//             };
+//     }
+// }
 
-interface SampleDataProps {
-    index: number;
-    id: number;
-    sample: SampleInfo;
-    data_schemas: types.DataSchema[];
-    onRemove: (id: number) => void;
-    expanded: boolean;
-    className?: string;
-}
-function SampleData({
-    index,
-    id,
-    sample,
-    data_schemas,
-    onRemove,
-    expanded,
-    className,
-}: SampleDataProps) {
-    const file_input = useRef<HTMLInputElement>(null);
-    const [properties, setProperties] = useState<DataPropertyInfo[]>([]);
-    const [filePreview, dispatchFilePreview] = useReducer(filePreviewReducer, {
-        state: "empty",
-    });
+// interface SampleDataProps {
+//     index: number;
+//     id: number;
+//     sample: SampleInfo;
+//     data_schemas: types.DataSchema[];
+//     onRemove: (id: number) => void;
+//     expanded: boolean;
+//     className?: string;
+// }
+// function SampleData({
+//     index,
+//     id,
+//     sample,
+//     data_schemas,
+//     onRemove,
+//     expanded,
+//     className,
+// }: SampleDataProps) {
+//     const file_input = useRef<HTMLInputElement>(null);
+//     const [properties, setProperties] = useState<DataPropertyInfo[]>([]);
+//     const [filePreview, dispatchFilePreview] = useReducer(filePreviewReducer, {
+//         state: "empty",
+//     });
 
-    function remove(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != common.MouseButton.Primary) {
-            return;
-        }
+//     function remove(e: MouseEvent<HTMLButtonElement>) {
+//         if (e.button != common.MouseButton.Primary) {
+//             return;
+//         }
 
-        onRemove(id);
-    }
+//         onRemove(id);
+//     }
 
-    async function try_parse_data() {
-        const file_input = document.getElementById(
-            `sample[${sample.id}][data][${id}][file]`,
-        )! as HTMLInputElement;
+//     async function try_parse_data() {
+//         const file_input = document.getElementById(
+//             `sample[${sample.id}][data][${id}][file]`,
+//         )! as HTMLInputElement;
 
-        const schema_input = document.getElementById(
-            `sample[${sample.id}][data][${id}][schema]`,
-        )! as HTMLSelectElement;
+//         const schema_input = document.getElementById(
+//             `sample[${sample.id}][data][${id}][schema]`,
+//         )! as HTMLSelectElement;
 
-        if (!file_input.files || file_input.files.length === 0) {
-            dispatchFilePreview({ type: "set_empty" });
-            return;
-        }
-        if (file_input.files.length > 1) {
-            throw new Error("multiple files selected");
-        }
-        const file = file_input.files[0]!;
-        dispatchFilePreview({
-            type: "set_filename",
-            payload: { filename: file.name },
-        });
+//         if (!file_input.files || file_input.files.length === 0) {
+//             dispatchFilePreview({ type: "set_empty" });
+//             return;
+//         }
+//         if (file_input.files.length > 1) {
+//             throw new Error("multiple files selected");
+//         }
+//         const file = file_input.files[0]!;
+//         dispatchFilePreview({
+//             type: "set_filename",
+//             payload: { filename: file.name },
+//         });
 
-        const schema_id = schema_input.value.trim();
-        if (schema_id.length === 0) {
-            return;
-        }
-        const schema = data_schemas.find((schema) => schema.Id === schema_id);
-        if (schema === undefined) {
-            throw new Error(`data schema ${schema_id} not found`);
-        }
+//         const schema_id = schema_input.value.trim();
+//         if (schema_id.length === 0) {
+//             return;
+//         }
+//         const schema = data_schemas.find((schema) => schema.Id === schema_id);
+//         if (schema === undefined) {
+//             throw new Error(`data schema ${schema_id} not found`);
+//         }
 
-        await data_service
-            .parseDataFileToSchema(file, schema)
-            .then((parsed) => {
-                dispatchFilePreview({
-                    type: "set_ok",
-                    payload: { data: parsed },
-                });
-            })
-            .catch((err) => {
-                console.error(err);
-                dispatchFilePreview({
-                    type: "set_error",
-                    payload: { error: `${err}` },
-                });
-                file_input.setCustomValidity(
-                    "Could not parse data according to schema",
-                );
-            });
-    }
+//         await data_service
+//             .parseDataFileToSchema(file, schema)
+//             .then((parsed) => {
+//                 dispatchFilePreview({
+//                     type: "set_ok",
+//                     payload: { data: parsed },
+//                 });
+//             })
+//             .catch((err) => {
+//                 console.error(err);
+//                 dispatchFilePreview({
+//                     type: "set_error",
+//                     payload: { error: `${err}` },
+//                 });
+//                 file_input.setCustomValidity(
+//                     "Could not parse data according to schema",
+//                 );
+//             });
+//     }
 
-    function add_property(key: string, type: types.PropertyType) {
-        const id =
-            properties.length === 0
-                ? 0
-                : properties[properties.length - 1]!.id + 1;
-        const new_prop = { id, key, type };
-        setProperties([...properties, new_prop]);
-    }
+//     function add_property(key: string, type: types.PropertyType) {
+//         const id =
+//             properties.length === 0
+//                 ? 0
+//                 : properties[properties.length - 1]!.id + 1;
+//         const new_prop = { id, key, type };
+//         setProperties([...properties, new_prop]);
+//     }
 
-    function remove_property(id: number) {
-        const remaining = properties.filter((property) => property.id !== id);
-        setProperties(remaining);
-    }
+//     function remove_property(id: number) {
+//         const remaining = properties.filter((property) => property.id !== id);
+//         setProperties(remaining);
+//     }
 
-    const now = nowLocalISOString();
-    return (
-        <div
-            id={`sample[${sample.id}][data][${id}]`}
-            className={`px-0.5 ${className}`}
-            data-wails-dropzone
-        >
-            <div className="flex gap-2">
-                <div>
-                    <label>
-                        <span className="hidden">Data schema</span>
-                        <select
-                            id={`sample[${sample.id}][data][${id}][schema]`}
-                            name={`sample[${sample.id}][data][${id}][schema]`}
-                            className="px-1 py-0.5 min-w-32 w-full min-h-4 input-basic"
-                            title={`Data schema`}
-                            onChange={try_parse_data}
-                            defaultValue={""}
-                        >
-                            <option value="" disabled>
-                                Data schema
-                            </option>
-                            {data_schemas.map((schema) => (
-                                <option
-                                    key={schema.Id.toString()}
-                                    value={schema.Id.toString()}
-                                    title={schema.Description}
-                                >
-                                    {schema.Label}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                </div>
-                <div className="flex gap-1">
-                    <label>
-                        <span className="hidden">File path</span>
-                        <input
-                            ref={file_input}
-                            type="file"
-                            id={`sample[${sample.id}][data][${id}][file]`}
-                            name={`sample[${sample.id}][data][${id}][file]`}
-                            className="input-basic"
-                            title={`Data file`}
-                            placeholder="Data file"
-                            onChange={try_parse_data}
-                        />
-                    </label>
-                    <div>
-                        <span
-                            className={classNames({
-                                "p-0.5 align-middle aspect-square rounded-full text-red-600 cursor-pointer": true,
-                                hidden: filePreview.state !== "error",
-                                "inline-block": filePreview.state === "error",
-                            })}
-                            title={filePreview.error}
-                        >
-                            <icon.CircleX />
-                        </span>
-                        <span
-                            className={classNames({
-                                "p-0.5 align-middle aspect-square rounded-full cursor-pointer": true,
-                                hidden: filePreview.state === "error",
-                                "inline-block": filePreview.state !== "error",
-                                "bg-gray-600": filePreview.state === "empty",
-                                "bg-green-600": filePreview.state === "ok",
-                            })}
-                            title={
-                                filePreview.state === "empty"
-                                    ? "No data to preview"
-                                    : "Data parsed correctly"
-                            }
-                        >
-                            <icon.Eye />
-                        </span>
-                    </div>
-                </div>
-                <div>
-                    <label>
-                        <span className="hidden">Timestamp</span>
-                        <input
-                            type="datetime-local"
-                            id={`sample[${sample.id}][data][${id}][timestamp]`}
-                            name={`sample[${sample.id}][data][${id}][timestamp]`}
-                            className="input-basic"
-                            title={`Data timestamp`}
-                            placeholder="Timestamp"
-                            defaultValue={now}
-                            max={now}
-                        />
-                    </label>
-                </div>
-                <div>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        title={`Remove data ${index + 1}`}
-                        onMouseDown={remove}
-                    >
-                        <icon.Trash />
-                    </button>
-                </div>
-            </div>
-            <SampleDataProperties
-                sample_id={sample.id}
-                data_id={id}
-                properties={properties}
-                onAddProperty={add_property}
-                onRemoveProperty={remove_property}
-                className={classNames({
-                    "overflow-hidden": true,
-                    "h-0": !expanded,
-                    "py-2": expanded,
-                })}
-            />
-        </div>
-    );
-}
+//     const now = nowLocalISOString();
+//     return (
+//         <div
+//             id={`sample[${sample.id}][data][${id}]`}
+//             className={`px-0.5 ${className}`}
+//             data-wails-dropzone
+//         >
+//             <div className="flex gap-2">
+//                 <div>
+//                     <label>
+//                         <span className="sr-only">Data schema</span>
+//                         <select
+//                             id={`sample[${sample.id}][data][${id}][schema]`}
+//                             name={`sample[${sample.id}][data][${id}][schema]`}
+//                             className="px-1 py-0.5 min-w-32 w-full min-h-4 input-basic"
+//                             title={`Data schema`}
+//                             onChange={try_parse_data}
+//                             defaultValue={""}
+//                         >
+//                             <option value="" disabled>
+//                                 Data schema
+//                             </option>
+//                             {data_schemas.map((schema) => (
+//                                 <option
+//                                     key={schema.Id.toString()}
+//                                     value={schema.Id.toString()}
+//                                     title={schema.Description}
+//                                 >
+//                                     {schema.Label}
+//                                 </option>
+//                             ))}
+//                         </select>
+//                     </label>
+//                 </div>
+//                 <div className="flex gap-1">
+//                     <label>
+//                         <span className="sr-only">File path</span>
+//                         <input
+//                             ref={file_input}
+//                             type="file"
+//                             id={`sample[${sample.id}][data][${id}][file]`}
+//                             name={`sample[${sample.id}][data][${id}][file]`}
+//                             className="input-basic"
+//                             title={`Data file`}
+//                             placeholder="Data file"
+//                             onChange={try_parse_data}
+//                         />
+//                     </label>
+//                     <div>
+//                         <span
+//                             className={classNames({
+//                                 "p-0.5 align-middle aspect-square rounded-full text-red-600 cursor-pointer": true,
+//                                 hidden: filePreview.state !== "error",
+//                                 "inline-block": filePreview.state === "error",
+//                             })}
+//                             title={filePreview.error}
+//                         >
+//                             <icon.CircleX />
+//                         </span>
+//                         <span
+//                             className={classNames({
+//                                 "p-0.5 align-middle aspect-square rounded-full cursor-pointer": true,
+//                                 hidden: filePreview.state === "error",
+//                                 "inline-block": filePreview.state !== "error",
+//                                 "bg-gray-600": filePreview.state === "empty",
+//                                 "bg-green-600": filePreview.state === "ok",
+//                             })}
+//                             title={
+//                                 filePreview.state === "empty"
+//                                     ? "No data to preview"
+//                                     : "Data parsed correctly"
+//                             }
+//                         >
+//                             <icon.Eye />
+//                         </span>
+//                     </div>
+//                 </div>
+//                 <div>
+//                     <label>
+//                         <span className="sr-only">Timestamp</span>
+//                         <input
+//                             type="datetime-local"
+//                             id={`sample[${sample.id}][data][${id}][timestamp]`}
+//                             name={`sample[${sample.id}][data][${id}][timestamp]`}
+//                             className="input-basic"
+//                             title={`Data timestamp`}
+//                             placeholder="Timestamp"
+//                             defaultValue={now}
+//                             max={now}
+//                         />
+//                     </label>
+//                 </div>
+//                 <div>
+//                     <button
+//                         type="button"
+//                         className="btn-cmd"
+//                         title={`Remove data ${index + 1}`}
+//                         onMouseDown={remove}
+//                     >
+//                         <icon.Trash />
+//                     </button>
+//                 </div>
+//             </div>
+//             <SampleDataProperties
+//                 sample_id={sample.id}
+//                 data_id={id}
+//                 properties={properties}
+//                 onAddProperty={add_property}
+//                 onRemoveProperty={remove_property}
+//                 className={classNames({
+//                     "overflow-hidden": true,
+//                     "h-0": !expanded,
+//                     "py-2": expanded,
+//                 })}
+//             />
+//         </div>
+//     );
+// }
 
-interface DataPropertyInfo {
-    id: number;
-    key: string;
-    type: types.PropertyType;
-}
+// interface DataPropertyInfo {
+//     id: number;
+//     key: string;
+//     type: types.PropertyType;
+// }
 
-interface SampleDataPropertiesProps {
-    sample_id: number;
-    data_id: number;
-    properties: DataPropertyInfo[];
-    onAddProperty: (key: string, type: types.PropertyType) => void;
-    onRemoveProperty: (id: number) => void;
-    className?: string;
-}
-function SampleDataProperties({
-    sample_id,
-    data_id,
-    properties,
-    onAddProperty,
-    onRemoveProperty,
-    className,
-}: SampleDataPropertiesProps) {
-    const newPropertyKeyNode = useRef<HTMLInputElement | null>(null);
-    const newPropertyTypeNode = useRef<HTMLSelectElement | null>(null);
+// interface SampleDataPropertiesProps {
+//     sample_id: number;
+//     data_id: number;
+//     properties: DataPropertyInfo[];
+//     onAddProperty: (key: string, type: types.PropertyType) => void;
+//     onRemoveProperty: (id: number) => void;
+//     className?: string;
+// }
+// function SampleDataProperties({
+//     sample_id,
+//     data_id,
+//     properties,
+//     onAddProperty,
+//     onRemoveProperty,
+//     className,
+// }: SampleDataPropertiesProps) {
+//     const newPropertyKeyNode = useRef<HTMLInputElement | null>(null);
+//     const newPropertyTypeNode = useRef<HTMLSelectElement | null>(null);
 
-    function on_change_property_key(e: ChangeEvent<HTMLInputElement>) {
-        const key_input = e.target;
-        if (!key_input.validity.customError) {
-            return;
-        }
-        key_input.setCustomValidity("");
+//     function on_change_property_key(e: ChangeEvent<HTMLInputElement>) {
+//         const key_input = e.target;
+//         if (!key_input.validity.customError) {
+//             return;
+//         }
+//         key_input.setCustomValidity("");
 
-        const key = key_input.value.trim();
-        if (properties.findIndex((property) => property.key === key) > -1) {
-            key_input.setCustomValidity("key already exists");
-            key_input.reportValidity();
-        }
-    }
+//         const key = key_input.value.trim();
+//         if (properties.findIndex((property) => property.key === key) > -1) {
+//             key_input.setCustomValidity("key already exists");
+//             key_input.reportValidity();
+//         }
+//     }
 
-    function add_property() {
-        const key_input = newPropertyKeyNode.current! as HTMLInputElement;
-        const type_input = newPropertyTypeNode.current! as HTMLSelectElement;
-        key_input.setCustomValidity("");
-        type_input.setCustomValidity("");
+//     function add_property() {
+//         const key_input = newPropertyKeyNode.current! as HTMLInputElement;
+//         const type_input = newPropertyTypeNode.current! as HTMLSelectElement;
+//         key_input.setCustomValidity("");
+//         type_input.setCustomValidity("");
 
-        const key = key_input.value.trim();
-        if (key.length === 0) {
-            key_input.setCustomValidity("key can not be empty");
-            key_input.reportValidity();
-            return;
-        }
-        if (properties.findIndex((property) => property.key === key) > -1) {
-            key_input.setCustomValidity("key already exists");
-            key_input.reportValidity();
-            return;
-        }
+//         const key = key_input.value.trim();
+//         if (key.length === 0) {
+//             key_input.setCustomValidity("key can not be empty");
+//             key_input.reportValidity();
+//             return;
+//         }
+//         if (properties.findIndex((property) => property.key === key) > -1) {
+//             key_input.setCustomValidity("key already exists");
+//             key_input.reportValidity();
+//             return;
+//         }
 
-        const type = property.type_string_to_variant(type_input.value);
-        if (type === undefined) {
-            type_input.setCustomValidity("invalid type");
-            type_input.reportValidity();
-            return;
-        }
+//         const type = property.type_string_to_variant(type_input.value);
+//         if (type === undefined) {
+//             type_input.setCustomValidity("invalid type");
+//             type_input.reportValidity();
+//             return;
+//         }
 
-        onAddProperty(key, type);
-        key_input.value = "";
-        type_input.value = NEW_PROPERTY_TYPE_DEFAULT_VALUE;
-    }
+//         onAddProperty(key, type);
+//         key_input.value = "";
+//         type_input.value = NEW_PROPERTY_TYPE_DEFAULT_VALUE;
+//     }
 
-    function add_property_btn(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != common.MouseButton.Primary) {
-            return;
-        }
+//     function add_property_btn(e: MouseEvent<HTMLButtonElement>) {
+//         if (e.button != common.MouseButton.Primary) {
+//             return;
+//         }
 
-        add_property();
-    }
+//         add_property();
+//     }
 
-    function capture_enter(e: KeyboardEvent<HTMLInputElement>) {
-        if (e.key === "Enter") {
-            e.preventDefault();
-            e.stopPropagation();
-            add_property();
-        }
-    }
+//     function capture_enter(e: KeyboardEvent<HTMLInputElement>) {
+//         if (e.key === "Enter") {
+//             e.preventDefault();
+//             e.stopPropagation();
+//             add_property();
+//         }
+//     }
 
-    return (
-        <div className={className}>
-            <div className="flex gap-2 pb-2">
-                <h4>Properties</h4>
-                <div>
-                    <label>
-                        <span className="hidden">Property key</span>
-                        <input
-                            ref={newPropertyKeyNode}
-                            type="text"
-                            placeholder="Key"
-                            className="input-basic"
-                            onChange={on_change_property_key}
-                            onKeyDown={capture_enter}
-                        />
-                    </label>
-                </div>
-                <div>
-                    <span className="hidden">Property type</span>
-                    <SelectPropertyType
-                        ref={newPropertyTypeNode}
-                        className="input-basic"
-                        defaultValue={NEW_PROPERTY_TYPE_DEFAULT_VALUE}
-                    />
-                </div>
-                <div>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        onMouseDown={add_property_btn}
-                    >
-                        <icon.Plus />
-                    </button>
-                </div>
-            </div>
-            <ol
-                className="grid gap-1"
-                style={{
-                    gridTemplateColumns: `repeat(3, min-content)`,
-                }}
-            >
-                {properties.map((property) => {
-                    return (
-                        <SampleDataProperty
-                            key={property.id}
-                            sample_id={sample_id}
-                            data_id={data_id}
-                            property={property}
-                            onRemove={onRemoveProperty}
-                        />
-                    );
-                })}
-            </ol>
-        </div>
-    );
-}
+//     return (
+//         <div className={className}>
+//             <div className="flex gap-2 pb-2">
+//                 <h4>Properties</h4>
+//                 <div>
+//                     <label>
+//                         <span className="sr-only">Property key</span>
+//                         <input
+//                             ref={newPropertyKeyNode}
+//                             type="text"
+//                             placeholder="Key"
+//                             className="input-basic"
+//                             onChange={on_change_property_key}
+//                             onKeyDown={capture_enter}
+//                         />
+//                     </label>
+//                 </div>
+//                 <div>
+//                     <span className="sr-only">Property type</span>
+//                     <SelectPropertyType
+//                         ref={newPropertyTypeNode}
+//                         className="input-basic"
+//                         defaultValue={NEW_PROPERTY_TYPE_DEFAULT_VALUE}
+//                     />
+//                 </div>
+//                 <div>
+//                     <button
+//                         type="button"
+//                         className="btn-cmd"
+//                         onMouseDown={add_property_btn}
+//                     >
+//                         <icon.Plus />
+//                     </button>
+//                 </div>
+//             </div>
+//             <ol
+//                 className="grid gap-1"
+//                 style={{
+//                     gridTemplateColumns: `repeat(3, min-content)`,
+//                 }}
+//             >
+//                 {properties.map((property) => {
+//                     return (
+//                         <SampleDataProperty
+//                             key={property.id}
+//                             sample_id={sample_id}
+//                             data_id={data_id}
+//                             property={property}
+//                             onRemove={onRemoveProperty}
+//                         />
+//                     );
+//                 })}
+//             </ol>
+//         </div>
+//     );
+// }
 
-interface SampleDataPropertyProps {
-    sample_id: number;
-    data_id: number;
-    property: DataPropertyInfo;
-    onRemove: (id: number) => void;
-}
-function SampleDataProperty({
-    sample_id,
-    data_id,
-    property,
-    onRemove,
-}: SampleDataPropertyProps) {
-    function remove(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != common.MouseButton.Primary) {
-            return;
-        }
+// interface SampleDataPropertyProps {
+//     sample_id: number;
+//     data_id: number;
+//     property: DataPropertyInfo;
+//     onRemove: (id: number) => void;
+// }
+// function SampleDataProperty({
+//     sample_id,
+//     data_id,
+//     property,
+//     onRemove,
+// }: SampleDataPropertyProps) {
+//     function remove(e: MouseEvent<HTMLButtonElement>) {
+//         if (e.button != common.MouseButton.Primary) {
+//             return;
+//         }
 
-        onRemove(property.id);
-    }
+//         onRemove(property.id);
+//     }
 
-    return (
-        <div className="col-span-full grid grid-cols-subgrid group/sample-data-property">
-            <div className="col-1 whitespace-nowrap">
-                <label>
-                    <input
-                        type="hidden"
-                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][key]`}
-                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][key]`}
-                        value={property.key}
-                        readOnly
-                    />
-                </label>
-                <label>
-                    <input
-                        type="hidden"
-                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][type]`}
-                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][type]`}
-                        value={property.type}
-                        readOnly
-                    />
-                </label>
-                {property.key}{" "}
-                <span className="text-gray-500">({property.type})</span>
-            </div>
-            <SampleDataPropertyValue
-                sample_id={sample_id}
-                data_id={data_id}
-                property={property}
-                className="col-2"
-            />
-            <div className="col-3">
-                <button
-                    type="button"
-                    className="btn-cmd invisible group-hover/sample-data-property:visible"
-                    onMouseDown={remove}
-                >
-                    <icon.Trash />
-                </button>
-            </div>
-        </div>
-    );
-}
+//     return (
+//         <div className="col-span-full grid grid-cols-subgrid group/sample-data-property">
+//             <div className="col-1 whitespace-nowrap">
+//                 <label>
+//                     <input
+//                         type="hidden"
+//                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][key]`}
+//                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][key]`}
+//                         value={property.key}
+//                         readOnly
+//                     />
+//                 </label>
+//                 <label>
+//                     <input
+//                         type="hidden"
+//                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][type]`}
+//                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][type]`}
+//                         value={property.type}
+//                         readOnly
+//                     />
+//                 </label>
+//                 {property.key}{" "}
+//                 <span className="text-gray-500">({property.type})</span>
+//             </div>
+//             <SampleDataPropertyValue
+//                 sample_id={sample_id}
+//                 data_id={data_id}
+//                 property={property}
+//                 className="col-2"
+//             />
+//             <div className="col-3">
+//                 <button
+//                     type="button"
+//                     className="btn-cmd invisible group-hover/sample-data-property:visible"
+//                     onMouseDown={remove}
+//                 >
+//                     <icon.Trash />
+//                 </button>
+//             </div>
+//         </div>
+//     );
+// }
 
-interface SampleDataPropertyValueProps {
-    sample_id: number;
-    data_id: number;
-    property: DataPropertyInfo;
-    className?: string;
-}
-function SampleDataPropertyValue({
-    sample_id,
-    data_id,
-    property,
-    className,
-}: SampleDataPropertyValueProps) {
-    const inputNode = useRef(null);
+// interface SampleDataPropertyValueProps {
+//     sample_id: number;
+//     data_id: number;
+//     property: DataPropertyInfo;
+//     className?: string;
+// }
+// function SampleDataPropertyValue({
+//     sample_id,
+//     data_id,
+//     property,
+//     className,
+// }: SampleDataPropertyValueProps) {
+//     const inputNode = useRef(null);
 
-    useLayoutEffect(() => {
-        if (
-            inputNode.current !== null &&
-            property.type === types.PropertyTypeBool
-        ) {
-            const input = inputNode.current as HTMLInputElement;
-            input.indeterminate = true;
-        }
-    }, [inputNode]);
+//     useLayoutEffect(() => {
+//         if (
+//             inputNode.current !== null &&
+//             property.type === types.PropertyTypeBool
+//         ) {
+//             const input = inputNode.current as HTMLInputElement;
+//             input.indeterminate = true;
+//         }
+//     }, [inputNode]);
 
-    switch (property.type) {
-        case types.PropertyTypeString:
-            return (
-                <div className={className}>
-                    <input
-                        type="text"
-                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        className="input-basic"
-                    />
-                </div>
-            );
-        case types.PropertyTypeInt:
-            return (
-                <div className={className}>
-                    <input
-                        type="number"
-                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        className="input-basic"
-                    />
-                </div>
-            );
-        case types.PropertyTypeUint:
-            return (
-                <div className={className}>
-                    <input
-                        type="number"
-                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        min={0}
-                        className="input-basic"
-                    />
-                </div>
-            );
-        case types.PropertyTypeFloat:
-            return (
-                <div className={className}>
-                    <input
-                        type="text"
-                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        className="input-basic"
-                    />
-                </div>
-            );
-        case types.PropertyTypeBool:
-            return (
-                <div className={className}>
-                    <input
-                        ref={inputNode}
-                        type="checkbox"
-                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        className="input-basic"
-                    />
-                </div>
-            );
-        case types.PropertyTypeTimestamp:
-            return (
-                <div className={className}>
-                    <input
-                        ref={inputNode}
-                        type="datetime-local"
-                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
-                        className="input-basic"
-                    />
-                </div>
-            );
-        case types.PropertyTypeQuantity:
-            return (
-                <div className={`flex gap-1 ${className}`}>
-                    <input
-                        type="text"
-                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][magnitude]`}
-                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][magnitude]`}
-                        className="input-basic min-w-0 shrink"
-                        placeholder="Magnitude"
-                    />
-                    <input
-                        type="text"
-                        id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][unit]`}
-                        name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][unit]`}
-                        className="input-basic min-w-0 shrink-2"
-                        placeholder="Units"
-                    />
-                </div>
-            );
-    }
-}
+//     switch (property.type) {
+//         case types.PropertyTypeString:
+//             return (
+//                 <div className={className}>
+//                     <input
+//                         type="text"
+//                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         className="input-basic"
+//                     />
+//                 </div>
+//             );
+//         case types.PropertyTypeInt:
+//             return (
+//                 <div className={className}>
+//                     <input
+//                         type="number"
+//                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         className="input-basic"
+//                     />
+//                 </div>
+//             );
+//         case types.PropertyTypeUint:
+//             return (
+//                 <div className={className}>
+//                     <input
+//                         type="number"
+//                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         min={0}
+//                         className="input-basic"
+//                     />
+//                 </div>
+//             );
+//         case types.PropertyTypeFloat:
+//             return (
+//                 <div className={className}>
+//                     <input
+//                         type="text"
+//                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         className="input-basic"
+//                     />
+//                 </div>
+//             );
+//         case types.PropertyTypeBool:
+//             return (
+//                 <div className={className}>
+//                     <input
+//                         ref={inputNode}
+//                         type="checkbox"
+//                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         className="input-basic"
+//                     />
+//                 </div>
+//             );
+//         case types.PropertyTypeTimestamp:
+//             return (
+//                 <div className={className}>
+//                     <input
+//                         ref={inputNode}
+//                         type="datetime-local"
+//                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value]`}
+//                         className="input-basic"
+//                     />
+//                 </div>
+//             );
+//         case types.PropertyTypeQuantity:
+//             return (
+//                 <div className={`flex gap-1 ${className}`}>
+//                     <input
+//                         type="text"
+//                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][magnitude]`}
+//                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][magnitude]`}
+//                         className="input-basic min-w-0 shrink"
+//                         placeholder="Magnitude"
+//                     />
+//                     <input
+//                         type="text"
+//                         id={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][unit]`}
+//                         name={`sample[${sample_id}][data][${data_id}][property][${property.id}][value][unit]`}
+//                         className="input-basic min-w-0 shrink-2"
+//                         placeholder="Units"
+//                     />
+//                 </div>
+//             );
+//     }
+// }
 
 interface SampleNoteProps {
     index: number;
@@ -2368,7 +2367,7 @@ function SampleNote({
             <div className="pb-2 flex gap-2">
                 <div>
                     <label>
-                        <span className="hidden">Date</span>
+                        <span className="sr-only">Date</span>
                         <input
                             type="datetime-local"
                             id={`sample[${sample.id}][note][${id}][timestamp]`}
@@ -2392,7 +2391,7 @@ function SampleNote({
             </div>
             <div>
                 <label>
-                    <span className="hidden">Note</span>
+                    <span className="sr-only">Note</span>
                     <textarea
                         id={`sample[${sample.id}][note][${id}][content]`}
                         name={`sample[${sample.id}][note][${id}][content]`}

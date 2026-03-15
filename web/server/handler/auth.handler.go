@@ -130,8 +130,19 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 }
 
 func (h *AuthHandler) Logout(c *echo.Context) error {
-	session_token := c.Get(SessionTokenKey).(uuid.UUID)
-	err := h.auth_service.DeactivateSession(session_token)
+	token, err := echo.ContextGet[*jwt.Token](c, SessionTokenKey)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"token", token,
+		).Error("invalid jwt token")
+		return err
+	}
+
+	claims := token.Claims.(*JWTCustomClaims)
+	session_token := claims.SessionId
+
+	err = h.auth_service.DeactivateSession(session_token)
 	if err != nil {
 		c.Logger().With("session token", session_token).Error("could not deactivate session")
 		return c.NoContent(http.StatusInternalServerError)

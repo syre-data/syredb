@@ -199,17 +199,16 @@ func (d *TransformDaemon) getTransformsById(transforms []uuid.UUID) ([]Transform
 }
 
 type DataSchemaInfo struct {
-	Id      uuid.UUID
-	Schema  []service.ColumnSchema
-	Storage service.DataStorage
+	Id     uuid.UUID
+	Schema []service.ColumnSchema
 }
 
 func (d *TransformDaemon) getDataSchemasById(data_schemas []uuid.UUID) ([]DataSchemaInfo, error) {
-	query := "SELECT _id, _schema, _storage FROM data_schema_ WHERE _id=ANY($1)"
+	query := "SELECT _id, _schema FROM data_schema_ WHERE _id=ANY($1)"
 	rows, _ := d.db.Conn.Query(d.ctx, query, data_schemas)
 	schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaInfo, error) {
 		var schema DataSchemaInfo
-		err := row.Scan(&schema.Id, &schema.Schema, &schema.Storage)
+		err := row.Scan(&schema.Id, &schema.Schema)
 		return schema, err
 	})
 	if err != nil {
@@ -388,7 +387,7 @@ func (d *TransformDaemon) createTransformDataFile(
 }
 
 func (d *TransformDaemon) createTransformDataFileData(sample_data uuid.UUID) (*os.File, error) {
-	stored_data_arr, err := d.data_service.GetSampleDataStoredById([]uuid.UUID{sample_data})
+	stored_data_arr, err := d.data_service.SampleDataStoredById([]uuid.UUID{sample_data})
 	if err != nil {
 		d.logger.With(
 			"error", err,

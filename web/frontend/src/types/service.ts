@@ -10,6 +10,11 @@ export interface FileFilter {
 }
 export interface AppService {
 }
+export interface DbPermissionRecord {
+  Id: string;
+  Label: string;
+  Description: string;
+}
 
 //////////
 // source: common.go
@@ -22,13 +27,13 @@ export interface InsufficientPermissionsError {
 
 export const AppDataPath = "app:data:path";
 export const AppTransformDir = "transforms";
-export const DataTypeString = "string";
-export const DataTypeInt = "int";
-export const DataTypeUint = "uint";
-export const DataTypeFloat = "float";
-export const DataTypeBoolean = "boolean";
-export const DataTypeTimestamp = "timestamp";
-export type DataType = typeof DataTypeString | typeof DataTypeInt | typeof DataTypeUint | typeof DataTypeFloat | typeof DataTypeBoolean | typeof DataTypeTimestamp;
+export const ValueTypeString = "string";
+export const ValueTypeInt = "int";
+export const ValueTypeUint = "uint";
+export const ValueTypeFloat = "float";
+export const ValueTypeBoolean = "boolean";
+export const ValueTypeTimestamp = "timestamp";
+export type ValueType = typeof ValueTypeString | typeof ValueTypeInt | typeof ValueTypeUint | typeof ValueTypeFloat | typeof ValueTypeBoolean | typeof ValueTypeTimestamp;
 export const SaveDataHierarchyFlat = "flat";
 export const SaveDataHierarchyDataSchema = "data_schema";
 export const SaveDataHierarchySample = "sample";
@@ -39,16 +44,44 @@ export interface DataService {
 }
 export interface ColumnSchema {
   label: string;
-  dtype: DataType;
+  dtype: ValueType;
 }
 export const DataStorageInternal = "internal";
 export const DataStorageExternal = "external";
 export type DataStorage = typeof DataStorageInternal | typeof DataStorageExternal;
-export interface DataSchema {
+export const DataSourceCardinalitySingle = "single";
+export const DataSourceCardinalityMultiple = "multiple";
+export type DataSourceCardinality = typeof DataSourceCardinalitySingle | typeof DataSourceCardinalityMultiple;
+export interface DataTypeSourceRecord {
+  Id: uuid.UUIDTypes;
+  DataType: uuid.UUIDTypes;
+  Input: DataSourceCardinality;
+  Required: boolean;
+  ExtensionFilter: string;
+  Label: string;
+  Description: string;
+}
+export interface DataTypeRecord {
+  Id: uuid.UUIDTypes;
+  Recipe: uuid.UUIDTypes;
+  Schema: uuid.UUIDTypes;
+  Label: string;
+  Description: string;
+  Active: boolean;
+}
+export interface DataType {
+  Id: uuid.UUIDTypes;
+  Schema: uuid.UUIDTypes;
+  Recipe: uuid.UUIDTypes;
+  Label: string;
+  Description: string;
+  Active: boolean;
+  Sources: DataTypeSourceRecord[];
+}
+export interface DataSchemaRecord {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
   Schema: ColumnSchema[];
-  Storage: DataStorage;
   Label: string;
   Description: string;
 }
@@ -74,7 +107,7 @@ export interface Transform {
   Description: string;
 }
 export interface DataSchemaResources {
-  DataSchema: DataSchema;
+  DataSchema: DataSchemaRecord;
   Creator: User;
   Transforms: Transform[];
 }
@@ -84,7 +117,7 @@ export interface IncompatibleDataSizeError {
 }
 export interface ColumnData {
   Label: string;
-  DType: DataType;
+  DType: ValueType;
   Values: any[];
 }
 export interface ParseCsvError {
@@ -94,7 +127,7 @@ export interface ParseCsvError {
 }
 export interface InvalidDataTypeError {
   Value: string;
-  DType: DataType;
+  DType: ValueType;
 }
 /**
  * StoredData represents teh actual data stored for a sample data.
@@ -112,7 +145,6 @@ export interface SampleDataSchema {
 }
 export interface DataSchemaRecord {
   Id: uuid.UUIDTypes;
-  Storage: DataStorage;
   Schema: ColumnSchema[];
 }
 export interface SampleDataInfo {
@@ -259,7 +291,7 @@ export interface ProjectResources {
   ProjectTags: string[];
   Samples: ProjectSample[];
   RawData: RawDataRecord[];
-  DataSchemas: DataSchema[];
+  DataSchemas: DataSchemaRecord[];
   SampleGroups: ProjectSampleGroup[];
   SampleGroupRelations: SampleGroupRelation[];
   ProjectNoteCount: number /* uint */;
@@ -338,7 +370,7 @@ export interface ProjectSampleResources {
   ProjectNotes: ProjectSampleNote[];
   RawData: RawDataRecord[];
   DerivedData: DerivedData[];
-  DataSchemas: DataSchema[];
+  DataSchemas: DataSchemaRecord[];
   Users: User[];
   SampleUserPermissions: SampleUserPermissions[];
   ProjectSampleUserPermissions: ProjectSampleUserPermissions[];
@@ -385,14 +417,17 @@ export const AppEmailUrlKey = "app:email:url";
 export const AppEmailUsernameKey = "app:email:username";
 export const AppEmailPasswordKey = "app:email:password";
 export const AppEmailFromKey = "app:email:from";
-export const DbPermissionOwner = "owner";
-export const DbPermissionAddUser = "add_user";
-export const DbPermissionModifyUser = "modify_user";
-export const DbPermissionCreateDataSchema = "create_data_schema";
-export const DbPermissionModifyDataSchema = "modify_data_schema";
-export const DbPermissionCreateTransform = "create_transform";
-export const DbPermissionCreateProject = "create_project";
-export type DbPermission = typeof DbPermissionOwner | typeof DbPermissionAddUser | typeof DbPermissionModifyUser | typeof DbPermissionCreateDataSchema | typeof DbPermissionModifyDataSchema | typeof DbPermissionCreateTransform | typeof DbPermissionCreateProject;
+export const DbPermissionIdOwner = "owner";
+export const DbPermissionIdUserCreate = "user_create";
+export const DbPermissionIdUserModify = "user_modify";
+export const DbPermissionIdDataSchemaCreate = "data_schema_create";
+export const DbPermissionIdDataSchemaModify = "data_schema_modify";
+export const DbPermissionIdDataTypeCreate = "data_type_create";
+export const DbPermissionIdDataTypeModify = "data_type_modify";
+export const DbPermissionIdTransformCreate = "transform_create";
+export const DbPermissionIdTransformModify = "transform_modify";
+export const DbPermissionIdProjectCreate = "project_create";
+export type DbPermissionId = typeof DbPermissionIdOwner | typeof DbPermissionIdUserCreate | typeof DbPermissionIdUserModify | typeof DbPermissionIdDataSchemaCreate | typeof DbPermissionIdDataSchemaModify | typeof DbPermissionIdDataTypeCreate | typeof DbPermissionIdDataTypeModify | typeof DbPermissionIdTransformCreate | typeof DbPermissionIdTransformModify | typeof DbPermissionIdProjectCreate;
 export const AccountStatusActive = "active";
 export const AccountStatusDeactivated = "deactivated";
 export type AccountStatus = typeof AccountStatusActive | typeof AccountStatusDeactivated;
@@ -403,11 +438,11 @@ export interface User {
   AccountStatus: AccountStatus;
   Email: string;
   Name: string;
-  DbPermissions: DbPermission[];
+  DbPermissions: DbPermissionId[];
 }
 export interface UserCreate {
   Email: string;
   Name: string;
   Password: string;
-  DbPermissions: DbPermission[];
+  DbPermissions: DbPermissionId[];
 }

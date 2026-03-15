@@ -33,7 +33,7 @@ func NewUserHandler(
 	}
 }
 
-func (h *UserHandler) GetUser(c *echo.Context) error {
+func (h *UserHandler) UserGet(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	user, err := h.user_service.UserById(user_id)
 	if err != nil {
@@ -47,9 +47,9 @@ func (h *UserHandler) GetUser(c *echo.Context) error {
 	return c.JSON(http.StatusOK, user)
 }
 
-func (h *UserHandler) guard_user_must_be_owner(c *echo.Context) error {
+func (h *UserHandler) guard_user_has_permission(c *echo.Context, permission service.DbPermissionId) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	is_owner, err := h.user_service.UserHasPermission(user_id, service.DbPermissionOwner)
+	is_owner, err := h.user_service.UserHasPermission(user_id, permission)
 	if err != nil {
 		c.Logger().With("error", err).Error("could not verify user permission")
 		return c.NoContent(http.StatusInternalServerError)
@@ -61,8 +61,8 @@ func (h *UserHandler) guard_user_must_be_owner(c *echo.Context) error {
 	return nil
 }
 
-func (h *UserHandler) GetUsersAll(c *echo.Context) error {
-	err := h.guard_user_must_be_owner(c)
+func (h *UserHandler) UsersAll(c *echo.Context) error {
+	err := h.guard_user_has_permission(c, service.DbPermissionIdUserModify)
 	if err != nil {
 		return err
 	}
@@ -76,8 +76,8 @@ func (h *UserHandler) GetUsersAll(c *echo.Context) error {
 	return c.JSON(http.StatusOK, users)
 }
 
-func (h *UserHandler) CreateUser(c *echo.Context) error {
-	err := h.guard_user_must_be_owner(c)
+func (h *UserHandler) UserCreate(c *echo.Context) error {
+	err := h.guard_user_has_permission(c, service.DbPermissionIdUserCreate)
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,10 @@ func (h *UserHandler) CreateUser(c *echo.Context) error {
 	user.Password = rand.Text()
 	user_id, err := h.user_service.CreateUser(user)
 	if err != nil {
-		c.Logger().With("error", err).Error("could not create user")
+		c.Logger().With(
+			"error", err,
+			"user", user,
+		).Error("could not create user")
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == string(DBErrCodeDuplicateRecord) {
@@ -128,19 +131,20 @@ func (h *UserHandler) CreateUser(c *echo.Context) error {
 	return c.JSON(http.StatusOK, user_id)
 }
 
-func (h *UserHandler) UpdateUser(c *echo.Context) error {
-	err := h.guard_user_must_be_owner(c)
+func (h *UserHandler) UserUpdate(c *echo.Context) error {
+	err := h.guard_user_has_permission(c, service.DbPermissionIdUserModify)
 	if err != nil {
 		return err
 	}
 
 	update := new(service.User)
 	err = c.Bind(update)
+	c.Logger().With("update", update).Error("UPDATE")
 	if err != nil {
 		c.Logger().With("error", err).Error("could not bind request data")
 		return c.NoContent(http.StatusBadRequest)
 	}
-	err = h.user_service.UpdateUser(*update)
+	err = h.user_service.UserUpdate(*update)
 	if err != nil {
 		c.Logger().With("error", err)
 		return c.NoContent(http.StatusInternalServerError)
@@ -150,7 +154,7 @@ func (h *UserHandler) UpdateUser(c *echo.Context) error {
 }
 
 func (h *UserHandler) DeactivateUser(c *echo.Context) error {
-	err := h.guard_user_must_be_owner(c)
+	err := h.guard_user_has_permission(c, service.DbPermissionIdUserModify)
 	if err != nil {
 		return err
 	}

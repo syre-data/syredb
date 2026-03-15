@@ -29,11 +29,49 @@ function deactivate_user(user: UUIDTypes): Promise<Response> {
     });
 }
 
-function create_user(user: types.UserCreate): Promise<Response> {
+function userCreate(user: types.UserCreate): Promise<Response> {
+    const data = new FormData();
+    data.set("email", user.Email);
+    data.set("name", user.Name);
+    for (const permission of user.DbPermissions) {
+        data.append("db_permissions", permission);
+    }
     return fetch("/api/user/create", {
         credentials: "same-origin",
         method: "post",
-        body: JSON.stringify(user),
+        body: data,
+    });
+}
+
+// function userResources(user: UUIDTypes) : Promise<types.UserResources> {
+//     const params = new URLSearchParams();
+//     params.append("id", user.toString())
+//     return fetch (`/api/user/resources?${params}`).then(async resp=> {
+//         await resp.json() as types.UserResources
+//     })
+// }
+
+function user(user: UUIDTypes): Promise<types.User> {
+    const params = new URLSearchParams();
+    params.append("id", user.toString());
+    return fetch(`/api/user?${params}`).then(
+        async (resp) => (await resp.json()) as types.User,
+    );
+}
+
+function userUpdate(user: types.User): Promise<Response> {
+    const data = new FormData();
+    data.set("id", user.Id.toString());
+    data.set("email", user.Email);
+    data.set("account_status", user.AccountStatus);
+    data.set("name", user.Name);
+    for (const permission of user.DbPermissions) {
+        data.append("db_permissions", permission);
+    }
+    return fetch("/api/user", {
+        credentials: "same-origin",
+        method: "put",
+        body: data,
     });
 }
 
@@ -42,5 +80,8 @@ export default {
     get_users,
     update_user,
     deactivate_user,
-    create_user,
+    userCreate,
+    user,
+    userUpdate,
+    //  userResources,
 };

@@ -278,7 +278,9 @@ function ResourceBrowser({
                     <div className="flex gap-2">
                         <div>
                             <label>
-                                <span className="hidden">Primary resource</span>
+                                <span className="sr-only">
+                                    Primary resource
+                                </span>
                                 <select
                                     ref={primaryResourceTypeNode}
                                     onChange={set_primary_resource_type}
@@ -1209,7 +1211,7 @@ function SampleDetailNewProperty({ id }: SampleDetailNewPropertyProps) {
         <form className="flex gap-2 px-2" onSubmit={add_property}>
             <div>
                 <label>
-                    <span className="hidden">Property key</span>
+                    <span className="sr-only">Property key</span>
                     <input
                         type="text"
                         className="input-basic"
@@ -1219,7 +1221,7 @@ function SampleDetailNewProperty({ id }: SampleDetailNewPropertyProps) {
             </div>
             <div>
                 <label>
-                    <span className="hidden">Property label</span>
+                    <span className="sr-only">Property label</span>
                     <SelectPropertyType
                         className="input-basic"
                         onChange={set_type}
@@ -1228,7 +1230,7 @@ function SampleDetailNewProperty({ id }: SampleDetailNewPropertyProps) {
             </div>
             <div>
                 <label>
-                    <span className="hidden">Property value</span>
+                    <span className="sr-only">Property value</span>
                     <InputPropertyValue type={type} className="input-basic" />
                 </label>
             </div>
@@ -1326,7 +1328,7 @@ function RawDetailDataListItem({
             <div className="flex gap-2">
                 <div>
                     <label>
-                        <span className="hidden">Select data</span>
+                        <span className="sr-only">Select data</span>
                         <input
                             type="checkbox"
                             id={`data[${data.Id}][select]`}

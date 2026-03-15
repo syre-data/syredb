@@ -854,7 +854,7 @@ function NewProperty({ id, className, onRemove }: NewPropertyProps) {
         <div className={classname}>
             <div className="col-1">
                 <label>
-                    <span className="hidden">Key</span>
+                    <span className="sr-only">Key</span>
                     <input
                         type="text"
                         id={`property[new][${id}][key]`}
@@ -866,7 +866,7 @@ function NewProperty({ id, className, onRemove }: NewPropertyProps) {
             </div>
             <div className="col-2">
                 <label>
-                    <span className="hidden">Type</span>
+                    <span className="sr-only">Type</span>
                     <SelectPropertyType
                         id={`property[new][${id}][type]`}
                         name={`property[new][${id}][type]`}
@@ -878,7 +878,7 @@ function NewProperty({ id, className, onRemove }: NewPropertyProps) {
             </div>
             <div className="col-3">
                 <label className="flex gap-2">
-                    <span className="hidden">Value</span>
+                    <span className="sr-only">Value</span>
                     <InputPropertyValue
                         id={`property[new][${id}][value]`}
                         name={`property[new][${id}][value]`}
