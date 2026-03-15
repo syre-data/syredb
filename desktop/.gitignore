@@ -1,7 +1,0 @@
-.task
-bin
-desktop/frontend/dist
-desktop/frontend/node_modules
-desktop/build/linux/appimage/build
-desktop/build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
-node_modules
