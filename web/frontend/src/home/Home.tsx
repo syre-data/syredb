@@ -14,6 +14,7 @@ import SampleEdit from "./SampleEdit";
 import NotFound from "./NotFound";
 import UserEdit from "./UserEdit";
 import User from "./User";
+import DataSchemas from "./DataSchemas";
 import DataTypes from "./DataTypes";
 
 export default function Home() {

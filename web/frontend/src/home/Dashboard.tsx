@@ -1,5 +1,5 @@
 import * as types from "@/types";
-import { Suspense, useContext, useState } from "react";
+import { Suspense, useState } from "react";
 import type { MouseEvent } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import type {
@@ -8,7 +8,6 @@ import type {
 } from "react-error-boundary";
 import { Link } from "react-router";
 import icon from "../icon";
-import * as appStateCtx from "../AppStateContext";
 import * as common from "../common";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
@@ -17,31 +16,6 @@ import data_service from "@/service/data.service";
 import { SuspenseError } from "@/components";
 
 export default function Dashboard() {
-    const appState = useContext(appStateCtx.Context);
-    const canCreateOrModifyDataSchema =
-        common.has_db_permission(
-            types.DbPermissionDataSchemaCreate,
-            appState.user.DbPermissions,
-        ) ||
-        common.has_db_permission(
-            types.DbPermissionDataSchemaModify,
-            appState.user.DbPermissions,
-        );
-    const canCreateOrModifyDataTypes =
-        common.has_db_permission(
-            types.DbPermissionDataTypeCreate,
-            appState.user.DbPermissions,
-        ) ||
-        common.has_db_permission(
-            types.DbPermissionDataTypeModify,
-            appState.user.DbPermissions,
-        );
-
-    const canModifyUsers = common.has_db_permission(
-        types.DbPermissionUserModify,
-        appState.user.DbPermissions,
-    );
-
     return (
         <div>
             <div className="flex gap-2 text-xl">
@@ -279,183 +253,5 @@ function DataTypesContent({ data_types }: DataTypesContentProps) {
                 </li>
             ))}
         </ul>
-    );
-}
-
-interface DataSchemasProps {
-    className?: string;
-}
-function DataSchemas({ className }: DataSchemasProps) {
-    return (
-        <div className={className ?? ""}>
-            <ErrorBoundary FallbackComponent={DataSchemaError}>
-                <Suspense fallback={<DataSchemaLoading />}>
-                    <DataSchemaInner />
-                </Suspense>
-            </ErrorBoundary>
-        </div>
-    );
-}
-
-function DataSchemaError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as common.BackendError;
-    console.error(err);
-    return (
-        <div className="text-center">
-            <div>Could not get data schemas</div>
-            <div>{err.message}</div>
-        </div>
-    );
-}
-
-function DataSchemaLoading() {
-    return (
-        <div>
-            <h3 className="text-lg font-bold">Data schemas</h3>
-            <div className="text-center">Loading</div>
-        </div>
-    );
-}
-
-function DataSchemaInner() {
-    const { data: data_schemas } = useSuspenseQuery({
-        queryKey: [common.QUERY_KEY_DATA_SCHEMA],
-        queryFn: data_service.dataSchemasGetAll,
-    });
-
-    return (
-        <div className={`group`}>
-            <div className="flex gap-2 items-center px-4">
-                <h3 className="text-lg font-bold">Data schemas</h3>
-                <div
-                    className={classNames({
-                        "invisible group-hover:visible":
-                            data_schemas.length > 0,
-                    })}
-                >
-                    <Link to="/data-schema/create">
-                        <button
-                            type="button"
-                            className="btn-cmd"
-                            title="Create data schema"
-                        >
-                            <icon.Plus />
-                        </button>
-                    </Link>
-                </div>
-            </div>
-            <div>
-                {data_schemas.length === 0 ? (
-                    <DataSchemasEmpty />
-                ) : (
-                    <DataSchemasContent data_schemas={data_schemas} />
-                )}
-            </div>
-        </div>
-    );
-}
-
-function DataSchemasEmpty() {
-    return (
-        <div className="px-4">
-            <div>
-                <div>No data schemas</div>
-                <div>
-                    Create your first data schema by clicking the{" "}
-                    <icon.Plus className="inline" /> above.
-                </div>
-            </div>
-        </div>
-    );
-}
-
-interface DataSchemasContentProps {
-    data_schemas: types.DataSchemaRecord[];
-}
-function DataSchemasContent({ data_schemas }: DataSchemasContentProps) {
-    return (
-        <ul className="grid gap-2 grid-cols-[repeat(4,min-content)]">
-            {data_schemas.map((schema, index) => (
-                <li
-                    key={schema.Id.toString()}
-                    className="grid grid-cols-subgrid col-span-full"
-                >
-                    <DataSchemaContent index={index} schema={schema} />
-                </li>
-            ))}
-        </ul>
-    );
-}
-
-interface DataSchemaContentProps {
-    index: number;
-    schema: types.DataSchemaRecord;
-}
-function DataSchemaContent({ index, schema }: DataSchemaContentProps) {
-    const ROW_SPAN = 2;
-    const [expanded, setExpanded] = useState(false);
-
-    function toggle_expand(e: MouseEvent<HTMLDivElement>) {
-        if (e.button !== common.MouseButton.Primary) {
-            return;
-        }
-
-        setExpanded(!expanded);
-    }
-
-    const description = schema.Description ?? "(no description)";
-    return (
-        <div className="grid col-span-full grid-cols-subgrid group/schema-row">
-            <div
-                className="grid grid-cols-subgrid col-span-2"
-                onMouseDown={toggle_expand}
-            >
-                <div
-                    className={classNames({
-                        "col-1 pl-4 row-1": true,
-                        "invisible hover:visible group-hover/schema-row:visible":
-                            !expanded,
-                    })}
-                >
-                    <button
-                        type="button"
-                        className={classNames({
-                            "btn-cmd transition-[rotate]": true,
-                            "-rotate-90": !expanded,
-                        })}
-                    >
-                        <icon.CaretDown />
-                    </button>
-                </div>
-                <div className="row-1 col-2 whitespace-nowrap cursor-pointer">
-                    {schema.Label}
-                </div>
-            </div>
-            <div className="row-1 col-3 whitespace-nowrap">{description}</div>
-            <div className="row-1 col-4 invisible group-hover/schema-row:visible">
-                <Link to={`/data_schema/${schema.Id}`}>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        title="Edit data schema"
-                    >
-                        <icon.Pen />
-                    </button>
-                </Link>
-            </div>
-            <div
-                className={classNames({
-                    "row-2 col-start-2 -col-end-1 overflow-hidden whitespace-nowrap flex gap-2 transition-[height]": true,
-                    "h-0": !expanded,
-                })}
-            >
-                {schema.Schema.map((col, idx) => (
-                    <div key={col.label}>
-                        <span>{col.label}</span> <span>({col.dtype})</span>
-                        {idx === schema.Schema.length - 1 ? "" : " | "}
-                    </div>
-                ))}
-            </div>
-        </div>
     );
 }
