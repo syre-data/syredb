@@ -297,7 +297,6 @@ func is_valid_table_column_label(label string) bool {
 
 type DataSchemaCreate struct {
 	Schema      []ColumnSchema
-	Storage     DataStorage
 	Label       string
 	Description string
 }
@@ -332,23 +331,13 @@ func (s *DataService) DataSchemaCreate(user_id uuid.UUID, data_schema DataSchema
 		return err
 	}
 
-	switch data_schema.Storage {
-	case DataStorageInternal:
-		err = s.data_schema_storage_table_internal_create(
-			tx,
-			schema_id,
-			data_schema.Schema,
-		)
-		if err != nil {
-			return err
-		}
-	case DataStorageExternal:
-		err = s.data_schema_storage_table_external_create(tx, schema_id)
-		if err != nil {
-			return err
-		}
-	default:
-		panic(fmt.Sprintf("invalid data storage %s", data_schema.Storage))
+	err = s.data_schema_storage_table_create(
+		tx,
+		schema_id,
+		data_schema.Schema,
+	)
+	if err != nil {
+		return err
 	}
 
 	err = tx.Commit(s.ctx)
@@ -366,15 +355,14 @@ func (s *DataService) data_schema_create(
 	data_schema DataSchemaCreate,
 ) (uuid.UUID, error) {
 	create_schema_query :=
-		`INSERT INTO data_schema_ (_type, _creator, _schema, _storage, label, description) 
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING _id`
+		`INSERT INTO data_schema_ (_creator, _schema, label, description) 
+		VALUES ($1, $2, $3, $4) RETURNING _id`
 	var schema_id uuid.UUID
 	err := tx.QueryRow(
 		s.ctx,
 		create_schema_query,
 		user_id,
 		data_schema.Schema,
-		data_schema.Storage,
 		data_schema.Label,
 		data_schema.Description,
 	).Scan(&schema_id)
@@ -451,7 +439,7 @@ func data_storage_table_equal_column_length_constraint_query(
 	return query
 }
 
-func (s *DataService) data_schema_storage_table_internal_create(
+func (s *DataService) data_schema_storage_table_create(
 	tx pgx.Tx,
 	schema_id uuid.UUID,
 	schema []ColumnSchema,
@@ -460,11 +448,8 @@ func (s *DataService) data_schema_storage_table_internal_create(
 	table_name := data_storage_table_name_from_schema_id(schema_id)
 	create_table_query := fmt.Sprintf(
 		`CREATE TABLE %s (
-			_parent UUID NOT NULL,
-			_transform UUID REFERENCES transform_(_id) NOT NULL,
-			_sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
-			%s,
-			PRIMARY KEY(_parent, _transform)
+			_data UUID REFERENCES data_(_id) PRIMARY KEY,
+			%s
 		)`,
 		table_name,
 		strings.Join(table_cols, ", "),

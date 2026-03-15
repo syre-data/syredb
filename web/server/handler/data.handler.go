@@ -103,7 +103,7 @@ func (h *DataHandler) DataSchemasGetAll(c *echo.Context) error {
 
 }
 
-func (h *DataHandler) CreateDataSchema(c *echo.Context) error {
+func (h *DataHandler) DataSchemaCreate(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	var data_schema service.DataSchemaCreate
 	err := c.Bind(&data_schema)
@@ -127,16 +127,6 @@ func (h *DataHandler) CreateDataSchema(c *echo.Context) error {
 			"user", user_id,
 		).Debug("insufficient permissions to create data schema")
 		return c.NoContent(http.StatusUnauthorized)
-	}
-
-	if data_schema.Storage == service.DataStorageInternal {
-		if len(data_schema.Schema) == 0 {
-			c.Logger().With(
-				"error", "internal storage data schema must have at least one column",
-				"user", user_id,
-			).Debug("invalid data schema")
-			return c.NoContent(http.StatusBadRequest)
-		}
 	}
 
 	err = h.data_service.DataSchemaCreate(user_id, data_schema)

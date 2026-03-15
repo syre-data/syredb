@@ -5,7 +5,7 @@ import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import * as common from "@/common";
 import dataService from "@/service/data.service";
 import classNames from "classnames";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import Icon from "@/icon";
 import type { DataSchemaRecord } from "@/types";
 
@@ -36,25 +36,48 @@ function DataSchemas() {
         queryFn: dataService.dataSchemasGetAll,
     });
 
+    const navigate = useNavigate();
+
+    function close(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        console.log("back");
+        navigate(-1);
+    }
+
     return (
-        <div className={`group`}>
-            <div className="flex gap-2 items-center px-4">
-                <h3 className="text-lg font-bold">Data schemas</h3>
-                <div
-                    className={classNames({
-                        "invisible group-hover:visible":
-                            data_schemas.length > 0,
-                    })}
-                >
-                    <Link to="/data-schema/create">
-                        <button
-                            type="button"
-                            className="btn-cmd"
-                            title="Create data schema"
-                        >
-                            <Icon.Plus />
-                        </button>
-                    </Link>
+        <div>
+            <div className="flex justify-between">
+                <div className="flex gap-2 items-center px-4">
+                    <h3 className="text-lg font-bold">Data schemas</h3>
+                    <div
+                        className={classNames({
+                            "invisible group-hover:visible":
+                                data_schemas.length > 0,
+                        })}
+                    >
+                        <Link to="/data-schema/create">
+                            <button
+                                type="button"
+                                className="btn-cmd"
+                                title="Create data schema"
+                            >
+                                <Icon.Plus />
+                            </button>
+                        </Link>
+                    </div>
+                </div>
+                <div>
+                    <button
+                        type="button"
+                        className="btn-cmd"
+                        title="Close"
+                        onMouseDown={close}
+                    >
+                        <Icon.Close />
+                    </button>
                 </div>
             </div>
             <div>
@@ -89,22 +112,21 @@ function DataSchemasContent({ data_schemas }: DataSchemasContentProps) {
     return (
         <ul className="grid gap-2 grid-cols-[repeat(4,min-content)]">
             {data_schemas.map((schema, index) => (
-                <li
+                <DataSchemaListItem
                     key={schema.Id.toString()}
-                    className="grid grid-cols-subgrid col-span-full"
-                >
-                    <DataSchemaContent index={index} schema={schema} />
-                </li>
+                    index={index}
+                    schema={schema}
+                />
             ))}
         </ul>
     );
 }
 
-interface DataSchemaContentProps {
+interface DataSchemaListItemProps {
     index: number;
     schema: DataSchemaRecord;
 }
-function DataSchemaContent({ index, schema }: DataSchemaContentProps) {
+function DataSchemaListItem({ index, schema }: DataSchemaListItemProps) {
     const ROW_SPAN = 2;
     const [expanded, setExpanded] = useState(false);
 
@@ -118,14 +140,14 @@ function DataSchemaContent({ index, schema }: DataSchemaContentProps) {
 
     const description = schema.Description ?? "(no description)";
     return (
-        <div className="grid col-span-full grid-cols-subgrid group/schema-row">
+        <li className="px-2 grid col-span-full grid-cols-subgrid group/schema-row">
             <div
                 className="grid grid-cols-subgrid col-span-2"
                 onMouseDown={toggle_expand}
             >
                 <div
                     className={classNames({
-                        "col-1 pl-4 row-1": true,
+                        "col-1 row-1": true,
                         "invisible hover:visible group-hover/schema-row:visible":
                             !expanded,
                     })}
@@ -169,6 +191,6 @@ function DataSchemaContent({ index, schema }: DataSchemaContentProps) {
                     </div>
                 ))}
             </div>
-        </div>
+        </li>
     );
 }

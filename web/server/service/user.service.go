@@ -62,11 +62,11 @@ func NewUserService(
 }
 
 type User struct {
-	Id            uuid.UUID        `form:"id"`
-	AccountStatus AccountStatus    `form:"account_status"`
-	Email         string           `form:"email"`
-	Name          string           `form:"name"`
-	DbPermissions []DbPermissionId `form:"db_permissions"`
+	Id            uuid.UUID
+	AccountStatus AccountStatus
+	Email         string
+	Name          string
+	DbPermissions []DbPermissionId
 }
 
 func (s *UserService) UserById(user_id uuid.UUID) (User, error) {

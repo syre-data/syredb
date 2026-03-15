@@ -91,7 +91,6 @@ export interface InvalidSampleDataColumnLabels {
 export const PATTERN = `^[\\w_]+\$`;
 export interface DataSchemaCreate {
   Schema: ColumnSchema[];
-  Storage: DataStorage;
   Label: string;
   Description: string;
 }

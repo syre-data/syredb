@@ -1,18 +1,46 @@
 import type { ChangeEvent, MouseEvent, SubmitEvent } from "react";
-import { useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import * as common from "@/common";
 import data_service from "@/service/data.service";
 import icon from "@/icon";
 import * as types from "@/types";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
+import { Loading, SuspenseError } from "@/components";
+import dataService from "@/service/data.service";
+
+export default function () {
+    return (
+        <ErrorBoundary FallbackComponent={DataSchemaCreateError}>
+            <Suspense fallback={<Loading />}>
+                <DataSchemaCreate />
+            </Suspense>
+        </ErrorBoundary>
+    );
+}
+
+function DataSchemaCreateError({ error, resetErrorBoundary }: FallbackProps) {
+    return (
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="text-center pt-4"
+        >
+            Could not load resources
+        </SuspenseError>
+    );
+}
 
 interface ColumnSchema {
     id: number;
 }
 
-export default function () {
-    const DEFAULT_STORAGE = types.DataStorageInternal;
+function DataSchemaCreate() {
+    const { data: data_schemas } = useSuspenseQuery({
+        queryKey: [common.QUERY_KEY_DATA_SCHEMAS],
+        queryFn: dataService.dataSchemasGetAll,
+    });
+
     const INVALID_LABEL_ERROR =
         "Label can only contain letters, numbers, and underscores (_)";
 
@@ -128,20 +156,13 @@ export default function () {
 
         const label = data.get("label")!.toString().trim();
         const description = data.get("description")!.toString().trim();
-        const storage_str = data.get("storage")!.toString();
-        const storage = common.data_storage_string_to_variant(storage_str);
-        if (storage === null) {
-            const input = document.getElementById(
-                "storage",
-            )! as HTMLSelectElement;
-            input.setCustomValidity("invalid value");
-            form.reportValidity();
-            return;
-        }
-
         if (label.length === 0) {
             const input = document.getElementById("label")! as HTMLInputElement;
-            input.setCustomValidity("label must be set");
+            input.setCustomValidity("Label must be set");
+        }
+        if (data_schemas.findIndex((schema) => schema.Label === label) > -1) {
+            const input = document.getElementById("label")! as HTMLInputElement;
+            input.setCustomValidity("Label already exists");
         }
 
         const columns = [];
@@ -196,7 +217,6 @@ export default function () {
         form.reportValidity();
         const data_schema = {
             Schema: columns,
-            Storage: storage!,
             Label: label,
             Description: description,
         } satisfies types.DataSchemaCreate;
@@ -226,7 +246,7 @@ export default function () {
         <div>
             <div>
                 <h2 className="px-4 text-lg font-bold pb-4">
-                    Create a data schema
+                    Create data schema
                 </h2>
             </div>
             <div>
@@ -247,30 +267,6 @@ export default function () {
                                     className="input-basic invalid:ring-red-600"
                                     required
                                 />
-                            </label>
-                        </div>
-                        <div>
-                            <label>
-                                <span className="pr-2">Storage</span>
-                                <select
-                                    id="storage"
-                                    name="storage"
-                                    defaultValue={DEFAULT_STORAGE}
-                                    className="input-basic invalid:ring-red-600"
-                                >
-                                    <option
-                                        value={types.DataStorageInternal}
-                                        title="Store data as a table in the database"
-                                    >
-                                        Internal
-                                    </option>
-                                    <option
-                                        value={types.DataStorageExternal}
-                                        title="Store data externally"
-                                    >
-                                        External
-                                    </option>
-                                </select>
                             </label>
                         </div>
                         <div>

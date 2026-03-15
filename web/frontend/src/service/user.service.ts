@@ -30,16 +30,10 @@ function deactivate_user(user: UUIDTypes): Promise<Response> {
 }
 
 function userCreate(user: types.UserCreate): Promise<Response> {
-    const data = new FormData();
-    data.set("email", user.Email);
-    data.set("name", user.Name);
-    for (const permission of user.DbPermissions) {
-        data.append("db_permissions", permission);
-    }
     return fetch("/api/user/create", {
         credentials: "same-origin",
         method: "post",
-        body: data,
+        body: JSON.stringify(user),
     });
 }
 
@@ -60,18 +54,10 @@ function user(user: UUIDTypes): Promise<types.User> {
 }
 
 function userUpdate(user: types.User): Promise<Response> {
-    const data = new FormData();
-    data.set("id", user.Id.toString());
-    data.set("email", user.Email);
-    data.set("account_status", user.AccountStatus);
-    data.set("name", user.Name);
-    for (const permission of user.DbPermissions) {
-        data.append("db_permissions", permission);
-    }
     return fetch("/api/user", {
         credentials: "same-origin",
         method: "put",
-        body: data,
+        body: JSON.stringify(user),
     });
 }
 
