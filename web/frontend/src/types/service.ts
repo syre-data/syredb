@@ -15,6 +15,17 @@ export interface DbPermissionRecord {
   Label: string;
   Description: string;
 }
+export const AppDataKeyEmailUrl = "app:email:url";
+export const AppDataKeyEmailUsername = "app:email:username";
+export const AppDataKeyEmailPassword = "app:email:password";
+export const AppDataKeyEmailFrom = "app:email:from";
+export const AppDataKeyAccountName = "app:account:name";
+export const AppDataKeyAccountLogo = "app:account:logo";
+export const AppDataKeyDataPath = "app:data:path";
+export type AppDataKey = typeof AppDataKeyEmailUrl | typeof AppDataKeyEmailUsername | typeof AppDataKeyEmailPassword | typeof AppDataKeyEmailFrom | typeof AppDataKeyAccountName | typeof AppDataKeyAccountLogo | typeof AppDataKeyDataPath;
+export const AppDataDirRecipe = "recipe";
+export const AppDataDirTransform = "transform";
+export type AppDataDir = typeof AppDataDirRecipe | typeof AppDataDirTransform;
 
 //////////
 // source: common.go
@@ -25,8 +36,6 @@ export interface InsufficientPermissionsError {
 //////////
 // source: data.service.go
 
-export const AppDataPath = "app:data:path";
-export const AppTransformDir = "transforms";
 export const ValueTypeString = "string";
 export const ValueTypeInt = "int";
 export const ValueTypeUint = "uint";

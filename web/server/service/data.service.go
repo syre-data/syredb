@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -22,9 +23,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
-
-const AppDataPath = "app:data:path"
-const AppTransformDir = "transforms"
 
 type ValueType string
 
@@ -68,6 +66,7 @@ type DataService struct {
 	ctx          context.Context
 	logger       *slog.Logger
 	db           *database.DBConnection
+	app_service  *AppService
 	user_service *UserService
 }
 
@@ -75,12 +74,14 @@ func NewDataService(
 	ctx context.Context,
 	logger *slog.Logger,
 	db *database.DBConnection,
+	app_service *AppService,
 	user_service *UserService,
 ) *DataService {
 	return &DataService{
 		ctx:          ctx,
 		logger:       logger,
 		db:           db,
+		app_service:  app_service,
 		user_service: user_service,
 	}
 }
@@ -186,22 +187,99 @@ func (s *DataService) DataTypesGetAll() ([]DataType, error) {
 	return data_types, nil
 }
 
-func (s *DataService) DataTypeTransformCreate(transform *multipart.FileHeader) uuid.UUID {
-
-	// query := "INSERT INTO data_type_transform_ (_path, _cmd)"
-	return uuid.Nil
-}
-
-func (s *DataService) DataTypeCreate(recipe *multipart.FileHeader, label string, description string) error {
-	transform_idx := uuid.Nil
-	if recipe != nil {
-		transform_idx = s.DataTypeTransformCreate(recipe)
+func (s *DataService) DataTypeRecipeCreate(tx pgx.Tx, recipe *multipart.FileHeader) (uuid.UUID, error) {
+	recipe_dir, err := s.app_service.AppDataDir(AppDataDirRecipe)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"dir", AppDataDirRecipe,
+		).Error("could not get app recipe dir")
+		return uuid.Nil, err
 	}
 
-	query := "INSERT INTO data_type_ (transform, label, description) VALUES ($1, $2, $3)"
-	_, err := s.db.Conn.Exec(s.ctx, query, transform_idx, label, description)
+	filename := fmt.Sprintf(
+		"%s.%s",
+		rand.Text(),
+		recipe.Filename,
+	)
+	path := filepath.Join(recipe_dir, filename)
+
+	var id uuid.UUID
+	query :=
+		`INSERT INTO data_type_recipe_ (_path, _cmd, _args) VALUES ($1, $2, $3)
+		RETURNING _id`
+	err = tx.QueryRow(s.ctx, query, path, "python", []string{}).Scan(&id)
 	if err != nil {
-		s.logger.With("error", err).Error("could not create raw data type")
+		s.logger.With(
+			"error", err,
+			"recipe", recipe,
+		).Error("could not create data type recipe")
+		return uuid.Nil, err
+	}
+
+	err = SaveFormFile(recipe, path)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"path", path,
+		).Error("could not save recipe file")
+		return uuid.Nil, err
+	}
+
+	return id, nil
+}
+
+func (s *DataService) DataTypeCreate(
+	label string,
+	description *string,
+	schema uuid.UUID,
+	recipe *multipart.FileHeader,
+) error {
+	tx, err := s.db.Conn.Begin(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not begin transaction")
+		return err
+	}
+	defer tx.Rollback(s.ctx)
+
+	fields := []string{"label"}
+	value_args := []any{label}
+
+	if description != nil {
+		fields = append(fields, "description")
+		value_args = append(value_args, *description)
+	}
+
+	if recipe != nil {
+		recipe_idx, err := s.DataTypeRecipeCreate(tx, recipe)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+			).Error("could not save recipe file")
+			return err
+		}
+		fields = append(fields, "recipe")
+		value_args = append(value_args, recipe_idx)
+	}
+	if schema != uuid.Nil {
+		fields = append(fields, "_schema")
+		value_args = append(value_args, schema)
+	}
+
+	query := fmt.Sprintf(
+		"INSERT INTO data_type_ (%s) VALUES (%s)",
+		strings.Join(fields, ", "),
+		SqlArgsPlaceholderList(len(value_args)),
+	)
+	_, err = tx.Exec(s.ctx, query, value_args...)
+	if err != nil {
+		s.logger.With("error", err).Error("could not create data type")
+		return err
+	}
+
+	err = tx.Commit(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not commit data type create transaction")
 		return err
 	}
 
@@ -1747,12 +1825,11 @@ type TransformCreate struct {
 }
 
 func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate) (uuid.UUID, error) {
-	var app_dir string
-	err := s.db.Conn.QueryRow(s.ctx, "SELECT value FROM _app_data_ WHERE key=$1", AppDataPath).Scan(&app_dir)
+	transform_path, err := s.app_service.AppDataDir(AppDataDirTransform)
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"key", AppDataPath,
+			"key", AppDataKeyDataPath,
 		).Error("could not get app data path")
 		return uuid.Nil, err
 	}
@@ -1771,7 +1848,6 @@ func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate)
 	defer tx.Rollback(s.ctx)
 
 	script_ext := filepath.Ext(transform.Script.Filename)
-	transform_path := filepath.Join(app_dir, AppTransformDir)
 	transform_script_name := fmt.Sprintf("%s%s", transform_id, script_ext)
 	script_path := filepath.Join(transform_path, transform_script_name)
 

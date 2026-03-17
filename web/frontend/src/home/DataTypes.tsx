@@ -46,29 +46,17 @@ function DataTypes() {
         queryFn: data_service.dataTypesGetAll,
     });
 
-    const [showAddNew, setShowAddNew] = useState(false);
-
-    function openNew(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != common.MouseButton.Primary) {
-            return;
-        }
-
-        setShowAddNew(true);
-    }
-
     return (
         <div>
             <div className="px-4 pt-2 flex justify-between">
                 <div className="flex gap-2">
                     <h2 className="text-lg">Data types</h2>
                     <div>
-                        <button
-                            type="button"
-                            className="btn-cmd"
-                            onMouseDown={openNew}
-                        >
-                            <icon.Plus />
-                        </button>
+                        <Link to="/data-type/create">
+                            <button type="button" className="btn-cmd">
+                                <icon.Plus />
+                            </button>
+                        </Link>
                     </div>
                 </div>
                 <div>
@@ -77,18 +65,10 @@ function DataTypes() {
                     </Link>
                 </div>
             </div>
-            {data_types.length === 0 && !showAddNew ? (
+            {data_types.length === 0 ? (
                 <DataTypesEmpty />
             ) : (
-                <div>
-                    {showAddNew ? (
-                        <NewDataTypeForm
-                            onSuccess={() => setShowAddNew(false)}
-                            onCancel={() => setShowAddNew(false)}
-                        />
-                    ) : null}
-                    <DataTypesContent data_types={data_types} />
-                </div>
+                <DataTypesContent data_types={data_types} />
             )}
         </div>
     );
@@ -97,113 +77,12 @@ function DataTypes() {
 function DataTypesEmpty() {
     return (
         <div className="px-4">
-            <p>You don't have any data types yet.</p>
+            <p>No data types</p>
             <p>
-                Create your first one by clicking the{" "}
-                <icon.Plus className="inline" /> above
+                Create one by clicking the <icon.Plus className="inline" />{" "}
+                above
             </p>
         </div>
-    );
-}
-
-interface NewDataTypeFormProps {
-    onSuccess: () => void;
-    onCancel: () => void;
-}
-function NewDataTypeForm({ onSuccess, onCancel }: NewDataTypeFormProps) {
-    const queryClient = useQueryClient();
-
-    async function submit(e: SubmitEvent<HTMLFormElement>) {
-        e.preventDefault();
-
-        const data = new FormData(e.target);
-        const transform = data.get("transform")! as File;
-        const label = data.get("label")!.toString().trim();
-        const description = data.get("description")!.toString().trim();
-
-        if (!label) {
-            const input = document.getElementById("label")! as HTMLInputElement;
-            input.setCustomValidity("Label can not be empty");
-            input.reportValidity();
-            return;
-        }
-
-        await data_service
-            .dataTypeCreate(transform, label, description)
-            .then((resp) => {
-                if (resp.status === StatusCodes.OK) {
-                    queryClient.invalidateQueries({
-                        queryKey: [common.QUERY_KEY_DATA_TYPES],
-                    });
-                    onSuccess();
-                }
-            });
-    }
-
-    function cancel(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button !== common.MouseButton.Primary) {
-            return;
-        }
-
-        onCancel();
-    }
-
-    return (
-        <form className="px-4" onSubmit={submit}>
-            <div className="w-min flex flex-col gap-2">
-                <div className="flex flex-col gap-2">
-                    <div>
-                        <label>
-                            <span className="sr-only">Label</span>
-                            <input
-                                id="label"
-                                name="label"
-                                type="text"
-                                placeholder="Label"
-                                className="input-basic"
-                                required
-                            />
-                        </label>
-                    </div>
-                    <div>
-                        <label>
-                            <span className="sr-only">Transform</span>
-                            <input
-                                id="transform"
-                                name="transform"
-                                type="file"
-                                placeholder="Transform"
-                                className="input-basic"
-                                required
-                            />
-                        </label>
-                    </div>
-                    <div>
-                        <label>
-                            <span className="sr-only">Description</span>
-                            <textarea
-                                id="description"
-                                name="description"
-                                placeholder="Description"
-                                className="input-basic"
-                            ></textarea>
-                        </label>
-                    </div>
-                </div>
-                <div className="flex gap-2 justify-center">
-                    <button type="submit" className="btn-submit">
-                        Save
-                    </button>
-                    <button
-                        type="button"
-                        onMouseDown={cancel}
-                        className="btn-submit"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        </form>
     );
 }
 

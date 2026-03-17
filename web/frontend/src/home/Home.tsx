@@ -16,6 +16,7 @@ import UserEdit from "./UserEdit";
 import User from "./User";
 import DataSchemas from "./DataSchemas";
 import DataTypes from "./DataTypes";
+import DataTypeCreate from "./DataTypeCreate";
 
 export default function Home() {
     return (
@@ -28,7 +29,6 @@ export default function Home() {
                 <Route path="/user/:user_id" element={<User />} />
                 <Route path="/user/:user_id/edit" element={<UserEdit />} />
                 <Route path="/data-schemas" element={<DataSchemas />} />
-                <Route path="/data-types" element={<DataTypes />} />
                 <Route
                     path="/data-schema/create"
                     element={<DataSchemaCreate />}
@@ -37,6 +37,8 @@ export default function Home() {
                     path="/data-schema/:data_schema_id"
                     element={<DataSchema />}
                 />
+                <Route path="/data-types" element={<DataTypes />} />
+                <Route path="/data-type/create" element={<DataTypeCreate />} />
                 <Route path="/project">
                     <Route path="create" element={<ProjectCreate />} />
                     <Route path=":project_id">

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"syredb/database"
 	"syredb/service"
@@ -32,7 +33,7 @@ func NewDataHandler(
 	}
 }
 
-func (h *DataHandler) CreateDataType(c *echo.Context) error {
+func (h *DataHandler) DataTypeCreate(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	sufficient_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdDataTypeCreate)
 	if err != nil {
@@ -50,23 +51,38 @@ func (h *DataHandler) CreateDataType(c *echo.Context) error {
 	}
 
 	label := c.FormValue("label")
-	description := c.FormValue("description")
 	if len(label) == 0 {
 		return c.NoContent(http.StatusBadRequest)
 	}
-	recipe, err := c.FormFile("recipe")
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-		).Error("could not get recipe")
-		return c.NoContent(http.StatusBadRequest)
+
+	var description *string
+	description_str := c.FormValue("description")
+	if description_str != "" {
+		description = &description_str
 	}
-	err = h.data_service.DataTypeCreate(recipe, label, description)
+
+	data_schema := uuid.Nil
+	data_schema_str := c.FormValue("data_schema")
+	if data_schema_str != "" {
+		data_schema, err = uuid.Parse(data_schema_str)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"data schema", data_schema_str,
+			).Error("could not parse data schema to uuid")
+			return c.NoContent(http.StatusBadRequest)
+		}
+	}
+
+	var recipe *multipart.FileHeader
+	recipe, _ = c.FormFile("recipe")
+
+	err = h.data_service.DataTypeCreate(label, description, data_schema, recipe)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"user", user_id,
-		).Error("could not create raw data type")
+		).Error("could not create data type")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 

@@ -97,8 +97,8 @@ function DataSchemasEmpty() {
             <div>
                 <div>No data schemas</div>
                 <div>
-                    Create your first data schema by clicking the{" "}
-                    <Icon.Plus className="inline" /> above.
+                    Create one by clicking the <Icon.Plus className="inline" />{" "}
+                    above.
                 </div>
             </div>
         </div>

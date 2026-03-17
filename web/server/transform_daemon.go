@@ -25,12 +25,14 @@ func NewTransformDaemon(
 	ctx context.Context,
 	logger *slog.Logger,
 	db *database.DBConnection,
+	app_service *service.AppService,
 	data_service *service.DataService,
 ) *TransformDaemon {
 	return &TransformDaemon{
 		ctx:          ctx,
 		logger:       logger,
 		db:           db,
+		app_service:  app_service,
 		data_service: data_service,
 	}
 }
@@ -39,6 +41,7 @@ type TransformDaemon struct {
 	ctx          context.Context
 	logger       *slog.Logger
 	db           *database.DBConnection
+	app_service  *service.AppService
 	data_service *service.DataService
 }
 
@@ -114,24 +117,6 @@ func (d *TransformDaemon) Start(ctx context.Context) error {
 			)
 		}
 	}
-}
-
-func (d *TransformDaemon) appDir() (string, error) {
-	var app_dir string
-	err := d.db.Conn.QueryRow(
-		d.ctx,
-		"SELECT value FROM _app_data_ WHERE key=$1",
-		service.AppDataPath,
-	).Scan(&app_dir)
-	if err != nil {
-		d.logger.With(
-			"error", err,
-			"key", service.AppDataPath,
-		).Error("could not get app data path")
-		return "", err
-	}
-
-	return app_dir, nil
 }
 
 type transformJobStatus string
@@ -463,5 +448,5 @@ func (d *TransformDaemon) createTransformDataFileData(sample_data uuid.UUID) (*o
 func script_path_from_tranform_id(app_dir string, id uuid.UUID) string {
 	// TODO: Update to match creation.
 	script_name := fmt.Sprintf("%s.%s", id.String(), "py")
-	return filepath.Join(app_dir, service.AppTransformDir, script_name)
+	return filepath.Join(app_dir, string(service.AppDataDirTransform), script_name)
 }

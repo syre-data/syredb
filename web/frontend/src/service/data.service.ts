@@ -1,5 +1,5 @@
 import * as types from "@/types";
-import type { UUIDTypes } from "uuid";
+import * as uuid from "uuid";
 
 function dataTypesGetAll(): Promise<types.DataType[]> {
     return fetch("/api/data-types", {
@@ -8,14 +8,23 @@ function dataTypesGetAll(): Promise<types.DataType[]> {
 }
 
 function dataTypeCreate(
-    transform: File,
     label: string,
     description?: string,
+    data_schema?: Uint8Array<ArrayBufferLike>,
+    recipe?: File,
 ): Promise<Response> {
     const data = new FormData();
-    data.set("transform", transform);
     data.set("label", label);
-    data.set("description", description ?? "");
+    if (description) {
+        data.set("description", description);
+    }
+    if (data_schema) {
+        data.set("data_schema", uuid.stringify(data_schema));
+    }
+    if (recipe) {
+        data.set("recipe", recipe);
+    }
+
     return fetch("/api/data-type", {
         credentials: "same-origin",
         method: "post",
@@ -30,7 +39,7 @@ function dataSchemasGetAll(): Promise<types.DataSchemaRecord[]> {
 }
 
 function saveProjectDataAll(
-    project: UUIDTypes,
+    project: uuid.UUIDTypes,
     hierarchy: types.SaveDataHierarchy,
 ): Promise<Response> {
     const params = new URLSearchParams();
@@ -41,7 +50,7 @@ function saveProjectDataAll(
     });
 }
 
-function saveSampleDataSingle(sample_data: UUIDTypes): Promise<Response> {
+function saveSampleDataSingle(sample_data: uuid.UUIDTypes): Promise<Response> {
     const params = new URLSearchParams();
     params.append("id", sample_data.toString());
     return fetch(`/api/sample-data/single?${params}`, {
@@ -50,16 +59,16 @@ function saveSampleDataSingle(sample_data: UUIDTypes): Promise<Response> {
 }
 
 function saveSampleDataMultiple(
-    sample_data: UUIDTypes[],
-    project: UUIDTypes,
+    sample_data: uuid.UUIDTypes[],
+    project: uuid.UUIDTypes,
     hierarchy: types.SaveDataHierarchy[],
 ) {
     throw new Error("not yet implemented");
 }
 
 function saveDataSchemaSampleDataAll(
-    data_schema: UUIDTypes,
-    project: UUIDTypes,
+    data_schema: uuid.UUIDTypes,
+    project: uuid.UUIDTypes,
     hierarchy: types.SaveDataHierarchy[],
 ): Promise<Response> {
     throw new Error("not yet implemented");
@@ -207,7 +216,7 @@ function parse_data_file_parse_string_to_value(
 }
 
 function dataSchemaResourcesGet(
-    data_schema_id: UUIDTypes,
+    data_schema_id: uuid.UUIDTypes,
 ): Promise<types.DataSchemaResources> {
     const params = new URLSearchParams();
     params.append("id", data_schema_id.toString());

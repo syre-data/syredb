@@ -51,7 +51,7 @@ func main() {
 	auth_service := service.NewAuthService(ctx, e.Logger, db)
 	user_service := service.NewUserService(ctx, e.Logger, db, auth_service)
 	sample_service := service.NewSampleService(ctx, e.Logger, db)
-	data_service := service.NewDataService(ctx, e.Logger, db, user_service)
+	data_service := service.NewDataService(ctx, e.Logger, db, app_service, user_service)
 	project_service := service.NewProjectService(ctx, e.Logger, db, user_service, data_service)
 
 	app_handler := handler.NewAppHandler(db, app_service)
@@ -61,7 +61,7 @@ func main() {
 	data_handler := handler.NewDataHandler(db, data_service, user_service, project_service)
 
 	transform_daemon_logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	transform_daemon := NewTransformDaemon(ctx, transform_daemon_logger, db, data_service)
+	transform_daemon := NewTransformDaemon(ctx, transform_daemon_logger, db, app_service, data_service)
 	go transform_daemon.Start(ctx)
 
 	env_session_secret, env_session_secret_exists := os.LookupEnv(handler.EnvSessionSecretKey)
@@ -234,7 +234,7 @@ func register_routes(
 	api.POST("/project/samples", project.CreateProjectSamples)
 	api.PUT("/project/sample", project.UpdateProjectSample)
 	api.GET("/data-types", data.DataTypesGetAll)
-	api.POST("/data-type", data.CreateDataType)
+	api.POST("/data-type", data.DataTypeCreate)
 	api.GET("/data-schemas", data.DataSchemasGetAll)
 	api.POST("/data-schema", data.DataSchemaCreate)
 	api.GET("/data-schema", data.GetDataSchemaResources)

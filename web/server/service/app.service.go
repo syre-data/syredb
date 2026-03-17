@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"syredb/database"
 
 	"errors"
@@ -141,4 +142,45 @@ func (s *AppService) DbPermissionsAll() ([]DbPermissionRecord, error) {
 	}
 
 	return permissions, nil
+}
+
+type AppDataKey string
+
+const (
+	AppDataKeyEmailUrl      AppDataKey = "app:email:url"
+	AppDataKeyEmailUsername AppDataKey = "app:email:username"
+	AppDataKeyEmailPassword AppDataKey = "app:email:password"
+	AppDataKeyEmailFrom     AppDataKey = "app:email:from"
+	AppDataKeyAccountName   AppDataKey = "app:account:name"
+	AppDataKeyAccountLogo   AppDataKey = "app:account:logo"
+	AppDataKeyDataPath      AppDataKey = "app:data:path"
+)
+
+func (s *AppService) AppData(key AppDataKey) (string, error) {
+	var value string
+	query := "SELECT value FROM _app_data_ WHERE key=$1"
+	err := s.db.Conn.QueryRow(s.ctx, query, string(key)).Scan(&value)
+	return value, err
+}
+
+type AppDataDir string
+
+const (
+	AppDataDirRecipe    AppDataDir = "recipe"
+	AppDataDirTransform AppDataDir = "transform"
+)
+
+func (s *AppService) AppDataDir(dir AppDataDir) (string, error) {
+	app_dir, err := s.AppData(AppDataKeyDataPath)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"key", AppDataKeyDataPath,
+		).Error("could not get app data path")
+		return "", err
+	}
+
+	dirpath := filepath.Join(app_dir, string(dir))
+	return dirpath, nil
+
 }
