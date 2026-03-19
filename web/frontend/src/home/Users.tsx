@@ -19,7 +19,6 @@ export default function Users() {
             return;
         }
 
-        console.log("back");
         navigate(-1);
     }
 

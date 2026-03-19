@@ -66,7 +66,7 @@ export interface DataTypeSourceRecord {
   DataType: uuid.UUIDTypes;
   Input: DataSourceCardinality;
   Required: boolean;
-  ExtensionFilter: string;
+  ExtensionFilter: string[];
   Label: string;
   Description: string;
 }
@@ -87,6 +87,15 @@ export interface DataType {
   Active: boolean;
   Sources: DataTypeSourceRecord[];
 }
+export interface DataTypeSourceCreate {
+  Cardinality: DataSourceCardinality;
+  Required: boolean;
+  ExtensionFilter: string[];
+  Label: string;
+  Description?: string;
+}
+export const FieldsPerRecord = 5;
+export const RecordOffset = 1;
 export interface DataSchemaRecord {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;

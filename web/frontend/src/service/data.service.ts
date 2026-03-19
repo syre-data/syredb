@@ -9,12 +9,14 @@ function dataTypesGetAll(): Promise<types.DataType[]> {
 
 function dataTypeCreate(
     label: string,
+    sources: types.DataTypeSourceCreate[],
     description?: string,
     data_schema?: Uint8Array<ArrayBufferLike>,
     recipe?: File,
 ): Promise<Response> {
     const data = new FormData();
     data.set("label", label);
+    data.set("sources", JSON.stringify(sources));
     if (description) {
         data.set("description", description);
     }
@@ -30,6 +32,14 @@ function dataTypeCreate(
         method: "post",
         body: data,
     });
+}
+
+function dataTypeGet(data_type: uuid.UUIDTypes): Promise<types.DataType> {
+    const params = new URLSearchParams();
+    params.append("id", data_type.toString());
+    return fetch(`/api/data-type?${params}`, {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.DataType);
 }
 
 function dataSchemasGetAll(): Promise<types.DataSchemaRecord[]> {
@@ -236,6 +246,7 @@ function transformSchemasGet(): Promise<types.TransformResources> {
 export default {
     dataTypesGetAll,
     dataTypeCreate,
+    dataTypeGet,
     dataSchemasGetAll,
     saveProjectDataAll,
     saveSampleDataSingle,

@@ -1,5 +1,11 @@
 import { AiOutlinePlus, AiOutlineReload } from "react-icons/ai";
-import { FaUser, FaCheck, FaFileUpload, FaSearch } from "react-icons/fa";
+import {
+    FaUser,
+    FaCheck,
+    FaFileUpload,
+    FaSearch,
+    FaFileCode,
+} from "react-icons/fa";
 import {
     FaArrowLeft,
     FaCaretDown,
@@ -26,6 +32,7 @@ export default {
     DataSchema: TbColumns3,
     Download: FaDownload,
     Eye: IoEyeOutline,
+    FileCode: FaFileCode,
     FileUpload: FaFileUpload,
     Gear: FaGear,
     Home: IoMdHome,

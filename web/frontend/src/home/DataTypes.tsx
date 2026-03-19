@@ -11,7 +11,8 @@ import * as types from "@/types";
 import icon from "@/icon";
 import { StatusCodes } from "http-status-codes";
 import classNames from "classnames";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
+import * as uuid from "uuid";
 
 export default function () {
     return (
@@ -45,6 +46,15 @@ function DataTypes() {
         queryKey: [common.QUERY_KEY_DATA_TYPES],
         queryFn: data_service.dataTypesGetAll,
     });
+    const navigate = useNavigate();
+
+    function close(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button != common.MouseButton.Primary) {
+            return;
+        }
+
+        navigate(-1);
+    }
 
     return (
         <div>
@@ -60,9 +70,14 @@ function DataTypes() {
                     </div>
                 </div>
                 <div>
-                    <Link to="/">
-                        <icon.Home />
-                    </Link>
+                    <button
+                        type="button"
+                        title="Close"
+                        className="btn-cmd"
+                        onMouseDown={close}
+                    >
+                        <icon.Close />
+                    </button>
                 </div>
             </div>
             {data_types.length === 0 ? (
@@ -91,7 +106,7 @@ interface DataTypesContentProps {
 }
 function DataTypesContent({ data_types }: DataTypesContentProps) {
     return (
-        <ul className="grid grid-cols-[repeat(3,min-content)] gap-2">
+        <ul className="grid grid-cols-[repeat(4,min-content)] gap-2">
             {data_types.map((type) => (
                 <DataTypeListItem key={type.Id.toString()} data_type={type} />
             ))}
@@ -106,7 +121,7 @@ function DataTypeListItem({ data_type }: DataTypeListItemProps) {
     return (
         <li
             className={classNames({
-                "px-4 col-span-full grid grid-cols-subgrid": true,
+                "px-4 col-span-full grid grid-cols-subgrid group": true,
                 "text-gray-600 dark:text-gray-400": !data_type.Active,
             })}
         >
@@ -114,7 +129,19 @@ function DataTypeListItem({ data_type }: DataTypeListItemProps) {
             <div className="col-2 whitespace-nowrap">
                 {data_type.Description}
             </div>
-            <div className="col-3 whitespace-nowrap">{data_type.Transform}</div>
+            <div className="col-3 whitespace-nowrap">
+                {data_type.Recipe === uuid.NIL ? null : <icon.FileCode />}
+            </div>
+            <div className="col-4">
+                <Link
+                    to={`/data-type/${data_type.Id}`}
+                    className="invisible group-hover:visible"
+                >
+                    <button type="button" className="btn-cmd">
+                        <icon.Pen />
+                    </button>
+                </Link>
+            </div>
         </li>
     );
 }

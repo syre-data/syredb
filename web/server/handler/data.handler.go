@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"mime/multipart"
 	"net/http"
@@ -61,6 +62,15 @@ func (h *DataHandler) DataTypeCreate(c *echo.Context) error {
 		description = &description_str
 	}
 
+	var sources []service.DataTypeSourceCreate
+	err = json.Unmarshal([]byte(c.FormValue("sources")), &sources)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not parse data type sources")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
 	data_schema := uuid.Nil
 	data_schema_str := c.FormValue("data_schema")
 	if data_schema_str != "" {
@@ -77,7 +87,7 @@ func (h *DataHandler) DataTypeCreate(c *echo.Context) error {
 	var recipe *multipart.FileHeader
 	recipe, _ = c.FormFile("recipe")
 
-	err = h.data_service.DataTypeCreate(label, description, data_schema, recipe)
+	err = h.data_service.DataTypeCreate(label, description, sources, data_schema, recipe)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -87,6 +97,30 @@ func (h *DataHandler) DataTypeCreate(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+func (h *DataHandler) DataTypeGet(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	data_type_id, err := uuid.Parse(c.QueryParam("id"))
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not parse data type id")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	data_type, err := h.data_service.DataTypeGetById(data_type_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data type", data_type_id,
+		).Error("could not get data type resources")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.JSON(http.StatusOK, data_type)
 }
 
 func (h *DataHandler) DataTypesGetAll(c *echo.Context) error {

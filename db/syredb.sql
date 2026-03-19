@@ -239,9 +239,9 @@ CREATE TYPE data_source_cardinality AS ENUM (
 CREATE TABLE IF NOT EXISTS data_type_source_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _data_type UUID REFERENCES data_type_(_id) NOT NULL,
-    _input data_source_cardinality NOT NULL,
+    _cardinality data_source_cardinality NOT NULL,
     _required boolean NOT NULL,
-    _extension_filter VARCHAR(64),
+    extension_filter VARCHAR(32)[],
     label VARCHAR(128) NOT NULL,
     description TEXT,
     UNIQUE (_data_type, label)

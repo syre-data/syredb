@@ -17,6 +17,7 @@ import User from "./User";
 import DataSchemas from "./DataSchemas";
 import DataTypes from "./DataTypes";
 import DataTypeCreate from "./DataTypeCreate";
+import DataType from "./DataType";
 
 export default function Home() {
     return (
@@ -39,6 +40,7 @@ export default function Home() {
                 />
                 <Route path="/data-types" element={<DataTypes />} />
                 <Route path="/data-type/create" element={<DataTypeCreate />} />
+                <Route path="/data-type/:data_type_id" element={<DataType />} />
                 <Route path="/project">
                     <Route path="create" element={<ProjectCreate />} />
                     <Route path=":project_id">

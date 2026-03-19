@@ -7,6 +7,7 @@ export const QUERY_KEY_DATA_SCHEMAS = "data_schemas";
 export const QUERY_KEY_DATA_SCHEMA = "data_schema";
 export const QUERY_KEY_DATA_SCHEMA_RESOURCES = "data_schema_resources";
 export const QUERY_KEY_DATA_TYPES = "data_types";
+export const QUERY_KEY_DATA_TYPE = "data_type";
 export const QUERY_KEY_USER_PROJECTS = "user_projects";
 export const QUERY_KEY_PROJECT_RESOURCES = "project_resources";
 export const QUERY_KEY_PROJECT_SAMPLE_RESOURCES = "project_sample_resources";

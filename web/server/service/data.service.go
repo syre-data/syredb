@@ -108,9 +108,9 @@ const (
 type DataTypeSourceRecord struct {
 	Id              uuid.UUID             `db:"_id"`
 	DataType        uuid.UUID             `db:"_data_type"`
-	Input           DataSourceCardinality `db:"_input"`
+	Input           DataSourceCardinality `db:"_cardinality"`
 	Required        bool                  `db:"_required"`
-	ExtensionFilter string                `db:"_extension_filter"`
+	ExtensionFilter []string              `db:"extension_filter"`
 	Label           string                `db:"label"`
 	Description     string                `db:"description"`
 }
@@ -160,7 +160,7 @@ func (s *DataService) DataTypesGetAll() ([]DataType, error) {
 		data_type_ids[idx] = data_type.Id
 	}
 	source_query :=
-		`SELECT _id, _data_type, _input, _required, _extension_filter, label, description
+		`SELECT _id, _data_type, _cardinality, _required, extension_filter, label, description
 		FROM data_type_source_ WHERE _data_type=ANY($1)`
 	rows, _ = s.db.Conn.Query(s.ctx, source_query, data_type_ids)
 	sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeSourceRecord])
@@ -185,6 +185,43 @@ func (s *DataService) DataTypesGetAll() ([]DataType, error) {
 	}
 
 	return data_types, nil
+}
+
+func (s *DataService) DataTypeGetById(id uuid.UUID) (DataType, error) {
+	data_type_query :=
+		`SELECT _id, _schema, recipe, label, description, active
+		FROM data_type_ WHERE _id=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, data_type_query, id)
+	rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataTypeRecord])
+	if err != nil {
+		s.logger.With("error", err).Error("could not get data types")
+		return DataType{}, err
+	}
+
+	data_type := DataType{
+		Id:          rx.Id,
+		Schema:      rx.Schema,
+		Recipe:      rx.Recipe,
+		Label:       rx.Label,
+		Description: rx.Description,
+		Active:      rx.Active,
+	}
+
+	source_query :=
+		`SELECT _id, _data_type, _cardinality, _required, extension_filter, label, description
+		FROM data_type_source_ WHERE _data_type=$1`
+	rows, _ = s.db.Conn.Query(s.ctx, source_query, id)
+	sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeSourceRecord])
+	if err != nil {
+		s.logger.With("error", err).Error("could not get data type sources")
+		return DataType{}, err
+	}
+
+	for _, source := range sources {
+		data_type.Sources = append(data_type.Sources, source)
+	}
+
+	return data_type, nil
 }
 
 func (s *DataService) DataTypeRecipeCreate(tx pgx.Tx, recipe *multipart.FileHeader) (uuid.UUID, error) {
@@ -229,9 +266,84 @@ func (s *DataService) DataTypeRecipeCreate(tx pgx.Tx, recipe *multipart.FileHead
 	return id, nil
 }
 
+type DataTypeSourceCreate struct {
+	Cardinality     DataSourceCardinality
+	Required        bool
+	ExtensionFilter []string
+	Label           string
+	Description     *string
+}
+
+func (s *DataService) DataTypeSourcesCreate(tx pgx.Tx, data_type uuid.UUID, sources []DataTypeSourceCreate) ([]uuid.UUID, error) {
+	if len(sources) == 0 {
+		return []uuid.UUID{}, nil
+	}
+
+	var query strings.Builder
+	query.WriteString(
+		`INSERT INTO data_type_source_ 
+		(_data_type, _cardinality, _required, extension_filter, label, description)
+		VALUES`,
+	)
+
+	const FieldsPerRecord = 5
+	const RecordOffset = 1
+	args := make([]any, len(sources)*FieldsPerRecord+RecordOffset)
+	args[0] = data_type
+	for idx, source := range sources {
+		cardinality_idx := idx*FieldsPerRecord + RecordOffset
+		required_idx := cardinality_idx + 1
+		extension_filter_idx := required_idx + 1
+		label_idx := extension_filter_idx + 1
+		description_idx := label_idx + 1
+
+		args[cardinality_idx] = source.Cardinality
+		args[required_idx] = source.Required
+		args[label_idx] = source.Label
+		if len(source.ExtensionFilter) == 0 {
+			args[extension_filter_idx] = nil
+		} else {
+			args[extension_filter_idx] = source.ExtensionFilter
+		}
+		if source.Description == nil {
+			args[description_idx] = nil
+		} else {
+			args[description_idx] = *source.Description
+		}
+
+		if idx > 0 {
+			query.WriteString(", ")
+		}
+		fmt.Fprintf(
+			&query,
+			"($1, $%d, $%d, $%d, $%d, $%d)",
+			cardinality_idx+1,
+			required_idx+1,
+			extension_filter_idx+1,
+			label_idx+1,
+			description_idx+1,
+		)
+	}
+	query.WriteString(" RETURNING _id")
+
+	rows, _ := tx.Query(s.ctx, query.String(), args...)
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data type", data_type,
+			"sources", sources,
+		).Error("could not create data type sources")
+		return nil, err
+	}
+
+	return ids, nil
+}
+
 func (s *DataService) DataTypeCreate(
 	label string,
 	description *string,
+	sources []DataTypeSourceCreate,
 	schema uuid.UUID,
 	recipe *multipart.FileHeader,
 ) error {
@@ -266,14 +378,23 @@ func (s *DataService) DataTypeCreate(
 		value_args = append(value_args, schema)
 	}
 
+	var id uuid.UUID
 	query := fmt.Sprintf(
-		"INSERT INTO data_type_ (%s) VALUES (%s)",
+		"INSERT INTO data_type_ (%s) VALUES (%s) RETURNING _id",
 		strings.Join(fields, ", "),
 		SqlArgsPlaceholderList(len(value_args)),
 	)
-	_, err = tx.Exec(s.ctx, query, value_args...)
+	err = tx.QueryRow(s.ctx, query, value_args...).Scan(&id)
 	if err != nil {
 		s.logger.With("error", err).Error("could not create data type")
+		return err
+	}
+
+	_, err = s.DataTypeSourcesCreate(tx, id, sources)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not create data type sources")
 		return err
 	}
 
