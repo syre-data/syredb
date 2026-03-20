@@ -21,6 +21,7 @@ import { IoIosLogOut, IoMdHome, IoIosArrowRoundBack } from "react-icons/io";
 import { MdEdit, MdOutlineCategory } from "react-icons/md";
 import { TbColumns3 } from "react-icons/tb";
 import { IoEyeOutline } from "react-icons/io5";
+import { BsFile, BsFiles } from "react-icons/bs";
 
 export default {
     BackArrow: IoIosArrowRoundBack,
@@ -32,7 +33,9 @@ export default {
     DataSchema: TbColumns3,
     Download: FaDownload,
     Eye: IoEyeOutline,
+    File: BsFile,
     FileCode: FaFileCode,
+    Files: BsFiles,
     FileUpload: FaFileUpload,
     Gear: FaGear,
     Home: IoMdHome,

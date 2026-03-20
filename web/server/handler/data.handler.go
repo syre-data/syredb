@@ -87,7 +87,7 @@ func (h *DataHandler) DataTypeCreate(c *echo.Context) error {
 	var recipe *multipart.FileHeader
 	recipe, _ = c.FormFile("recipe")
 
-	err = h.data_service.DataTypeCreate(label, description, sources, data_schema, recipe)
+	err = h.data_service.DataTypeCreate(user_id, label, description, sources, data_schema, recipe)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -121,6 +121,31 @@ func (h *DataHandler) DataTypeGet(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, data_type)
+}
+
+func (h *DataHandler) DataTypeUpdate(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	var update service.DataTypeUpdate
+	err := c.Bind(&update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not bind update")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	err = h.data_service.DataTypeUpdate(update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"udpate", update,
+		).Error("could not update data type")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.NoContent(http.StatusOK)
 }
 
 func (h *DataHandler) DataTypesGetAll(c *echo.Context) error {

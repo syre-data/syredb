@@ -108,7 +108,7 @@ const (
 type DataTypeSourceRecord struct {
 	Id              uuid.UUID             `db:"_id"`
 	DataType        uuid.UUID             `db:"_data_type"`
-	Input           DataSourceCardinality `db:"_cardinality"`
+	Cardinality     DataSourceCardinality `db:"_cardinality"`
 	Required        bool                  `db:"_required"`
 	ExtensionFilter []string              `db:"extension_filter"`
 	Label           string                `db:"label"`
@@ -117,6 +117,7 @@ type DataTypeSourceRecord struct {
 
 type DataTypeRecord struct {
 	Id          uuid.UUID `db:"_id"`
+	Creator     uuid.UUID `db:"_creator"`
 	Recipe      uuid.UUID `db:"recipe"`
 	Schema      uuid.UUID `db:"_schema"`
 	Label       string    `db:"label"`
@@ -126,6 +127,7 @@ type DataTypeRecord struct {
 
 type DataType struct {
 	Id          uuid.UUID
+	Creator     uuid.UUID
 	Schema      uuid.UUID
 	Recipe      uuid.UUID
 	Label       string
@@ -136,7 +138,7 @@ type DataType struct {
 
 func (s *DataService) DataTypesGetAll() ([]DataType, error) {
 	data_type_query :=
-		`SELECT _id, _schema, recipe, label, description, active
+		`SELECT _id, _creator, _schema, recipe, label, description, active
 		FROM data_type_ ORDER BY label`
 	rows, _ := s.db.Conn.Query(s.ctx, data_type_query)
 	data_type_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeRecord])
@@ -148,6 +150,7 @@ func (s *DataService) DataTypesGetAll() ([]DataType, error) {
 	data_types := make([]DataType, len(data_type_rxs))
 	for idx, rx := range data_type_rxs {
 		data_types[idx].Id = rx.Id
+		data_types[idx].Creator = rx.Creator
 		data_types[idx].Schema = rx.Schema
 		data_types[idx].Recipe = rx.Recipe
 		data_types[idx].Label = rx.Label
@@ -189,17 +192,18 @@ func (s *DataService) DataTypesGetAll() ([]DataType, error) {
 
 func (s *DataService) DataTypeGetById(id uuid.UUID) (DataType, error) {
 	data_type_query :=
-		`SELECT _id, _schema, recipe, label, description, active
+		`SELECT _id, _creator, _schema, recipe, label, description, active
 		FROM data_type_ WHERE _id=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, data_type_query, id)
 	rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataTypeRecord])
 	if err != nil {
-		s.logger.With("error", err).Error("could not get data types")
+		s.logger.With("error", err).Error("could not get data type")
 		return DataType{}, err
 	}
 
 	data_type := DataType{
 		Id:          rx.Id,
+		Creator:     rx.Creator,
 		Schema:      rx.Schema,
 		Recipe:      rx.Recipe,
 		Label:       rx.Label,
@@ -341,6 +345,7 @@ func (s *DataService) DataTypeSourcesCreate(tx pgx.Tx, data_type uuid.UUID, sour
 }
 
 func (s *DataService) DataTypeCreate(
+	creator uuid.UUID,
 	label string,
 	description *string,
 	sources []DataTypeSourceCreate,
@@ -354,8 +359,8 @@ func (s *DataService) DataTypeCreate(
 	}
 	defer tx.Rollback(s.ctx)
 
-	fields := []string{"label"}
-	value_args := []any{label}
+	fields := []string{"_creator", "label"}
+	value_args := []any{creator, label}
 
 	if description != nil {
 		fields = append(fields, "description")
@@ -401,6 +406,79 @@ func (s *DataService) DataTypeCreate(
 	err = tx.Commit(s.ctx)
 	if err != nil {
 		s.logger.With("error", err).Error("could not commit data type create transaction")
+		return err
+	}
+
+	return nil
+}
+
+type DataTypeSourceUpdate struct {
+	Id              uuid.UUID
+	Description     string
+	ExtensionFilter []string
+}
+
+type DataTypeUpdate struct {
+	Id          uuid.UUID
+	Active      bool
+	Label       string
+	Description string
+	Sources     []DataTypeSourceUpdate
+}
+
+func (s *DataService) DataTypeUpdate(update DataTypeUpdate) error {
+	tx, err := s.db.Conn.Begin(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not begin transaction")
+		return err
+	}
+	defer tx.Rollback(s.ctx)
+
+	query :=
+		`UPDATE data_type_ SET active=$1, label=$2, description=$3 
+		WHERE _id=$4`
+	_, err = tx.Exec(s.ctx, query, update.Active, update.Label, update.Description, update.Id)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"update", update,
+		).Error("could not update data type")
+		return err
+	}
+
+	for _, source := range update.Sources {
+		err = s.DataTypeSourceUpdate(tx, source)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"update", source,
+			).Error("could not update data type source")
+			return err
+		}
+	}
+
+	err = tx.Commit(s.ctx)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"update", update,
+		).Error("could not commit data type update")
+		return err
+	}
+
+	return nil
+}
+
+func (s *DataService) DataTypeSourceUpdate(tx pgx.Tx, update DataTypeSourceUpdate) error {
+	query :=
+		`UPDATE data_type_source_ SET description=$1, extension_filter=$2 
+		WHERE _id=$3`
+	_, err := tx.Exec(s.ctx, query, update.Description, update.ExtensionFilter, update.Id)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"update", update,
+		).Error("could not update data type source")
 		return err
 	}
 
@@ -693,12 +771,12 @@ func (s *DataService) data_schema_storage_table_external_create(
 ) error {
 	create_table_query := fmt.Sprintf(
 		`CREATE TABLE $1 (
-			_input UUID NOT NULL,
+			_source UUID NOT NULL,
 			_transform UUID REFERENCES transform_(_id) NOT NULL,
 			_sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
 			%s VARCHAR(4096) NOT NULL,
 			%s VARCHAR(512) NOT NULL,
-			PRIMARY KEY(_input, _transform)
+			PRIMARY KEY(_source, _transform)
 		)`,
 		DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL,
 		DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL,
@@ -769,7 +847,8 @@ func (s *DataService) DataSchemaGetResources(data_schema_id uuid.UUID) (DataSche
 	}
 
 	var transforms []Transform
-	transforms_query := `SELECT _id, _input, _output, _creator, label, description FROM transform_ WHERE _input=$1`
+	transforms_query :=
+		`SELECT _id, _source, _destination, _creator, label, description FROM transform_ WHERE _source=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, transforms_query, data_schema_id)
 	transforms, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Transform, error) {
 		var transform Transform

@@ -42,6 +42,15 @@ function dataTypeGet(data_type: uuid.UUIDTypes): Promise<types.DataType> {
     }).then(async (resp) => (await resp.json()) as types.DataType);
 }
 
+function dataTypeUpdate(update: types.DataTypeUpdate): Promise<Response> {
+    return fetch(`/api/data-type`, {
+        credentials: "same-origin",
+        method: "put",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+    });
+}
+
 function dataSchemasGetAll(): Promise<types.DataSchemaRecord[]> {
     return fetch("/api/data-schemas", {
         credentials: "same-origin",
@@ -247,6 +256,7 @@ export default {
     dataTypesGetAll,
     dataTypeCreate,
     dataTypeGet,
+    dataTypeUpdate,
     dataSchemasGetAll,
     saveProjectDataAll,
     saveSampleDataSingle,

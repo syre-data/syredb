@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS data_type_recipe_ (
 
 CREATE TABLE IF NOT EXISTS data_type_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
     recipe UUID REFERENCES data_type_recipe_(_id) UNIQUE,
     _schema UUID REFERENCES data_schema_(_id),
     label VARCHAR(128) UNIQUE NOT NULL,

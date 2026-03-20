@@ -236,6 +236,7 @@ func register_routes(
 	api.GET("/data-types", data.DataTypesGetAll)
 	api.POST("/data-type", data.DataTypeCreate)
 	api.GET("/data-type", data.DataTypeGet)
+	api.PUT("/data-type", data.DataTypeUpdate)
 	api.GET("/data-schemas", data.DataSchemasGetAll)
 	api.POST("/data-schema", data.DataSchemaCreate)
 	api.GET("/data-schema", data.GetDataSchemaResources)

@@ -64,7 +64,7 @@ export type DataSourceCardinality = typeof DataSourceCardinalitySingle | typeof 
 export interface DataTypeSourceRecord {
   Id: uuid.UUIDTypes;
   DataType: uuid.UUIDTypes;
-  Input: DataSourceCardinality;
+  Cardinality: DataSourceCardinality;
   Required: boolean;
   ExtensionFilter: string[];
   Label: string;
@@ -72,6 +72,7 @@ export interface DataTypeSourceRecord {
 }
 export interface DataTypeRecord {
   Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
   Recipe: uuid.UUIDTypes;
   Schema: uuid.UUIDTypes;
   Label: string;
@@ -80,6 +81,7 @@ export interface DataTypeRecord {
 }
 export interface DataType {
   Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
   Schema: uuid.UUIDTypes;
   Recipe: uuid.UUIDTypes;
   Label: string;
@@ -96,6 +98,18 @@ export interface DataTypeSourceCreate {
 }
 export const FieldsPerRecord = 5;
 export const RecordOffset = 1;
+export interface DataTypeSourceUpdate {
+  Id: uuid.UUIDTypes;
+  Description: string;
+  ExtensionFilter: string[];
+}
+export interface DataTypeUpdate {
+  Id: uuid.UUIDTypes;
+  Active: boolean;
+  Label: string;
+  Description: string;
+  Sources: DataTypeSourceUpdate[];
+}
 export interface DataSchemaRecord {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
