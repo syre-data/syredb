@@ -104,6 +104,15 @@ function dataSchemaCreate(
     });
 }
 
+function dataSchemaUpdate(update: types.DataSchemaUpdate): Promise<Response> {
+    return fetch("/api/data-schema", {
+        credentials: "same-origin",
+        method: "put",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+    });
+}
+
 function transformCreate(transform: types.TransformCreate): Promise<Response> {
     const data = new FormData();
     data.append("input", transform.SourceSchema.toString());
@@ -257,14 +266,15 @@ export default {
     dataTypeCreate,
     dataTypeGet,
     dataTypeUpdate,
+    dataSchemaCreate,
+    dataSchemaUpdate,
     dataSchemasGetAll,
+    dataSchemaResourcesGet,
     saveProjectDataAll,
     saveSampleDataSingle,
     saveSampleDataMultiple,
     saveDataSchemaSampleDataAll,
-    dataSchemaCreate,
     parseDataFileToSchema,
-    dataSchemaResourcesGet,
     transformSchemasGet,
     transformCreate,
 };

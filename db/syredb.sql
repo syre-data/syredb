@@ -37,8 +37,8 @@ INSERT INTO _db_permission_ VALUES
     ('data_schema_modify', 'Modify data schema', 'Modify existing data schema'),
     ('data_type_create', 'Create data types', 'Create new data types'),
     ('data_type_modify', 'Modify data types', 'Modify existing data types'),
-    ('transform_create', 'Create transform', 'Create new transforms'),
-    ('transform_modify', 'Modify transforms', 'Modify existing transforms'),
+    ('data_type_transform_create', 'Create data type transform', 'Create new data type transforms'),
+    ('data_type_transform_modify', 'Modify data type transforms', 'Modify existing data type transforms'),
     ('project_create', 'Create project', 'Create new projects');
 
 CREATE TABLE IF NOT EXISTS db_user_permission_ (

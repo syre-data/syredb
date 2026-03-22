@@ -131,6 +131,7 @@ func (h *DataHandler) DataTypeUpdate(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"user", user_id,
+			"payload", c.Request().Body,
 		).Error("could not bind update")
 		return c.NoContent(http.StatusBadRequest)
 	}
@@ -216,7 +217,7 @@ func (h *DataHandler) DataSchemaCreate(c *echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (h *DataHandler) GetDataSchemaResources(c *echo.Context) error {
+func (h *DataHandler) DataSchemaResources(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	data_schema_id, err := uuid.Parse(c.QueryParam("id"))
 	if err != nil {
@@ -238,6 +239,32 @@ func (h *DataHandler) GetDataSchemaResources(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, resources)
+}
+
+func (h *DataHandler) DataSchemaUpdate(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+
+	var update service.DataSchemaUpdate
+	err := c.Bind(&update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"request", c.Request().Body,
+		).Error("could not bind request to update")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	err = h.data_service.DataSchemaUpdate(update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"update", update,
+		).Error("could not update data schema")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.NoContent(http.StatusOK)
 }
 
 func (h *DataHandler) DownloadRawDataSingle(c *echo.Context) error {

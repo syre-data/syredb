@@ -762,38 +762,59 @@ func (s *DataService) data_schema_storage_table_create(
 	return nil
 }
 
-const DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL = "path"
-const DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL = "filename"
+type DataSchemaUpdate struct {
+	Id          uuid.UUID
+	Label       string
+	Description *string
+}
 
-func (s *DataService) data_schema_storage_table_external_create(
-	tx pgx.Tx,
-	schema_id uuid.UUID,
-) error {
-	create_table_query := fmt.Sprintf(
-		`CREATE TABLE $1 (
-			_source UUID NOT NULL,
-			_transform UUID REFERENCES transform_(_id) NOT NULL,
-			_sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
-			%s VARCHAR(4096) NOT NULL,
-			%s VARCHAR(512) NOT NULL,
-			PRIMARY KEY(_source, _transform)
-		)`,
-		DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL,
-		DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL,
-	)
-
-	_, err := tx.Exec(
-		s.ctx,
-		create_table_query,
-		data_storage_table_name_from_schema_id(schema_id),
-	)
+func (s *DataService) DataSchemaUpdate(update DataSchemaUpdate) error {
+	query := "UPDATE data_schema_ SET label=$1, description=$2 WHERE _id=$3"
+	_, err := s.db.Conn.Exec(s.ctx, query, update.Label, update.Description, update.Id)
 	if err != nil {
-		s.logger.With("error", err, "schema", schema_id).Error("could not create data table for schema")
-		return err
+		s.logger.With(
+			"error", err,
+			"update", update,
+		).Error("could not update data schema")
 	}
 
 	return nil
 }
+
+// --- REMOVE
+// const DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL = "path"
+// const DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL = "filename"
+
+// func (s *DataService) data_schema_storage_table_external_create(
+// 	tx pgx.Tx,
+// 	schema_id uuid.UUID,
+// ) error {
+// 	create_table_query := fmt.Sprintf(
+// 		`CREATE TABLE $1 (
+// 			_source UUID NOT NULL,
+// 			_transform UUID REFERENCES transform_(_id) NOT NULL,
+// 			_sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
+// 			%s VARCHAR(4096) NOT NULL,
+// 			%s VARCHAR(512) NOT NULL,
+// 			PRIMARY KEY(_source, _transform)
+// 		)`,
+// 		DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL,
+// 		DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL,
+// 	)
+
+// 	_, err := tx.Exec(
+// 		s.ctx,
+// 		create_table_query,
+// 		data_storage_table_name_from_schema_id(schema_id),
+// 	)
+// 	if err != nil {
+// 		s.logger.With("error", err, "schema", schema_id).Error("could not create data table for schema")
+// 		return err
+// 	}
+
+// 	return nil
+// }
+// --- REMOVE END
 
 type Transform struct {
 	Id          uuid.UUID
@@ -807,7 +828,6 @@ type Transform struct {
 type DataSchemaResources struct {
 	DataSchema DataSchemaRecord
 	Creator    User
-	Transforms []Transform
 }
 
 func (s *DataService) DataSchemaGetResources(data_schema_id uuid.UUID) (DataSchemaResources, error) {
@@ -846,24 +866,23 @@ func (s *DataService) DataSchemaGetResources(data_schema_id uuid.UUID) (DataSche
 		return DataSchemaResources{}, err
 	}
 
-	var transforms []Transform
-	transforms_query :=
-		`SELECT _id, _source, _destination, _creator, label, description FROM transform_ WHERE _source=$1`
-	rows, _ := s.db.Conn.Query(s.ctx, transforms_query, data_schema_id)
-	transforms, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Transform, error) {
-		var transform Transform
-		err := row.Scan(&transform.Id, &transform.Input, &transform.Output, &transform.Creator.Id, &transform.Label, &transform.Description)
-		return transform, err
-	})
-	if err != nil {
-		s.logger.With("error", err, "schema", data_schema_id).Error("could not get transforms for data schema")
-		return DataSchemaResources{}, err
-	}
+	// var transforms []Transform
+	// transforms_query :=
+	// 	`SELECT _id, _source, _destination, _creator, label, description FROM transform_ WHERE _source=$1`
+	// rows, _ := s.db.Conn.Query(s.ctx, transforms_query, data_schema_id)
+	// transforms, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Transform, error) {
+	// 	var transform Transform
+	// 	err := row.Scan(&transform.Id, &transform.Input, &transform.Output, &transform.Creator.Id, &transform.Label, &transform.Description)
+	// 	return transform, err
+	// })
+	// if err != nil {
+	// 	s.logger.With("error", err, "schema", data_schema_id).Error("could not get transforms for data schema")
+	// 	return DataSchemaResources{}, err
+	// }
 
 	return DataSchemaResources{
 		DataSchema: schema,
 		Creator:    creator,
-		Transforms: transforms,
 	}, nil
 }
 

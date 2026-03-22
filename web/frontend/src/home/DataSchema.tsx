@@ -17,6 +17,8 @@ import * as uuid from "uuid";
 import data_service from "@/service/data.service";
 import icon from "@/icon";
 import * as common from "@/common";
+import dataService from "@/service/data.service";
+import { StatusCodes } from "http-status-codes";
 
 export default function () {
     const navigate = useNavigate();
@@ -53,8 +55,6 @@ interface DataSchemaProps {
     data_schema_id: uuid.UUIDTypes;
 }
 function DataSchema({ data_schema_id }: DataSchemaProps) {
-    const queryClient = useQueryClient();
-
     const { data: data_schema_resources } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_DATA_SCHEMA_RESOURCES, data_schema_id],
         queryFn: async () =>
@@ -62,73 +62,137 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
     });
     const { data: data_schemas } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_DATA_SCHEMAS],
-        queryFn: async () => data_service.getDataSchemasTransform(),
+        queryFn: async () => data_service.dataSchemasGetAll(),
     });
+    const queryClient = useQueryClient();
+    const navigate = useNavigate();
     const data_schema = data_schema_resources.DataSchema;
 
-    const [createTransformEditor, setCreateTransformEditor] = useState(false);
-
-    function addTransform(e: MouseEvent<HTMLButtonElement>) {
+    function close(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== common.MouseButton.Primary) {
             return;
         }
 
-        setCreateTransformEditor(true);
+        navigate(-1);
     }
 
-    async function createTransform(form_data: FormData) {
-        const label = form_data.get("label") as string;
-        const description = form_data.get("description") as string;
-        const schema_id = form_data.get("schema") as string;
-        const script_file = form_data.get("script") as File;
+    function validate_label(e: ChangeEvent<HTMLInputElement>) {
+        const input = e.target;
+        input.setCustomValidity("");
 
-        if (!label || !schema_id || !script_file) {
-            console.error("missing required fields for creating transform");
+        if (
+            data_schemas
+                .filter((schema) => schema.Id !== data_schema.Id)
+                .map((schema) => schema.Label)
+                .includes(input.value.trim())
+        ) {
+            input.setCustomValidity("Duplicate label, labels must be unique");
+        }
+    }
+
+    async function update(e: SubmitEvent<HTMLFormElement>) {
+        e.preventDefault();
+        const labelInput = document.getElementById(
+            "label",
+        )! as HTMLInputElement;
+        labelInput.setCustomValidity("");
+
+        const data = new FormData(e.target);
+        const label = data.get("label")!.toString().trim();
+        const description_str = data.get("description")!.toString().trim();
+
+        if (!label) {
+            labelInput.setCustomValidity("Label is required");
+            return;
+        }
+        if (
+            data_schemas
+                .filter((schema) => schema.Id !== data_schema.Id)
+                .map((schema) => schema.Label)
+                .includes(label)
+        ) {
+            labelInput.setCustomValidity(
+                "Duplicate label, labels must be unique",
+            );
             return;
         }
 
-        await data_service
-            .transformCreate({
-                SourceSchema: data_schema.Id,
-                DestinationSchema: schema_id,
-                Script: script_file,
-                Label: label,
-                Description: description,
-            } satisfies types.TransformCreate)
-            .then((res) => {
-                if (res.status !== 200) {
-                    console.error("could not create transform", res);
-                    return;
-                }
+        const description =
+            description_str.length === 0 ? undefined : description_str;
+        const update = {
+            Id: data_schema_id,
+            Label: label,
+            Description: description,
+        };
+        await dataService.dataSchemaUpdate(update).then((resp) => {
+            if (resp.status === StatusCodes.OK) {
                 queryClient.invalidateQueries({
-                    queryKey: [
-                        common.QUERY_KEY_DATA_SCHEMA_RESOURCES,
-                        data_schema_id,
-                    ],
+                    queryKey: [common.QUERY_KEY_DATA_SCHEMAS],
                 });
-                setCreateTransformEditor(false);
-            })
-            .catch((err) => {
-                console.error("could not create transform", err);
-            });
+                queryClient.invalidateQueries({
+                    queryKey: [common.QUERY_KEY_DATA_SCHEMA, data_schema_id],
+                });
+
+                navigate(-1);
+            }
+        });
     }
 
     return (
         <div>
-            <div className="pt-2 px-4">
-                <div className="flex gap-2 items-stretch">
-                    <h1 className="text-xl">Data schema {data_schema.Label}</h1>
-                    <div className="flex gap-2">
-                        <Link to="/">
-                            <button type="button" className="btn-cmd">
-                                <icon.Home />
-                            </button>
-                        </Link>
-                    </div>
+            <div className="pt-2 px-4 flex justify-between">
+                <h1 className="text-xl">Data schema</h1>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        className="btn-cmd"
+                        onMouseDown={close}
+                    >
+                        <icon.Close />
+                    </button>
                 </div>
-                <div>{data_schema.Description}</div>
             </div>
-            <div className="px-4">
+            <div>
+                <form onSubmit={update} className="flex flex-col gap-2 px-4">
+                    <div className="flex flex-col gap-2">
+                        <div>
+                            <label>
+                                <span className="sr-only">Label</span>
+                                <input
+                                    type="text"
+                                    id="label"
+                                    name="label"
+                                    className="input-basic"
+                                    defaultValue={data_schema.Label}
+                                    placeholder="Label"
+                                    onChange={validate_label}
+                                    required
+                                />
+                            </label>
+                        </div>
+                        <div>
+                            <label>
+                                <span className="sr-only">Description</span>
+                                <textarea
+                                    id="description"
+                                    name="description"
+                                    className="input-basic"
+                                    placeholder="Description"
+                                    defaultValue={data_schema.Description}
+                                ></textarea>
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <div>
+                            <button type="submit" className="btn-submit">
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div className="pt-4 px-4">
                 <h2 className="text-lg">Schema</h2>
                 <div className="flex gap-2">
                     {data_schema.Schema.map((col, idx) => (
@@ -136,265 +200,29 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
                             {idx !== 0 ? <div>|</div> : null}
                             <div key={col.label} className="flex gap-1">
                                 <div>{col.label}</div>
-                                <div>({data_type_to_string(col.dtype)})</div>
+                                <div>({value_type_to_string(col.dtype)})</div>
                             </div>
                         </>
                     ))}
                 </div>
             </div>
-            <div>
-                <div className="px-4 flex gap-2">
-                    <h2 className="text-lg">Transforms</h2>
-                    <div>
-                        <button
-                            type="button"
-                            className="btn-cmd align-middle"
-                            onMouseDown={addTransform}
-                            disabled={createTransformEditor}
-                        >
-                            <icon.Plus />
-                        </button>
-                    </div>
-                </div>
-                {createTransformEditor && (
-                    <div className="px-4">
-                        <TransformCreate
-                            source={data_schema_id}
-                            dataSchemas={data_schemas}
-                            onSubmit={createTransform}
-                            onCancel={() => setCreateTransformEditor(false)}
-                        />
-                    </div>
-                )}
-                <div className="px-4">
-                    <ul className="grid grid-cols-[repeat(3,min-content)] gap-2">
-                        {data_schema_resources.Transforms.map((transform) => (
-                            <li
-                                key={transform.Id.toString()}
-                                className="col-span-full grid grid-cols-subgrid"
-                            >
-                                <div className="col-1">{transform.Label}</div>
-                                <div className="col-2">
-                                    (
-                                    {
-                                        data_schemas.find(
-                                            (s) => s.Id === transform.Output,
-                                        )!.Label
-                                    }
-                                    )
-                                </div>
-                                <div className="col-3">
-                                    {transform.Description}
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            </div>
         </div>
     );
 }
 
-function data_type_to_string(data_type: types.DataType): string {
+function value_type_to_string(data_type: types.ValueType): string {
     switch (data_type) {
-        case types.DataTypeString:
+        case types.PropertyTypeString:
             return "string";
-        case types.DataTypeInt:
+        case types.PropertyTypeInt:
             return "int";
-        case types.DataTypeUint:
+        case types.PropertyTypeUint:
             return "uint";
-        case types.DataTypeFloat:
+        case types.PropertyTypeFloat:
             return "float";
-        case types.DataTypeBoolean:
+        case types.ValueTypeBoolean:
             return "boolean";
-        case types.DataTypeTimestamp:
+        case types.PropertyTypeTimestamp:
             return "timestamp";
     }
-}
-
-interface TransformCreateProps {
-    source: uuid.UUIDTypes;
-    dataSchemas: types.DataSchema[];
-    onSubmit: (e: FormData) => void;
-    onCancel: () => void;
-}
-function TransformCreate({
-    source,
-    dataSchemas,
-    onSubmit,
-    onCancel,
-}: TransformCreateProps) {
-    function cancel(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button !== common.MouseButton.Primary) {
-            return;
-        }
-
-        onCancel();
-    }
-
-    function submit(e: SubmitEvent<HTMLFormElement>) {
-        e.preventDefault();
-        const form_data = new FormData(e.currentTarget);
-        onSubmit(form_data);
-    }
-
-    return (
-        <form className="flex flex-col gap-2" onSubmit={submit}>
-            <div className="flex flex-col gap-2">
-                <div>
-                    <label>
-                        <span className="sr-only">Label</span>
-                        <input
-                            type="text"
-                            name="label"
-                            placeholder="Label"
-                            className="input-basic"
-                            required
-                        />
-                    </label>
-                </div>
-                <div>
-                    <label>
-                        <span className="sr-only">Output schema</span>
-                        <select
-                            name="schema"
-                            className="input-basic"
-                            required
-                            defaultValue=""
-                        >
-                            <option value="" disabled>
-                                Select output schema
-                            </option>
-                            {dataSchemas
-                                .filter((schema) => schema.Id !== source)
-                                .map((schema) => (
-                                    <option
-                                        key={schema.Id.toString()}
-                                        value={schema.Id.toString()}
-                                    >
-                                        {schema.Label}
-                                    </option>
-                                ))}
-                        </select>
-                    </label>
-                </div>
-                <div>
-                    <label className="flex gap-2">
-                        <span>Script</span>
-                        <input
-                            type="file"
-                            name="script"
-                            accept=".py"
-                            className="input-basic"
-                            required
-                        />
-                    </label>
-                </div>
-                <div>
-                    <label>
-                        <span className="sr-only">Description</span>
-                        <textarea
-                            name="description"
-                            placeholder="Description"
-                            className="input-basic"
-                        ></textarea>
-                    </label>
-                </div>
-            </div>
-            <div className="flex gap-2">
-                <div>
-                    <button type="submit" className="btn-submit">
-                        Create
-                    </button>
-                </div>
-                <div>
-                    <button
-                        type="button"
-                        className="btn-submit"
-                        onMouseDown={cancel}
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        </form>
-    );
-}
-
-interface ColumnSchema {
-    id: number;
-}
-
-interface ColumnSchemaProps {
-    schema: ColumnSchema;
-    onRemove: (id: number) => void;
-    onChangeLabel: (id: number, event: ChangeEvent<HTMLInputElement>) => void;
-}
-function ColumnSchema({ schema, onRemove, onChangeLabel }: ColumnSchemaProps) {
-    const labelNode = useRef<HTMLInputElement>(null);
-
-    function remove(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != common.MouseButton.Primary) {
-            return;
-        }
-
-        onRemove(schema.id);
-    }
-
-    function on_change_label(e: ChangeEvent<HTMLInputElement>) {
-        const input = labelNode.current;
-        if (
-            input &&
-            !input.validity.customError &&
-            input.value.trim().length > 0
-        ) {
-            input.setCustomValidity("");
-        }
-
-        onChangeLabel(schema.id, e);
-    }
-
-    return (
-        <div className="flex gap-2">
-            <div>
-                <label>
-                    <span className="sr-only">Label</span>
-                    <input
-                        ref={labelNode}
-                        type="text"
-                        id={`column[${schema.id}][label]`}
-                        name={`column[${schema.id}][label]`}
-                        placeholder="Label"
-                        title="Column label"
-                        className="input-basic invalid:ring-red-600"
-                        onChange={on_change_label}
-                    />
-                </label>
-            </div>
-            <div>
-                <label>
-                    <span className="sr-only">Data type</span>
-                    <select
-                        id={`column[${schema.id}][dtype]`}
-                        name={`column[${schema.id}][dtype]`}
-                        title="Column data type"
-                        defaultValue="string"
-                        className="input-basic invalid:ring-red-600"
-                    >
-                        <option value="string">String</option>
-                        <option value="int">Int</option>
-                        <option value="uint">Uint</option>
-                        <option value="float">Float</option>
-                        <option value="boolean">Boolean</option>
-                        <option value="timestamp">Timestamp</option>
-                    </select>
-                </label>
-            </div>
-            <div>
-                <button type="button" onMouseDown={remove} className="btn-cmd">
-                    <icon.Trash />
-                </button>
-            </div>
-        </div>
-    );
 }

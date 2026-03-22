@@ -168,7 +168,7 @@ function DataSchemaListItem({ index, schema }: DataSchemaListItemProps) {
             </div>
             <div className="row-1 col-3 whitespace-nowrap">{description}</div>
             <div className="row-1 col-4 invisible group-hover/schema-row:visible">
-                <Link to={`/data_schema/${schema.Id}`}>
+                <Link to={`/data-schema/${schema.Id}`}>
                     <button
                         type="button"
                         className="btn-cmd"

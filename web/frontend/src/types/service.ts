@@ -127,8 +127,11 @@ export interface DataSchemaCreate {
   Description: string;
 }
 export const TABLE_NAME_PREFIX = "data_storage";
-export const DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL = "path";
-export const DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL = "filename";
+export interface DataSchemaUpdate {
+  Id: uuid.UUIDTypes;
+  Label: string;
+  Description?: string;
+}
 export interface Transform {
   Id: uuid.UUIDTypes;
   Input: uuid.UUIDTypes;
@@ -140,7 +143,6 @@ export interface Transform {
 export interface DataSchemaResources {
   DataSchema: DataSchemaRecord;
   Creator: User;
-  Transforms: Transform[];
 }
 export interface InvalidFileExtensionError {
 }
