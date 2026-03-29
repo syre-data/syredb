@@ -57,7 +57,7 @@ func main() {
 	app_handler := handler.NewAppHandler(db, app_service)
 	auth_handler := handler.NewAuthHandler(db, auth_service)
 	user_handler := handler.NewUserHandler(db, user_service, app_service)
-	project_handler := handler.NewProjectHandler(db, project_service, sample_service)
+	project_handler := handler.NewProjectHandler(db, project_service, user_service, sample_service)
 	data_handler := handler.NewDataHandler(db, data_service, user_service, project_service)
 
 	transform_daemon_logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -229,7 +229,7 @@ func register_routes(
 	api.GET("/project", project.GetProjectWithUserPermission)
 	api.POST("/project", project.CreateProject)
 	api.GET("/projects", project.GetUserProjects)
-	api.GET("/project/resources", project.GetProjectResources)
+	api.GET("/project/resources", project.ProjectResources)
 	api.GET("/project/sample-resources", project.GetProjectSampleResources)
 	api.POST("/project/samples", project.CreateProjectSamples)
 	api.PUT("/project/sample", project.UpdateProjectSample)
@@ -241,9 +241,10 @@ func register_routes(
 	api.POST("/data-type", data.DataTypeCreate)
 	api.GET("/data-type", data.DataTypeGet)
 	api.PUT("/data-type", data.DataTypeUpdate)
+	api.GET("/data-type-transforms", data.DataTypeTransformsGetAll)
+	api.POST("/data-type-transform", data.DataTypeTransformCreate)
 	api.GET("/sample-data/single", data.DownloadRawDataSingle)
 	api.GET("/sample-data/project", data.DownloadRawDataProject)
-	api.POST("/transform", data.CreateTransform)
 }
 
 func proxy_to_vite(e *echo.Echo) {

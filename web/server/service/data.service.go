@@ -781,50 +781,6 @@ func (s *DataService) DataSchemaUpdate(update DataSchemaUpdate) error {
 	return nil
 }
 
-// --- REMOVE
-// const DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL = "path"
-// const DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL = "filename"
-
-// func (s *DataService) data_schema_storage_table_external_create(
-// 	tx pgx.Tx,
-// 	schema_id uuid.UUID,
-// ) error {
-// 	create_table_query := fmt.Sprintf(
-// 		`CREATE TABLE $1 (
-// 			_source UUID NOT NULL,
-// 			_transform UUID REFERENCES transform_(_id) NOT NULL,
-// 			_sample_data UUID REFERENCES sample_data_(_id) NOT NULL,
-// 			%s VARCHAR(4096) NOT NULL,
-// 			%s VARCHAR(512) NOT NULL,
-// 			PRIMARY KEY(_source, _transform)
-// 		)`,
-// 		DATA_STORAGE_TABLE_EXTERNAL_COL_PATH_LABEL,
-// 		DATA_STORAGE_TABLE_EXTERNAL_COL_FILENAME_LABEL,
-// 	)
-
-// 	_, err := tx.Exec(
-// 		s.ctx,
-// 		create_table_query,
-// 		data_storage_table_name_from_schema_id(schema_id),
-// 	)
-// 	if err != nil {
-// 		s.logger.With("error", err, "schema", schema_id).Error("could not create data table for schema")
-// 		return err
-// 	}
-
-// 	return nil
-// }
-// --- REMOVE END
-
-type Transform struct {
-	Id          uuid.UUID
-	Input       uuid.UUID
-	Output      uuid.UUID
-	Creator     User
-	Label       string
-	Description string
-}
-
 type DataSchemaResources struct {
 	DataSchema DataSchemaRecord
 	Creator    User
@@ -865,20 +821,6 @@ func (s *DataService) DataSchemaGetResources(data_schema_id uuid.UUID) (DataSche
 		s.logger.With("error", err, "user", schema.Creator).Error("could not get data schema creator")
 		return DataSchemaResources{}, err
 	}
-
-	// var transforms []Transform
-	// transforms_query :=
-	// 	`SELECT _id, _source, _destination, _creator, label, description FROM transform_ WHERE _source=$1`
-	// rows, _ := s.db.Conn.Query(s.ctx, transforms_query, data_schema_id)
-	// transforms, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Transform, error) {
-	// 	var transform Transform
-	// 	err := row.Scan(&transform.Id, &transform.Input, &transform.Output, &transform.Creator.Id, &transform.Label, &transform.Description)
-	// 	return transform, err
-	// })
-	// if err != nil {
-	// 	s.logger.With("error", err, "schema", data_schema_id).Error("could not get transforms for data schema")
-	// 	return DataSchemaResources{}, err
-	// }
 
 	return DataSchemaResources{
 		DataSchema: schema,
@@ -1942,7 +1884,7 @@ func (s *DataService) save_data_file_path(
 	return file_path.String(), nil
 }
 
-func (s *DataService) RawDataById(id uuid.UUID) (RawDataRecord, error) {
+func (s *DataService) RawDataById(id uuid.UUID) (DataRecord, error) {
 	query := `SELECT _id, _sample, _creator, _path, _type, _filename, label, timestamp, visibility 
 		FROM raw_data_ WHERE _id=$1`
 	rows, err := s.db.Conn.Query(s.ctx, query, id)
@@ -1951,15 +1893,15 @@ func (s *DataService) RawDataById(id uuid.UUID) (RawDataRecord, error) {
 			"error", err,
 			"id", id,
 		).Error("could not get sample data")
-		return RawDataRecord{}, err
+		return DataRecord{}, err
 	}
-	raw_data, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[RawDataRecord])
+	raw_data, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataRecord])
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"id", id,
 		).Error("could not get sample data")
-		return RawDataRecord{}, err
+		return DataRecord{}, err
 	}
 
 	return raw_data, nil
@@ -2026,24 +1968,50 @@ func (s *DataService) GetSampleDataUserPermission(sample_data []uuid.UUID, user 
 	return permissions, nil
 }
 
-func (s *DataService) ProjectRawDataAll(project uuid.UUID) ([]RawDataRecord, error) {
+func (s *DataService) ProjectRawDataAll(project uuid.UUID) ([]DataRecord, error) {
 	query := `SELECT s._id, s._sample, s._schema, s._creator, s.timestamp, s.visibility, s.label 
 		FROM sample_data_ AS s JOIN project_sample_membership_ as p ON s._sample=p._sample
 		WHERE p._project=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, query, project)
-	sample_data, err := pgx.CollectRows(rows, pgx.RowToStructByName[RawDataRecord])
+	sample_data, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataRecord])
 	return sample_data, err
 }
 
-type TransformCreate struct {
-	SourceSchema      uuid.UUID
-	DestinationSchema uuid.UUID
-	Script            *multipart.FileHeader
-	Label             string
-	Description       string
+type DataTypeTransformRecord struct {
+	Id          uuid.UUID `db:"_id"`
+	Source      uuid.UUID `db:"_source"`
+	Destination uuid.UUID `db:"_destination"`
+	Script      string    `db:"_script"`
+	Creator     User      `db:"_creator"`
+	Label       string    `db:"label"`
+	Description string    `db:"description"`
 }
 
-func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate) (uuid.UUID, error) {
+func (s *DataService) DataTypeTransformsGetAll() ([]DataTypeTransformRecord, error) {
+	query :=
+		`SELECT _id, _source, _destination, _script, _creator, label, description
+		FROM data_type_transform_`
+	rows, _ := s.db.Conn.Query(s.ctx, query)
+	transforms, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeTransformRecord])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get data type transforms")
+		return nil, err
+	}
+
+	return transforms, nil
+}
+
+type DataTypeTransformCreate struct {
+	Source      uuid.UUID
+	Destination uuid.UUID
+	Script      *multipart.FileHeader
+	Label       string
+	Description string
+}
+
+func (s *DataService) DataTypeTransformCreate(user uuid.UUID, transform DataTypeTransformCreate) (uuid.UUID, error) {
 	transform_path, err := s.app_service.AppDataDir(AppDataDirTransform)
 	if err != nil {
 		s.logger.With(
@@ -2071,14 +2039,14 @@ func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate)
 	script_path := filepath.Join(transform_path, transform_script_name)
 
 	query :=
-		`INSERT INTO transform_ (_id, _source, _destination, _script, _creator, label, description) 
+		`INSERT INTO data_type_transform_ (_id, _source, _destination, _script, _creator, label, description) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`
 	_, err = tx.Exec(
 		s.ctx,
 		query,
 		transform_id,
-		transform.SourceSchema,
-		transform.DestinationSchema,
+		transform.Source,
+		transform.Destination,
 		script_path,
 		user,
 		transform.Label,
@@ -2126,7 +2094,7 @@ func (s *DataService) CreateTransform(user uuid.UUID, transform TransformCreate)
 		FOR EACH ROW
 		EXECUTE FUNCTION %s();`,
 		trigger_fn_name,
-		data_storage_table_name_from_schema_id(transform.SourceSchema),
+		data_storage_table_name_from_schema_id(transform.Source),
 		trigger_fn_name,
 	)
 	_, err = tx.Exec(s.ctx, trigger_query)

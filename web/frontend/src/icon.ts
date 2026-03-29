@@ -22,6 +22,7 @@ import { MdEdit, MdOutlineCategory } from "react-icons/md";
 import { TbColumns3 } from "react-icons/tb";
 import { IoEyeOutline } from "react-icons/io5";
 import { BsFile, BsFiles } from "react-icons/bs";
+import { LuSquareFunction } from "react-icons/lu";
 
 export default {
     BackArrow: IoIosArrowRoundBack,
@@ -37,6 +38,7 @@ export default {
     FileCode: FaFileCode,
     Files: BsFiles,
     FileUpload: FaFileUpload,
+    Function: LuSquareFunction,
     Gear: FaGear,
     Home: IoMdHome,
     LeftArrow: FaArrowLeft,

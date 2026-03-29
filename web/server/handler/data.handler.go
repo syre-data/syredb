@@ -164,6 +164,20 @@ func (h *DataHandler) DataTypesGetAll(c *echo.Context) error {
 
 }
 
+func (h *DataHandler) DataTypeTransformsGetAll(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	transforms, err := h.data_service.DataTypeTransformsGetAll()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not get data type transforms")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.JSON(http.StatusOK, transforms)
+}
+
 func (h *DataHandler) DataSchemasGetAll(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	schemas, err := h.data_service.DataSchemasGetAll()
@@ -633,7 +647,7 @@ func (h *DataHandler) DownloadRawDataProject(c *echo.Context) error {
 	// return c.Attachment(tmpfile.Name(), "data.zip")
 }
 
-func (h *DataHandler) CreateTransform(c *echo.Context) error {
+func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdTransformCreate)
 	if err != nil {
@@ -650,8 +664,8 @@ func (h *DataHandler) CreateTransform(c *echo.Context) error {
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
-	var transform service.TransformCreate
-	transform.SourceSchema, err = uuid.Parse(c.FormValue("source"))
+	var transform service.DataTypeTransformCreate
+	transform.Source, err = uuid.Parse(c.FormValue("source"))
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -660,7 +674,7 @@ func (h *DataHandler) CreateTransform(c *echo.Context) error {
 		).Error("could not parse transform input")
 		return c.NoContent(http.StatusBadRequest)
 	}
-	transform.DestinationSchema, err = uuid.Parse(c.FormValue("destination"))
+	transform.Destination, err = uuid.Parse(c.FormValue("destination"))
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -669,7 +683,7 @@ func (h *DataHandler) CreateTransform(c *echo.Context) error {
 		).Error("could not parse transform output")
 		return c.NoContent(http.StatusBadRequest)
 	}
-	if transform.SourceSchema == transform.DestinationSchema {
+	if transform.Source == transform.Destination {
 		c.Logger().With(
 			"error", "source and destination schema must be different",
 			"user", user_id,
@@ -688,7 +702,7 @@ func (h *DataHandler) CreateTransform(c *echo.Context) error {
 	transform.Label = c.FormValue("label")
 	transform.Description = c.FormValue("description")
 
-	_, err = h.data_service.CreateTransform(user_id, transform)
+	_, err = h.data_service.DataTypeTransformCreate(user_id, transform)
 	if err != nil {
 		c.Logger().With(
 			"error", err,

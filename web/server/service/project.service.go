@@ -134,7 +134,7 @@ func (s *ProjectService) CreateProject(
 	}
 
 	set_user_permission_query :=
-		`INSERT INTO project_user_permission_ (_project, _user, permission) 
+		`INSERT INTO project_user_permission_ (_project, _user, _permission) 
 		VALUES ($1, $2, $3)`
 	_, err = tx.Exec(
 		s.ctx,
@@ -237,14 +237,10 @@ type ProjectSample struct {
 	NoteCount         uint
 }
 
-type RawDataRecord struct {
+type DataRecord struct {
 	Id         uuid.UUID  `db:"_id"`
-	Sample     uuid.UUID  `db:"_sample"`
 	Creator    uuid.UUID  `db:"_creator"`
-	Path       string     `db:"_path"`
 	Type       uuid.UUID  `db:"_type"`
-	Filename   *string    `db:"_filename"`
-	Label      *string    `db:"label"`
 	Timestamp  time.Time  `db:"timestamp"`
 	Visibility Visibility `db:"visibility"`
 }
@@ -274,7 +270,7 @@ type ProjectResources struct {
 	Project              Project
 	ProjectTags          []string
 	Samples              []ProjectSample
-	RawData              []RawDataRecord
+	RawData              []DataRecord
 	DataSchemas          []DataSchemaRecord
 	SampleGroups         []ProjectSampleGroup
 	SampleGroupRelations []SampleGroupRelation
@@ -402,18 +398,18 @@ func (s *ProjectService) GetProjectResources(
 		project_resources.Samples[idx].NoteCount = info.NoteCount
 	}
 
-	raw_data_query :=
-		`SELECT _id, _sample, _creator, _path, _type, _filename, label, timestamp, visibility FROM raw_data_ 
+	sample_data_query :=
+		`SELECT _id, _sample, _creator, _path, _type, _filename, label, timestamp, visibility FROM data_ 
 		WHERE _sample=ANY($1)`
-	raw_data_rows, _ := s.db.Conn.Query(s.ctx, raw_data_query, sample_ids)
+	raw_data_rows, _ := s.db.Conn.Query(s.ctx, sample_data_query, sample_ids)
 	project_resources.RawData, err = pgx.CollectRows(
 		raw_data_rows,
-		pgx.RowToStructByName[RawDataRecord],
+		pgx.RowToStructByName[DataRecord],
 	)
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"query", raw_data_query,
+			"query", sample_data_query,
 			"samples", sample_ids,
 		).Error("could not get sample data")
 		return ProjectResources{}, err
@@ -1237,7 +1233,7 @@ type ProjectSampleResources struct {
 	ProjectMembership            ProjectSampleMembershipAsResource
 	ProjectTags                  []string
 	ProjectNotes                 []ProjectSampleNote
-	RawData                      []RawDataRecord
+	RawData                      []DataRecord
 	DerivedData                  []DerivedData
 	DataSchemas                  []DataSchemaRecord
 	Users                        []User
@@ -1474,10 +1470,10 @@ func (s *ProjectService) get_project_sample_resources_sample_notes(
 
 func (s *ProjectService) get_project_sample_resources_sample_data(
 	sample_id uuid.UUID,
-) ([]RawDataRecord, error) {
+) ([]DataRecord, error) {
 	data_query := "SELECT _id, _sample, _schema, _creator, timestamp FROM sample_data_ WHERE _sample=$1"
 	rows, _ := s.db.Conn.Query(s.ctx, data_query, sample_id)
-	data, err := pgx.CollectRows(rows, pgx.RowToStructByName[RawDataRecord])
+	data, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataRecord])
 	if err != nil {
 		s.logger.With("error", err, "query", data_query).Error("could not get sample data")
 		return nil, err

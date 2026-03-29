@@ -136,7 +136,7 @@ type transformJobInfo struct {
 
 func (d *TransformDaemon) pollPending() ([]transformJobInfo, error) {
 	query := fmt.Sprintf(
-		"SELECT _id, _transform, _payload FROM _transform_queue_ WHERE status='%s'",
+		"SELECT _id, _transform, _payload FROM _data_type_transform_queue_ WHERE status='%s'",
 		transformJobStatusPending,
 	)
 	rows, _ := d.db.Conn.Query(d.ctx, query)
@@ -165,7 +165,7 @@ type TransformInfo struct {
 }
 
 func (d *TransformDaemon) getTransformsById(transforms []uuid.UUID) ([]TransformInfo, error) {
-	query := "SELECT _id, _source, _destination, _script FROM transform_ WHERE _id=ANY($1)"
+	query := "SELECT _id, _source, _destination, _script FROM data_type_transform_ WHERE _id=ANY($1)"
 	rows, _ := d.db.Conn.Query(d.ctx, query, transforms)
 	info, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (TransformInfo, error) {
 		var info TransformInfo

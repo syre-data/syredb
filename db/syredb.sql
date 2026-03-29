@@ -248,30 +248,6 @@ CREATE TABLE IF NOT EXISTS data_type_source_ (
     UNIQUE (_data_type, label)
 );
 
-CREATE TYPE data_source_creator_type AS ENUM (
-    'user',
-    'api',
-    'transform'
-);
-
-CREATE TYPE data_storage AS ENUM (
-    'internal', 
-    'external'
-);
-
-CREATE TABLE IF NOT EXISTS data_source_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _creator_type data_source_creator_type NOT NULL,
-    _creator UUID NOT NULL,
-    _storage data_storage NOT NULL,
-    label VARCHAR(128)
-);
-
-CREATE TABLE IF NOT EXISTS data_source_storage_external_ (
-    _id UUID REFERENCES data_source_(_id) PRIMARY KEY,
-    _path VARCHAR(1024) NOT NULL UNIQUE
-);
-
 CREATE TABLE IF NOT EXISTS data_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _creator UUID REFERENCES user_(_id) NOT NULL,
@@ -305,7 +281,7 @@ CREATE TABLE IF NOT EXISTS _data_permission_ (
 INSERT INTO _data_permission_ (_id, label, description) VALUES
     ('owner', 'Owner', 'Full permission'),
     ('read', 'Read', 'Data is visible'), 
-    ('note_create', 'Create note', 'Create notes on the data'),
+    ('note_create', 'Create note', 'Create notes on this data'),
     ('properties_modify', 'Modify properties', 'Add, remove, and modify data properties');
 
 CREATE TABLE IF NOT EXISTS data_user_permission_ (
@@ -337,6 +313,102 @@ ON data_user_permission_
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION enforce_data_has_owner();
+
+CREATE TABLE IF NOT EXISTS sample_data_ {
+    _sample UUID REFERENCES sample_(_id),
+    _data UUID REFERENCES data_(_id),
+    PRIMARY KEY(_sample, _data)
+}
+
+CREATE TYPE data_type_transform_job_status AS ENUM (
+    'pending',
+    'running',
+    'completed',
+    'failed'
+);
+
+CREATE TYPE data_source_creator_type AS ENUM (
+    'user',
+    'api',
+    'transform'
+);
+
+CREATE TYPE data_storage AS ENUM (
+    'internal', 
+    'external'
+);
+
+CREATE TABLE IF NOT EXISTS data_source_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _source_type UUID REFERENCES data_type_source_(_id) NOT NULL,
+    _creator_type data_source_creator_type NOT NULL,
+    _creator UUID NOT NULL,
+    _storage data_storage NOT NULL,
+    label VARCHAR(128)
+);
+
+CREATE TABLE IF NOT EXISTS data_source_storage_external_ (
+    _id UUID REFERENCES data_source_(_id) PRIMARY KEY,
+    _path VARCHAR(1024) NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS data_type_transform_script_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _path VARCHAR(1024) NOT NULL UNIQUE,
+    _cmd VARCHAR(1024) NOT NULL,
+    _args VARCHAR(64)[] DEFAULT array[]::varchar[]
+);
+
+CREATE TABLE IF NOT EXISTS data_type_transform_ (   
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _source UUID REFERENCES data_type_(_id) NOT NULL,
+    _destination UUID REFERENCES data_type_(_id) NOT NULL,
+    _script UUID REFERENCES data_type_transform_script_(_id) NOT NULL,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    label VARCHAR(128) NOT NULL,
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS data_type_transform_script_history_ (
+    _id UUID PRIMARY KEY,
+    _data_type_transform UUID REFERENCES data_type_transform_(_id),
+    _path VARCHAR(1024) NOT NULL UNIQUE,
+    _cmd VARCHAR(1024) NOT NULL,
+    _args VARCHAR(64)[] DEFAULT array[]::varchar[],
+    _expiration TIMESTAMP(3) WITH TIME ZONE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS _data_type_transform_queue_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _transform UUID REFERENCES data_type_transform_(_id) NOT NULL,
+    _payload UUID REFERENCES data_(_id) NOT NULL,
+    status data_type_transform_job_status DEFAULT 'pending' NOT NULL,
+    started TIMESTAMP WITH TIME ZONE,
+    finished TIMESTAMP WITH TIME ZONE,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS _data_type_transform_queue__status ON _data_type_transform_queue_ (status);
+
+CREATE OR REPLACE FUNCTION notify_data_type_transform_job()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM pg_notify(
+        'new_data_type_transform_job',
+        json_build_object(
+            'id', NEW.id
+        )::text
+    );
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER new_data_type_transform_job
+AFTER INSERT ON _data_type_transform_queue_
+FOR EACH ROW
+EXECUTE FUNCTION notify_data_type_transform_job();
 
 CREATE TABLE IF NOT EXISTS project_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
@@ -460,52 +532,3 @@ CREATE TABLE IF NOT EXISTS sample_group_sample_membership_ (
     _sample UUID REFERENCES sample_(_id) NOT NULL,
     PRIMARY KEY (_sample_group, _sample)
 );
-
-CREATE TABLE IF NOT EXISTS transform_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _source UUID REFERENCES data_schema_(_id) NOT NULL,
-    _destination UUID REFERENCES data_schema_(_id) NOT NULL,
-    _script VARCHAR(1024) NOT NULL,
-    _creator UUID REFERENCES user_(_id) NOT NULL,
-    label VARCHAR(128) NOT NULL,
-    description TEXT
-);
-
-CREATE TYPE transform_job_status AS ENUM (
-    'pending',
-    'running',
-    'completed',
-    'failed'
-);
-
-CREATE TABLE IF NOT EXISTS _transform_queue_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _transform UUID REFERENCES transform_(_id) NOT NULL,
-    _payload UUID NOT NULL, -- id of the data in the schema table
-    status transform_job_status DEFAULT 'pending' NOT NULL,
-    started TIMESTAMP WITH TIME ZONE,
-    finished TIMESTAMP WITH TIME ZONE,
-    error TEXT
-);
-CREATE INDEX IF NOT EXISTS _transform_queue__status ON _transform_queue_ (status);
-
-CREATE OR REPLACE FUNCTION notify_transform_job()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    PERFORM pg_notify(
-        'new_transform_job',
-        json_build_object(
-            'id', NEW.id
-        )::text
-    );
-
-    RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER new_transform_job
-AFTER INSERT ON _transform_queue_
-FOR EACH ROW
-EXECUTE FUNCTION notify_transform_job();

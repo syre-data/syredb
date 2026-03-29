@@ -52,12 +52,7 @@ function DataSchemas() {
             <div className="flex justify-between">
                 <div className="flex gap-2 items-center px-4">
                     <h3 className="text-lg font-bold">Data schemas</h3>
-                    <div
-                        className={classNames({
-                            "invisible group-hover:visible":
-                                data_schemas.length > 0,
-                        })}
-                    >
+                    <div>
                         <Link to="/data-schema/create">
                             <button
                                 type="button"

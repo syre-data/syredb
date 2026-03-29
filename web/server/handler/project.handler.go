@@ -22,18 +22,21 @@ import (
 type ProjectHandler struct {
 	db              *database.DBConnection
 	project_service *service.ProjectService
+	user_service    *service.UserService
 	sample_service  *service.SampleService
 }
 
 func NewProjectHandler(
 	db *database.DBConnection,
 	project_service *service.ProjectService,
+	user_service *service.UserService,
 	sample_service *service.SampleService,
 
 ) *ProjectHandler {
 	return &ProjectHandler{
 		db:              db,
 		project_service: project_service,
+		user_service:    user_service,
 		sample_service:  sample_service,
 	}
 }
@@ -87,8 +90,22 @@ func (h *ProjectHandler) GetProjectWithUserPermission(c *echo.Context) error {
 
 func (h *ProjectHandler) CreateProject(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
+	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdProjectCreate)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not get user permission")
+	}
+	if !has_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Debug("insufficient permissions to create data schema")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
 	var project service.ProjectCreate
-	err := c.Bind(&project)
+	err = c.Bind(&project)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -110,7 +127,7 @@ func (h *ProjectHandler) CreateProject(c *echo.Context) error {
 	return c.JSON(http.StatusOK, id)
 }
 
-func (h *ProjectHandler) GetProjectResources(c *echo.Context) error {
+func (h *ProjectHandler) ProjectResources(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	project_id, err := uuid.Parse(c.QueryParam("project"))
 	if err != nil {

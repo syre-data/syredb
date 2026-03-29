@@ -12,6 +12,14 @@ export default function () {
     const [error, setError] = useState("");
     const navigate = useNavigate();
 
+    function cancel(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== common.MouseButton.Primary) {
+            return;
+        }
+
+        navigate(-1);
+    }
+
     async function create_project(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault();
         setError("");
@@ -161,6 +169,7 @@ export default function () {
                         id="cancel"
                         className="btn-submit"
                         disabled={pending}
+                        onMouseDown={cancel}
                     >
                         Cancel
                     </button>

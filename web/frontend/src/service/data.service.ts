@@ -113,7 +113,9 @@ function dataSchemaUpdate(update: types.DataSchemaUpdate): Promise<Response> {
     });
 }
 
-function transformCreate(transform: types.TransformCreate): Promise<Response> {
+function dataTypeTransformCreate(
+    transform: types.DataTypeTransformCreate,
+): Promise<Response> {
     const data = new FormData();
     data.append("input", transform.SourceSchema.toString());
     data.append("output", transform.DestinationSchema.toString());
@@ -253,12 +255,12 @@ function dataSchemaResourcesGet(
     }).then(async (resp) => (await resp.json()) as types.DataSchemaResources);
 }
 
-function transformSchemasGet(): Promise<types.TransformResources> {
-    const params = new URLSearchParams();
-    params.append("type", "transform");
-    return fetch(`/api/data-schemas?${params}`, {
+function dataTypeTransformsGetAll(): Promise<types.DataTypeTransformRecord[]> {
+    return fetch(`/api/data-type-transforms`, {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.TransformResources);
+    }).then(
+        async (resp) => (await resp.json()) as types.DataTypeTransformRecord[],
+    );
 }
 
 export default {
@@ -275,6 +277,6 @@ export default {
     saveSampleDataMultiple,
     saveDataSchemaSampleDataAll,
     parseDataFileToSchema,
-    transformSchemasGet,
-    transformCreate,
+    dataTypeTransformCreate,
+    dataTypeTransformsGetAll,
 };

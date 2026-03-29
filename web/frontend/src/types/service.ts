@@ -132,14 +132,6 @@ export interface DataSchemaUpdate {
   Label: string;
   Description?: string;
 }
-export interface Transform {
-  Id: uuid.UUIDTypes;
-  Input: uuid.UUIDTypes;
-  Output: uuid.UUIDTypes;
-  Creator: User;
-  Label: string;
-  Description: string;
-}
 export interface DataSchemaResources {
   DataSchema: DataSchemaRecord;
   Creator: User;
@@ -223,9 +215,18 @@ export interface SampleDataUserPermissions {
   SampleData: uuid.UUIDTypes;
   Permissions: SampleDataUserPermission[];
 }
-export interface TransformCreate {
-  SourceSchema: uuid.UUIDTypes;
-  DestinationSchema: uuid.UUIDTypes;
+export interface DataTypeTransformRecord {
+  Id: uuid.UUIDTypes;
+  Source: uuid.UUIDTypes;
+  Destination: uuid.UUIDTypes;
+  Script: string;
+  Creator: User;
+  Label: string;
+  Description: string;
+}
+export interface DataTypeTransformCreate {
+  Source: uuid.UUIDTypes;
+  Destination: uuid.UUIDTypes;
   Script?: any /* multipart.FileHeader */;
   Label: string;
   Description: string;
@@ -290,14 +291,10 @@ export interface ProjectSample {
   Properties: Property[];
   NoteCount: number /* uint */;
 }
-export interface RawDataRecord {
+export interface DataRecord {
   Id: uuid.UUIDTypes;
-  Sample: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
-  Path: string;
   Type: uuid.UUIDTypes;
-  Filename?: string;
-  Label?: string;
   Timestamp: Date;
   Visibility: Visibility;
 }
@@ -323,7 +320,7 @@ export interface ProjectResources {
   Project: Project;
   ProjectTags: string[];
   Samples: ProjectSample[];
-  RawData: RawDataRecord[];
+  RawData: DataRecord[];
   DataSchemas: DataSchemaRecord[];
   SampleGroups: ProjectSampleGroup[];
   SampleGroupRelations: SampleGroupRelation[];
@@ -401,7 +398,7 @@ export interface ProjectSampleResources {
   ProjectMembership: ProjectSampleMembershipAsResource;
   ProjectTags: string[];
   ProjectNotes: ProjectSampleNote[];
-  RawData: RawDataRecord[];
+  RawData: DataRecord[];
   DerivedData: DerivedData[];
   DataSchemas: DataSchemaRecord[];
   Users: User[];

@@ -49,6 +49,16 @@ function Nav() {
                         </button>
                     </Link>
                 </div>
+                <div>
+                    <Link
+                        to="/data-type-transforms"
+                        title="Data type transforms"
+                    >
+                        <button type="button" className="btn-cmd">
+                            <icon.Function />
+                        </button>
+                    </Link>
+                </div>
             </div>
             <div>
                 <Link to="/logout" title="Log out">
