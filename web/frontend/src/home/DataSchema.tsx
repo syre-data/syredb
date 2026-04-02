@@ -193,14 +193,22 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
                 </form>
             </div>
             <div className="pt-4 px-4">
+                <h2>Cardinality</h2>
+                <div>{data_schema.Cardinality}</div>
+            </div>
+            <div className="pt-2 px-4">
                 <h2 className="text-lg">Schema</h2>
                 <div className="flex gap-2">
                     {data_schema.Schema.map((col, idx) => (
                         <>
                             {idx !== 0 ? <div>|</div> : null}
-                            <div key={col.label} className="flex gap-1">
-                                <div>{col.label}</div>
-                                <div>({value_type_to_string(col.dtype)})</div>
+                            <div
+                                key={col.Label}
+                                className="flex gap-1"
+                                title={col.Description}
+                            >
+                                <div>{col.Label}</div>
+                                <div>({value_type_to_string(col.DType)})</div>
                             </div>
                         </>
                     ))}
