@@ -519,7 +519,7 @@ type DataSchema struct {
 
 func (s *DataService) DataSchemasGetAll() ([]DataSchema, error) {
 	schemas_query :=
-		`SELECT _id, _creator, label, description
+		`SELECT _id, _creator, _cardinality, label, description
 		FROM data_schema_ ORDER BY _id DESC`
 	rows, err := s.db.Conn.Query(s.ctx, schemas_query)
 	if err != nil {

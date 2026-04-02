@@ -180,8 +180,8 @@ function DataSchemaListItem({ index, schema }: DataSchemaListItemProps) {
                 })}
             >
                 {schema.Schema.map((col, idx) => (
-                    <div key={col.label}>
-                        <span>{col.label}</span> <span>({col.dtype})</span>
+                    <div key={col.Label} title={col.Description}>
+                        <span>{col.Label}</span> <span>({col.DType})</span>
                         {idx === schema.Schema.length - 1 ? "" : " | "}
                     </div>
                 ))}
