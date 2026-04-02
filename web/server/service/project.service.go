@@ -271,7 +271,7 @@ type ProjectResources struct {
 	ProjectTags          []string
 	Samples              []ProjectSample
 	RawData              []DataRecord
-	DataSchemas          []DataSchemaRecord
+	DataSchemas          []DataSchema
 	SampleGroups         []ProjectSampleGroup
 	SampleGroupRelations []SampleGroupRelation
 	ProjectNoteCount     uint
@@ -1235,7 +1235,7 @@ type ProjectSampleResources struct {
 	ProjectNotes                 []ProjectSampleNote
 	RawData                      []DataRecord
 	DerivedData                  []DerivedData
-	DataSchemas                  []DataSchemaRecord
+	DataSchemas                  []DataSchema
 	Users                        []User
 	SampleUserPermissions        []SampleUserPermissions
 	ProjectSampleUserPermissions []ProjectSampleUserPermissions

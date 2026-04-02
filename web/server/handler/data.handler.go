@@ -224,7 +224,7 @@ func (h *DataHandler) DataSchemaCreate(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"user", user_id,
-		).Error("could not get user projects")
+		).Error("could not create data schema")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 

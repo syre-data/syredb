@@ -155,6 +155,7 @@ function DataSchemaCreate() {
         }
 
         const label = data.get("label")!.toString().trim();
+        const cardinality_str = data.get("cardinality")!.toString().trim();
         const description = data.get("description")!.toString().trim();
         if (label.length === 0) {
             const input = document.getElementById("label")! as HTMLInputElement;
@@ -164,12 +165,20 @@ function DataSchemaCreate() {
             const input = document.getElementById("label")! as HTMLInputElement;
             input.setCustomValidity("Label already exists");
         }
+        const cardinality =
+            common.data_schema_cardinality_string_to_variant(cardinality_str);
+        if (cardinality === undefined) {
+            console.error("invalid cardinality");
+            return;
+        }
 
-        const columns = [];
+        const fields = [];
         for (const { id } of cols) {
             const label_key = `column[${id}][label]`;
             const dtype_key = `column[${id}][dtype]`;
+            const description_key = `column[${id}][description]`;
             const label = data.get(label_key)!.toString().trim();
+            const description = data.get(description_key)!.toString();
             const dtype_str = data.get(dtype_key)!.toString();
             const dtype = common.data_type_string_to_variant(dtype_str);
             if (!dtype) {
@@ -194,13 +203,14 @@ function DataSchemaCreate() {
             if (!is_column_label_valid(label)) {
                 label_input.setCustomValidity(INVALID_LABEL_ERROR);
             } else {
-                columns.push({
-                    label,
-                    dtype: dtype,
-                } satisfies types.ColumnSchema);
+                fields.push({
+                    Label: label,
+                    DType: dtype,
+                    Description: description,
+                } satisfies types.DataSchemaField);
             }
         }
-        if (columns.length === 0) {
+        if (fields.length === 0) {
             if (cols.length === 0) {
                 setError("Schema must have at least one column");
                 return;
@@ -216,7 +226,8 @@ function DataSchemaCreate() {
 
         form.reportValidity();
         const data_schema = {
-            Schema: columns,
+            Cardinality: cardinality,
+            Schema: fields,
             Label: label,
             Description: description,
         } satisfies types.DataSchemaCreate;
@@ -267,6 +278,38 @@ function DataSchemaCreate() {
                                     className="input-basic invalid:ring-red-600"
                                     required
                                 />
+                            </label>
+                        </div>
+                        <div>
+                            <label className="flex gap-2">
+                                <span>Cardinality</span>
+                                <select
+                                    id="cardinality"
+                                    name="cardinality"
+                                    aria-placeholder="Cardinality"
+                                    className="input-basic"
+                                    defaultValue={
+                                        types.DataSchemaCardinalityMultiple
+                                    }
+                                >
+                                    <option
+                                        value={
+                                            types.DataSchemaCardinalityMultiple
+                                        }
+                                    >
+                                        Multiple
+                                    </option>
+                                    <option
+                                        value={
+                                            types.DataSchemaCardinalitySingle
+                                        }
+                                    >
+                                        Single
+                                    </option>
+                                </select>
+                                <div>
+                                    <icon.Question title="Can each field contain multiple values or only a single entry?" />
+                                </div>
                             </label>
                         </div>
                         <div>
@@ -390,13 +433,27 @@ function ColumnSchema({ schema, onRemove, onChangeLabel }: ColumnSchemaProps) {
                         defaultValue="string"
                         className="input-basic invalid:ring-red-600"
                     >
-                        <option value="string">String</option>
-                        <option value="int">Int</option>
-                        <option value="uint">Uint</option>
-                        <option value="float">Float</option>
-                        <option value="boolean">Boolean</option>
-                        <option value="timestamp">Timestamp</option>
+                        <option value={types.ValueTypeString}>String</option>
+                        <option value={types.ValueTypeInt}>Int</option>
+                        <option value={types.ValueTypeUint}>Uint</option>
+                        <option value={types.ValueTypeFloat}>Float</option>
+                        <option value={types.ValueTypeBoolean}>Boolean</option>
+                        <option value={types.ValueTypeTimestamp}>
+                            Timestamp
+                        </option>
                     </select>
+                </label>
+            </div>
+            <div>
+                <label>
+                    <span className="sr-only">Field description</span>
+                    <textarea
+                        id={`column[${schema.id}][description]`}
+                        name={`column[${schema.id}][description]`}
+                        title="Field description"
+                        placeholder="Field description"
+                        className="input-basic h-lh"
+                    ></textarea>
                 </label>
             </div>
             <div>

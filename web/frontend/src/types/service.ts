@@ -51,10 +51,6 @@ export const SaveDataHierarchyDataSchemaSample = "data_schema-sample";
 export type SaveDataHierarchy = typeof SaveDataHierarchyFlat | typeof SaveDataHierarchyDataSchema | typeof SaveDataHierarchySample | typeof SaveDataHierarchySampleDataSchema | typeof SaveDataHierarchyDataSchemaSample;
 export interface DataService {
 }
-export interface ColumnSchema {
-  label: string;
-  dtype: ValueType;
-}
 export const DataStorageInternal = "internal";
 export const DataStorageExternal = "external";
 export type DataStorage = typeof DataStorageInternal | typeof DataStorageExternal;
@@ -110,30 +106,55 @@ export interface DataTypeUpdate {
   Description: string;
   Sources: DataTypeSourceUpdate[];
 }
+export const DataSchemaCardinalitySingle = "single";
+export const DataSchemaCardinalityMultiple = "multiple";
+export type DataSchemaCardinality = typeof DataSchemaCardinalitySingle | typeof DataSchemaCardinalityMultiple;
 export interface DataSchemaRecord {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
-  Schema: ColumnSchema[];
+  Cardinality: DataSchemaCardinality;
   Label: string;
   Description: string;
+}
+export interface DataSchemaFieldRecord {
+  Id: uuid.UUIDTypes;
+  Label: string;
+  DType: ValueType;
+  Description: string;
+}
+export interface DataSchemaField {
+  Label: string;
+  DType: ValueType;
+  Description: string;
+}
+export interface DataSchema {
+  Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Cardinality: DataSchemaCardinality;
+  Label: string;
+  Description: string;
+  Schema: DataSchemaField[];
 }
 export interface InvalidSampleDataColumnLabels {
   Labels: string[];
 }
 export const PATTERN = `^[\\w_]+\$`;
 export interface DataSchemaCreate {
-  Schema: ColumnSchema[];
+  Cardinality: DataSchemaCardinality;
+  Schema: DataSchemaField[];
   Label: string;
   Description: string;
 }
-export const TABLE_NAME_PREFIX = "data_storage";
+export const NumFields = 3;
+export const ArgsOffset = 1;
+export const TABLE_NAME_PREFIX = "data_schema";
 export interface DataSchemaUpdate {
   Id: uuid.UUIDTypes;
   Label: string;
   Description?: string;
 }
 export interface DataSchemaResources {
-  DataSchema: DataSchemaRecord;
+  DataSchema: DataSchema;
   Creator: User;
 }
 export interface InvalidFileExtensionError {
@@ -170,7 +191,7 @@ export interface SampleDataSchema {
 }
 export interface DataSchemaRecord {
   Id: uuid.UUIDTypes;
-  Schema: ColumnSchema[];
+  Schema: DataSchemaField[];
 }
 export interface SampleDataInfo {
   SampleData: uuid.UUIDTypes;
@@ -321,7 +342,7 @@ export interface ProjectResources {
   ProjectTags: string[];
   Samples: ProjectSample[];
   RawData: DataRecord[];
-  DataSchemas: DataSchemaRecord[];
+  DataSchemas: DataSchema[];
   SampleGroups: ProjectSampleGroup[];
   SampleGroupRelations: SampleGroupRelation[];
   ProjectNoteCount: number /* uint */;
@@ -400,7 +421,7 @@ export interface ProjectSampleResources {
   ProjectNotes: ProjectSampleNote[];
   RawData: DataRecord[];
   DerivedData: DerivedData[];
-  DataSchemas: DataSchemaRecord[];
+  DataSchemas: DataSchema[];
   Users: User[];
   SampleUserPermissions: SampleUserPermissions[];
   ProjectSampleUserPermissions: ProjectSampleUserPermissions[];
@@ -462,6 +483,12 @@ export const AccountStatusActive = "active";
 export const AccountStatusDeactivated = "deactivated";
 export type AccountStatus = typeof AccountStatusActive | typeof AccountStatusDeactivated;
 export interface UserService {
+}
+export interface UserRecord {
+  Id: uuid.UUIDTypes;
+  AccountStatus: AccountStatus;
+  Email: string;
+  Name: string;
 }
 export interface User {
   Id: uuid.UUIDTypes;

@@ -79,6 +79,19 @@ export function db_permission_id_string_to_variant(
     }
 }
 
+export function data_schema_cardinality_string_to_variant(
+    value: string,
+): types.DataSchemaCardinality | undefined {
+    switch (value) {
+        case "single":
+            return types.DataSchemaCardinalitySingle;
+        case "multiple":
+            return types.DataSchemaCardinalityMultiple;
+        default:
+            return undefined;
+    }
+}
+
 export function data_type_string_to_variant(
     value: string,
 ): types.ValueType | undefined {

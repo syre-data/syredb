@@ -5,6 +5,7 @@ import {
     FaFileUpload,
     FaSearch,
     FaFileCode,
+    FaRegQuestionCircle,
 } from "react-icons/fa";
 import {
     FaArrowLeft,
@@ -46,6 +47,7 @@ export default {
     Pen: MdEdit,
     Plus: AiOutlinePlus,
     PowerOff: FaPowerOff,
+    Question: FaRegQuestionCircle,
     Reload: AiOutlineReload,
     Search: FaSearch,
     Spinner: FaSpinner,

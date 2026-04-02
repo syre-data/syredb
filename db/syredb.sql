@@ -92,36 +92,26 @@ CREATE TYPE value_type AS ENUM (
     'timestamp'
 );
 
+CREATE TYPE data_schema_cardinality AS ENUM (
+    'single',
+    'multiple'
+);
+
 CREATE TABLE IF NOT EXISTS data_schema_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _creator UUID REFERENCES user_(_id) NOT NULL,
-    _schema JSONB NOT NULL,
+    _cardinality data_schema_cardinality NOT NULL,
     label VARCHAR(128) UNIQUE NOT NULL,
     description TEXT
 );
 
-CREATE OR REPLACE FUNCTION data_schema_schema_is_valid(_schema jsonb)
-RETURNS boolean
-LANGUAGE sql
-IMMUTABLE
-AS $$
-    SELECT
-        jsonb_typeof(_schema) = 'array'
-        AND NOT EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements(_schema) AS elem
-            WHERE
-                jsonb_typeof(elem) <> 'object'
-                OR NOT (elem ? 'label')
-                OR NOT (elem ? 'dtype')
-                OR jsonb_typeof(elem->'label') <> 'string'
-                OR jsonb_typeof(elem->'dtype') <> 'string'
-        );
-$$;
-
-ALTER TABLE data_schema_
-ADD CONSTRAINT schema_is_valid
-CHECK (data_schema_schema_is_valid(_schema));
+CREATE TABLE IF NOT EXISTS data_schema_field_ (
+    _id UUID REFERENCES data_schema_(_id) NOT NULL,
+    _label VARCHAR(128) NOT NULL,
+    _dtype value_type NOT NULL, 
+    description TEXT,
+    PRIMARY KEY (_id, _label)
+);
 
 CREATE TABLE IF NOT EXISTS data_type_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
@@ -146,19 +136,19 @@ CREATE TABLE IF NOT EXISTS data_type_source_ (
 );
 CREATE INDEX IF NOT EXISTS _data_type_source__data_type ON data_type_source_ (_data_type);
 
-CREATE TABLE IF NOT EXISTS data_type_source_internal (
+CREATE TABLE IF NOT EXISTS data_type_source_internal_ (
     _id UUID REFERENCES data_type_source_(_id) PRIMARY KEY,
     _schema UUID REFERENCES data_schema_(_id)
 );
 
-CREATE TYPE data_source_external_cardinality AS ENUM (
+CREATE TYPE data_source_cardinality AS ENUM (
     'single',
     'multiple'
 );
 
-CREATE TABLE IF NOT EXISTS data_type_source_external (
+CREATE TABLE IF NOT EXISTS data_type_source_external_ (
     _id UUID REFERENCES data_type_source_(_id) PRIMARY KEY,
-    _cardinality data_source_external_cardinality NOT NULL,
+    _cardinality data_source_cardinality NOT NULL,
     ext_filter VARCHAR(64)[]
 );
 

@@ -86,11 +86,6 @@ func NewDataService(
 	}
 }
 
-type ColumnSchema struct {
-	Label string    `json:"label"`
-	DType ValueType `json:"dtype"`
-}
-
 type DataStorage string
 
 const (
@@ -485,51 +480,154 @@ func (s *DataService) DataTypeSourceUpdate(tx pgx.Tx, update DataTypeSourceUpdat
 	return nil
 }
 
+type DataSchemaCardinality string
+
+const (
+	DataSchemaCardinalitySingle   DataSchemaCardinality = "single"
+	DataSchemaCardinalityMultiple DataSchemaCardinality = "multiple"
+)
+
 type DataSchemaRecord struct {
-	Id          uuid.UUID      `db:"_id"`
-	Creator     uuid.UUID      `db:"_creator"`
-	Schema      []ColumnSchema `db:"_schema"`
-	Label       string         `db:"label"`
-	Description string         `db:"description"`
+	Id          uuid.UUID             `db:"_id"`
+	Creator     uuid.UUID             `db:"_creator"`
+	Cardinality DataSchemaCardinality `db:"_cardinality"`
+	Label       string                `db:"label"`
+	Description string                `db:"description"`
 }
 
-func (s *DataService) DataSchemasGetAll() ([]DataSchemaRecord, error) {
-	data_schema_query :=
-		`SELECT _id, _creator, _schema, label, description
+type DataSchemaFieldRecord struct {
+	Id          uuid.UUID `db:"_id"`
+	Label       string    `db:"_label"`
+	DType       ValueType `db:"_dtype"`
+	Description string    `db:"description"`
+}
+
+type DataSchemaField struct {
+	Label       string    `db:"_label"`
+	DType       ValueType `db:"_dtype"`
+	Description string    `db:"description"`
+}
+
+type DataSchema struct {
+	Id          uuid.UUID
+	Creator     uuid.UUID
+	Cardinality DataSchemaCardinality
+	Label       string
+	Description string
+	Schema      []DataSchemaField
+}
+
+func (s *DataService) DataSchemasGetAll() ([]DataSchema, error) {
+	schemas_query :=
+		`SELECT _id, _creator, label, description
 		FROM data_schema_ ORDER BY _id DESC`
-	rows, err := s.db.Conn.Query(s.ctx, data_schema_query)
+	rows, err := s.db.Conn.Query(s.ctx, schemas_query)
 	if err != nil {
 		s.logger.With("error", err).Error("could not get data schemas")
 		return nil, err
 	}
 
-	schemas, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaRecord])
+	schemas_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaRecord])
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect data schemas")
 		return nil, err
+	}
+
+	fields_query := `SELECT _id, _label, _dtype, description FROM data_schema_field_`
+	rows, err = s.db.Conn.Query(s.ctx, fields_query)
+	if err != nil {
+		s.logger.With("error", err).Error("could not get data schema fields")
+		return nil, err
+	}
+
+	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRecord])
+	if err != nil {
+		s.logger.With("error", err).Error("could not collect data schema fields")
+		return nil, err
+	}
+
+	schemas := make([]DataSchema, len(schemas_rx))
+	for idx, schema_rx := range schemas_rx {
+		var fields []DataSchemaField
+		for _, field := range fields_rx {
+			if field.Id == schema_rx.Id {
+				fields = append(fields, DataSchemaField{
+					Label:       field.Label,
+					DType:       field.DType,
+					Description: field.Description,
+				})
+			}
+		}
+
+		schemas[idx] = DataSchema{
+			Id:          schema_rx.Id,
+			Creator:     schema_rx.Creator,
+			Cardinality: schema_rx.Cardinality,
+			Label:       schema_rx.Label,
+			Description: schema_rx.Description,
+			Schema:      fields,
+		}
 	}
 
 	return schemas, nil
 }
 
-func (s *DataService) DataSchemasGetById(schema_ids []uuid.UUID) ([]DataSchemaRecord, error) {
+func (s *DataService) DataSchemasGetById(schema_ids []uuid.UUID) ([]DataSchema, error) {
 	if len(schema_ids) == 0 {
-		return []DataSchemaRecord{}, nil
+		return nil, nil
 	}
 
-	data_schema_query := `
-		SELECT _id, _creator, _schema, label, description
+	schemas_query := `
+		SELECT _id, _creator, _cardinality, label, description
 		FROM data_schema_ WHERE _id=ANY($1) ORDER BY _id DESC`
-	rows, err := s.db.Conn.Query(s.ctx, data_schema_query, schema_ids)
+	rows, err := s.db.Conn.Query(s.ctx, schemas_query, schema_ids)
 	if err != nil {
 		s.logger.With("error", err).Error("could not get data schemas")
-		return []DataSchemaRecord{}, err
+		return nil, err
 	}
 
-	schemas, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaRecord])
+	schemas_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaRecord])
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect data schemas")
-		return []DataSchemaRecord{}, err
+		return nil, err
+	}
+
+	fields_query :=
+		`SELECT _id, _label, _dtype, description 
+		FROM data_schema_field_ WHERE _id=ANY($1)`
+	rows, err = s.db.Conn.Query(s.ctx, fields_query, schema_ids)
+	if err != nil {
+		s.logger.With("error", err).Error("could not get data schema fields")
+		return nil, err
+	}
+
+	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRecord])
+	if err != nil {
+		s.logger.With("error", err).Error("could not collect data schema fields")
+		return nil, err
+	}
+
+	schemas := make([]DataSchema, len(schemas_rx))
+	for idx, schema_rx := range schemas_rx {
+		var fields []DataSchemaField
+		for _, field := range fields_rx {
+			if field.Id == schema_rx.Id {
+				fields = append(fields, DataSchemaField{
+					Label:       field.Label,
+					DType:       field.DType,
+					Description: field.Description,
+				})
+			}
+		}
+
+		schemas[idx] = DataSchema{
+			Id:          schema_rx.Id,
+			Creator:     schema_rx.Creator,
+			Cardinality: schema_rx.Cardinality,
+			Label:       schema_rx.Label,
+			Description: schema_rx.Description,
+			Schema:      fields,
+		}
 	}
 
 	return schemas, nil
@@ -546,7 +644,7 @@ func (e *InvalidSampleDataColumnLabels) Error() string {
 	)
 }
 
-func validate_data_schema_storage_table_column_labels(schema []ColumnSchema) error {
+func validate_data_schema_storage_table_column_labels(schema []DataSchemaField) error {
 	err := &InvalidSampleDataColumnLabels{}
 	for _, col := range schema {
 		if !(is_valid_table_column_label(col.Label)) {
@@ -573,7 +671,8 @@ func is_valid_table_column_label(label string) bool {
 }
 
 type DataSchemaCreate struct {
-	Schema      []ColumnSchema
+	Cardinality DataSchemaCardinality
+	Schema      []DataSchemaField
 	Label       string
 	Description string
 }
@@ -608,9 +707,15 @@ func (s *DataService) DataSchemaCreate(user_id uuid.UUID, data_schema DataSchema
 		return err
 	}
 
+	err = s.data_schema_create_schema(tx, schema_id, data_schema.Schema)
+	if err != nil {
+		return err
+	}
+
 	err = s.data_schema_storage_table_create(
 		tx,
 		schema_id,
+		data_schema.Cardinality,
 		data_schema.Schema,
 	)
 	if err != nil {
@@ -632,14 +737,14 @@ func (s *DataService) data_schema_create(
 	data_schema DataSchemaCreate,
 ) (uuid.UUID, error) {
 	create_schema_query :=
-		`INSERT INTO data_schema_ (_creator, _schema, label, description) 
+		`INSERT INTO data_schema_ (_creator, _cardinality, label, description) 
 		VALUES ($1, $2, $3, $4) RETURNING _id`
 	var schema_id uuid.UUID
 	err := tx.QueryRow(
 		s.ctx,
 		create_schema_query,
 		user_id,
-		data_schema.Schema,
+		data_schema.Cardinality,
 		data_schema.Label,
 		data_schema.Description,
 	).Scan(&schema_id)
@@ -652,31 +757,91 @@ func (s *DataService) data_schema_create(
 	return schema_id, nil
 }
 
-func data_storage_table_columns_from_schema(schema []ColumnSchema) []string {
+func (s *DataService) data_schema_create_schema(
+	tx pgx.Tx,
+	schema_id uuid.UUID,
+	schema []DataSchemaField,
+) error {
+	var query strings.Builder
+	query.WriteString(
+		`INSERT INTO data_schema_field_ 
+		(_id, _label, _dtype, description) VALUES `,
+	)
+
+	const NumFields = 3
+	const ArgsOffset = 1
+	args := make([]any, len(schema)*NumFields+ArgsOffset)
+	args[0] = schema_id
+	for idx, field := range schema {
+		if idx > 0 {
+			query.WriteString(", ")
+		}
+
+		idx_label := idx*NumFields + ArgsOffset
+		idx_dtype := idx_label + 1
+		idx_description := idx_dtype + 1
+		fmt.Fprintf(
+			&query,
+			"($1, $%d, $%d, $%d)",
+			idx_label+1,
+			idx_dtype+1,
+			idx_description+1,
+		)
+
+		description := new(string)
+		if len(field.Description) > 0 {
+			description = &field.Description
+		}
+
+		args[idx_label] = field.Label
+		args[idx_dtype] = field.DType
+		args[idx_description] = description
+	}
+
+	_, err := tx.Exec(s.ctx, query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"schema_id", schema_id,
+			"schema", schema,
+			"query", query.String(),
+			"args", args,
+		).Error("could not create data schema fields")
+		return err
+	}
+
+	return nil
+}
+
+func data_storage_table_columns_from_schema(cardinality DataSchemaCardinality, schema []DataSchemaField) []string {
 	table_cols := make([]string, len(schema))
 	for idx, col := range schema {
-		var dtype string
+		var col_def string
 		switch col.DType {
 		case ValueTypeBoolean:
-			dtype = "BOOLEAN[]"
+			col_def = "BOOLEAN"
 		case ValueTypeFloat:
-			dtype = "DOUBLE PRECISION[]"
+			col_def = "DOUBLE PRECISION"
 		case ValueTypeInt:
-			dtype = "INTEGER[]"
+			col_def = "INTEGER"
 		case ValueTypeUint:
-			dtype = "INTEGER[]"
+			col_def = "INTEGER"
 		case ValueTypeString:
-			dtype = "TEXT[]"
+			col_def = "TEXT"
 		case ValueTypeTimestamp:
-			dtype = "TIMESTAMP WITH TIME ZONE[]"
+			col_def = "TIMESTAMP WITH TIME ZONE"
 		default:
 			panic(fmt.Sprintf("unexpected value type %s for column %s", col.DType, col.Label))
+		}
+
+		if cardinality == DataSchemaCardinalityMultiple {
+			col_def += "[]"
 		}
 
 		table_cols[idx] = fmt.Sprintf(
 			"%s %s NOT NULL",
 			col.Label,
-			dtype,
+			col_def,
 		)
 	}
 
@@ -684,7 +849,7 @@ func data_storage_table_columns_from_schema(schema []ColumnSchema) []string {
 }
 
 func data_storage_table_name_from_schema_id(schema_id uuid.UUID) string {
-	const TABLE_NAME_PREFIX = "data_storage"
+	const TABLE_NAME_PREFIX = "data_schema"
 	schema_name := strings.ReplaceAll(schema_id.String(), "-", "_")
 	return fmt.Sprintf(
 		"%s_%s_",
@@ -693,9 +858,9 @@ func data_storage_table_name_from_schema_id(schema_id uuid.UUID) string {
 	)
 }
 
-func data_storage_table_equal_column_length_constraint_query(
+func data_schema_table_equal_column_length_constraint_query(
 	table_name string,
-	schema []ColumnSchema,
+	schema []DataSchemaField,
 ) string {
 	constraints := make([]string, len(schema)-1)
 	for idx, col := range schema[1:] {
@@ -719,9 +884,10 @@ func data_storage_table_equal_column_length_constraint_query(
 func (s *DataService) data_schema_storage_table_create(
 	tx pgx.Tx,
 	schema_id uuid.UUID,
-	schema []ColumnSchema,
+	cardinality DataSchemaCardinality,
+	schema []DataSchemaField,
 ) error {
-	table_cols := data_storage_table_columns_from_schema(schema)
+	table_cols := data_storage_table_columns_from_schema(cardinality, schema)
 	table_name := data_storage_table_name_from_schema_id(schema_id)
 	create_table_query := fmt.Sprintf(
 		`CREATE TABLE %s (
@@ -741,9 +907,9 @@ func (s *DataService) data_schema_storage_table_create(
 		return err
 	}
 
-	if len(schema) > 1 {
+	if cardinality == DataSchemaCardinalityMultiple && len(schema) > 1 {
 		table_constraint_query :=
-			data_storage_table_equal_column_length_constraint_query(
+			data_schema_table_equal_column_length_constraint_query(
 				table_name,
 				schema,
 			)
@@ -782,44 +948,81 @@ func (s *DataService) DataSchemaUpdate(update DataSchemaUpdate) error {
 }
 
 type DataSchemaResources struct {
-	DataSchema DataSchemaRecord
+	DataSchema DataSchema
 	Creator    User
 }
 
-func (s *DataService) DataSchemaGetResources(data_schema_id uuid.UUID) (DataSchemaResources, error) {
-	var schema DataSchemaRecord
-	schema_query := `SELECT _id, _creator, _schema, label, description FROM data_schema_ WHERE _id=$1`
-	err := s.db.Conn.QueryRow(
-		s.ctx,
-		schema_query,
-		data_schema_id,
-	).Scan(
-		&schema.Id,
-		&schema.Creator,
-		&schema.Schema,
-		&schema.Label,
-		&schema.Description,
-	)
+func (s *DataService) DataSchemaGetResources(schema_id uuid.UUID) (DataSchemaResources, error) {
+	schema_query := `
+		SELECT _id, _creator, _cardinality, label, description
+		FROM data_schema_ WHERE _id=$1 ORDER BY _id DESC`
+	rows, err := s.db.Conn.Query(s.ctx, schema_query, schema_id)
 	if err != nil {
-		s.logger.With("error", err, "schema", data_schema_id).Error("could not get data schema")
+		s.logger.With("error", err).Error("could not get data schemas")
 		return DataSchemaResources{}, err
 	}
 
-	var creator User
+	schema_rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataSchemaRecord])
+	if err != nil {
+		s.logger.With("error", err).Error("could not collect data schemas")
+		return DataSchemaResources{}, err
+	}
+
+	fields_query :=
+		`SELECT _id, _label, _dtype, description 
+		FROM data_schema_field_ WHERE _id=$1`
+	rows, err = s.db.Conn.Query(s.ctx, fields_query, schema_id)
+	if err != nil {
+		s.logger.With("error", err).Error("could not get data schema fields")
+		return DataSchemaResources{}, err
+	}
+
+	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRecord])
+	if err != nil {
+		s.logger.With("error", err).Error("could not collect data schema fields")
+		return DataSchemaResources{}, err
+	}
+
+	fields := make([]DataSchemaField, len(fields_rx))
+	for idx, field := range fields_rx {
+		fields[idx] = DataSchemaField{
+			Label:       field.Label,
+			DType:       field.DType,
+			Description: field.Description,
+		}
+	}
+
+	schema := DataSchema{
+		Id:          schema_rx.Id,
+		Creator:     schema_rx.Creator,
+		Cardinality: schema_rx.Cardinality,
+		Label:       schema_rx.Label,
+		Description: schema_rx.Description,
+		Schema:      fields,
+	}
+
 	creator_query := "SELECT _id, account_status, email, name FROM user_ WHERE _id=$1"
-	err = s.db.Conn.QueryRow(
-		s.ctx,
-		creator_query,
-		schema.Creator,
-	).Scan(
-		&creator.Id,
-		&creator.AccountStatus,
-		&creator.Email,
-		&creator.Name,
-	)
+	rows, _ = s.db.Conn.Query(s.ctx, creator_query, schema.Creator)
+	creator_rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[UserRecord])
 	if err != nil {
 		s.logger.With("error", err, "user", schema.Creator).Error("could not get data schema creator")
 		return DataSchemaResources{}, err
+	}
+
+	permissions_query := "SELECT _permission FROM db_user_permission_ WHERE _user=$1"
+	rows, _ = s.db.Conn.Query(s.ctx, permissions_query, schema.Creator)
+	permissions, err := pgx.CollectRows(rows, pgx.RowTo[DbPermissionId])
+	if err != nil {
+		s.logger.With("error", err, "user", schema.Creator).Error("could not get data schema creator permissions")
+		return DataSchemaResources{}, err
+	}
+
+	creator := User{
+		Id:            creator_rx.Id,
+		AccountStatus: creator_rx.AccountStatus,
+		Email:         creator_rx.Email,
+		Name:          creator_rx.Name,
+		DbPermissions: permissions,
 	}
 
 	return DataSchemaResources{
@@ -832,44 +1035,33 @@ func (s *DataService) ParseDataFileToSchema(file_path string, schema_id uuid.UUI
 	file, err := os.Open(file_path)
 	if err != nil {
 		s.logger.With("error", err, "file", file_path).Error("could not open data file")
-		return []ColumnData{}, err
+		return nil, err
 	}
 
-	schema, err := s.get_data_schema(schema_id)
+	fields, err := s.get_data_schema_fields(schema_id)
 	if err != nil {
-		return []ColumnData{}, err
+		return nil, err
 	}
 
 	ext := filepath.Ext(file_path)
-	data, err := parse_data_file_to_schema(ext, file, schema)
+	data, err := parse_data_file_to_schema(ext, file, fields)
 	if err != nil {
-		return []ColumnData{}, err
+		return nil, err
 	}
 
 	return data, nil
 }
 
-func (s *DataService) get_data_schema(schema_id uuid.UUID) (DataSchemaRecord, error) {
-	var schema DataSchemaRecord
-	query := `SELECT _id, _creator, _schema, label, description 
-				FROM data_schema_ WHERE _id=$1`
-	err := s.db.Conn.QueryRow(
-		s.ctx,
-		query,
-		schema_id,
-	).Scan(
-		&schema.Id,
-		&schema.Creator,
-		&schema.Schema,
-		&schema.Label,
-		&schema.Description,
-	)
+func (s *DataService) get_data_schema_fields(schema_id uuid.UUID) ([]DataSchemaField, error) {
+	query := `SELECT _label, _dtype, description FROM data_schema_field_ WHERE _id=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, query, schema_id)
+	fields, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaField])
 	if err != nil {
 		s.logger.With("error", err, "schema", schema_id).Error("could not get data schema")
-		return DataSchemaRecord{}, err
+		return nil, err
 	}
 
-	return schema, nil
+	return fields, nil
 }
 
 type InvalidFileExtensionError struct{}
@@ -893,12 +1085,12 @@ type ColumnData struct {
 	Values []any
 }
 
-func parse_data_file_to_schema(ext string, file *os.File, schema DataSchemaRecord) ([]ColumnData, error) {
+func parse_data_file_to_schema(ext string, file *os.File, fields []DataSchemaField) ([]ColumnData, error) {
 	switch ext {
 	case ".csv", ".tsv":
-		return parse_data_file_to_schema_csv(file, schema)
+		return parse_data_file_to_schema_csv(file, fields)
 	default:
-		return []ColumnData{}, &InvalidFileExtensionError{}
+		return nil, &InvalidFileExtensionError{}
 	}
 }
 
@@ -930,15 +1122,15 @@ func (e *InvalidDataTypeError) Error() string {
 	)
 }
 
-func parse_data_file_to_schema_csv(file *os.File, schema DataSchemaRecord) ([]ColumnData, error) {
+func parse_data_file_to_schema_csv(file *os.File, fields []DataSchemaField) ([]ColumnData, error) {
 	reader := csv.NewReader(file)
 	var record_idx uint = 0
 	errs := []ParseCsvError{}
-	data := make([]ColumnData, len(schema.Schema))
+	data := make([]ColumnData, len(fields))
 
 	for idx := range data {
-		data[idx].Label = schema.Schema[idx].Label
-		data[idx].DType = schema.Schema[idx].DType
+		data[idx].Label = fields[idx].Label
+		data[idx].DType = fields[idx].DType
 	}
 
 	for {
@@ -952,12 +1144,12 @@ func parse_data_file_to_schema_csv(file *os.File, schema DataSchemaRecord) ([]Co
 			continue
 		}
 
-		if len(record) != len(schema.Schema) {
-			return []ColumnData{}, &IncompatibleDataSizeError{expected: len(schema.Schema), found: len(record)}
+		if len(record) != len(fields) {
+			return []ColumnData{}, &IncompatibleDataSizeError{expected: len(fields), found: len(record)}
 		}
 
 		for idx, val_str := range record {
-			switch schema.Schema[idx].DType {
+			switch fields[idx].DType {
 
 			case ValueTypeBoolean:
 				var val bool
@@ -1073,7 +1265,7 @@ func (s *DataService) SampleDataStoredById(sample_data_ids []uuid.UUID) ([]Store
 
 	type DataSchemaRecord struct {
 		Id     uuid.UUID
-		Schema []ColumnSchema
+		Schema []DataSchemaField
 	}
 
 	rows, err = s.db.Conn.Query(
@@ -1176,7 +1368,7 @@ func (s *DataService) SampleDataStoredById(sample_data_ids []uuid.UUID) ([]Store
 // func (s *DataService) get_sample_data_stored_by_id_storage_internal_data(
 // 	sample_data_id uuid.UUID,
 // 	data_schema_id uuid.UUID,
-// 	data_schema []ColumnSchema,
+// 	data_schema []DataSchemaField,
 // ) ([]ColumnData, error) {
 // 	column_labels := make([]string, len(data_schema))
 // 	for idx, col := range data_schema {

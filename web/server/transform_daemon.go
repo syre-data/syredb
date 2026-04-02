@@ -73,8 +73,9 @@ func (d *TransformDaemon) Start(ctx context.Context) error {
 			if !slices.Contains(data_schema_ids, transform.Input) {
 				data_schema_ids = append(data_schema_ids, transform.Input)
 			}
-			if !slices.Contains(data_schema_ids, transform.Output) {
-				data_schema_ids = append(data_schema_ids, transform.Output)
+			// TODO: account for multiple outputs
+			if !slices.Contains(data_schema_ids, transform.Output[0]) {
+				data_schema_ids = append(data_schema_ids, transform.Output[0])
 			}
 		}
 		data_schemas, err := d.getDataSchemasById(data_schema_ids)
@@ -99,7 +100,7 @@ func (d *TransformDaemon) Start(ctx context.Context) error {
 			input_schema := data_schemas[input_idx]
 
 			output_idx := slices.IndexFunc(data_schemas, func(schema DataSchemaInfo) bool {
-				return schema.Id == transform.Output
+				return schema.Id == transform.Output[0] // TODO: account for multiple outputs
 			})
 			if output_idx < 0 {
 				d.logger.With("transform", transform).Error("invalid output schema")
@@ -160,51 +161,56 @@ func (d *TransformDaemon) pollPending() ([]transformJobInfo, error) {
 type TransformInfo struct {
 	Id     uuid.UUID
 	Input  uuid.UUID
-	Output uuid.UUID
+	Output []uuid.UUID
 	Script string
 }
 
 func (d *TransformDaemon) getTransformsById(transforms []uuid.UUID) ([]TransformInfo, error) {
-	query := "SELECT _id, _source, _destination, _script FROM data_type_transform_ WHERE _id=ANY($1)"
-	rows, _ := d.db.Conn.Query(d.ctx, query, transforms)
-	info, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (TransformInfo, error) {
-		var info TransformInfo
-		err := row.Scan(&info.Id, &info.Input, &info.Output, &info.Script)
-		return info, err
-	})
-	if err != nil {
-		d.logger.With(
-			"error", err,
-			"transforms", transforms,
-		).Error("could not get transforms")
-		return nil, err
-	}
+	// TODO
+	return nil, nil
 
-	return info, nil
+	// query := "SELECT _id, _input, _script FROM data_type_transform_ WHERE _id=ANY($1)"
+	// rows, _ := d.db.Conn.Query(d.ctx, query, transforms)
+	// info, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (TransformInfo, error) {
+	// 	var info TransformInfo
+	// 	err := row.Scan(&info.Id, &info.Input, &info.Output, &info.Script)
+	// 	return info, err
+	// })
+	// if err != nil {
+	// 	d.logger.With(
+	// 		"error", err,
+	// 		"transforms", transforms,
+	// 	).Error("could not get transforms")
+	// 	return nil, err
+	// }
+
+	// return info, nil
 }
 
 type DataSchemaInfo struct {
 	Id     uuid.UUID
-	Schema []service.ColumnSchema
+	Schema []service.DataSchemaField
 }
 
 func (d *TransformDaemon) getDataSchemasById(data_schemas []uuid.UUID) ([]DataSchemaInfo, error) {
-	query := "SELECT _id, _schema FROM data_schema_ WHERE _id=ANY($1)"
-	rows, _ := d.db.Conn.Query(d.ctx, query, data_schemas)
-	schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaInfo, error) {
-		var schema DataSchemaInfo
-		err := row.Scan(&schema.Id, &schema.Schema)
-		return schema, err
-	})
-	if err != nil {
-		d.logger.With(
-			"error", err,
-			"schemas", data_schemas,
-		).Error("could not get data schemas")
-		return nil, err
-	}
+	// TODO
+	return nil, nil
+	// query := "SELECT _id, _schema FROM data_schema_ WHERE _id=ANY($1)"
+	// rows, _ := d.db.Conn.Query(d.ctx, query, data_schemas)
+	// schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaInfo, error) {
+	// 	var schema DataSchemaInfo
+	// 	err := row.Scan(&schema.Id, &schema.Schema)
+	// 	return schema, err
+	// })
+	// if err != nil {
+	// 	d.logger.With(
+	// 		"error", err,
+	// 		"schemas", data_schemas,
+	// 	).Error("could not get data schemas")
+	// 	return nil, err
+	// }
 
-	return schemas, nil
+	// return schemas, nil
 }
 
 func (d *TransformDaemon) runTransform(

@@ -61,6 +61,13 @@ func NewUserService(
 	}
 }
 
+type UserRecord struct {
+	Id            uuid.UUID     `db:"_id"`
+	AccountStatus AccountStatus `db:"account_status"`
+	Email         string        `db:"email"`
+	Name          string        `db:"name"`
+}
+
 type User struct {
 	Id            uuid.UUID
 	AccountStatus AccountStatus
