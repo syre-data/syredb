@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -324,47 +323,47 @@ func (s *DataService) DataTypeGetById(id uuid.UUID) (DataType, error) {
 	panic("should not reach")
 }
 
-func (s *DataService) DataTypeRecipeCreate(tx pgx.Tx, recipe *multipart.FileHeader) (uuid.UUID, error) {
-	recipe_dir, err := s.app_service.AppDataDir(AppDataDirRecipe)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"dir", AppDataDirRecipe,
-		).Error("could not get app recipe dir")
-		return uuid.Nil, err
-	}
+// func (s *DataService) DataTypeRecipeCreate(tx pgx.Tx, recipe *multipart.FileHeader) (uuid.UUID, error) {
+// 	recipe_dir, err := s.app_service.AppDataDir(AppDataDirRecipe)
+// 	if err != nil {
+// 		s.logger.With(
+// 			"error", err,
+// 			"dir", AppDataDirRecipe,
+// 		).Error("could not get app recipe dir")
+// 		return uuid.Nil, err
+// 	}
 
-	filename := fmt.Sprintf(
-		"%s.%s",
-		rand.Text(),
-		recipe.Filename,
-	)
-	path := filepath.Join(recipe_dir, filename)
+// 	filename := fmt.Sprintf(
+// 		"%s.%s",
+// 		rand.Text(),
+// 		recipe.Filename,
+// 	)
+// 	path := filepath.Join(recipe_dir, filename)
 
-	var id uuid.UUID
-	query :=
-		`INSERT INTO data_type_recipe_ (_path, _cmd, _args) VALUES ($1, $2, $3)
-		RETURNING _id`
-	err = tx.QueryRow(s.ctx, query, path, "python", []string{}).Scan(&id)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"recipe", recipe,
-		).Error("could not create data type recipe")
-		return uuid.Nil, err
-	}
+// 	var id uuid.UUID
+// 	query :=
+// 		`INSERT INTO data_type_recipe_ (_path, _cmd, _args) VALUES ($1, $2, $3)
+// 		RETURNING _id`
+// 	err = tx.QueryRow(s.ctx, query, path, "python", []string{}).Scan(&id)
+// 	if err != nil {
+// 		s.logger.With(
+// 			"error", err,
+// 			"recipe", recipe,
+// 		).Error("could not create data type recipe")
+// 		return uuid.Nil, err
+// 	}
 
-	err = SaveFormFile(recipe, path)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"path", path,
-		).Error("could not save recipe file")
-		return uuid.Nil, err
-	}
+// 	err = SaveFormFile(recipe, path)
+// 	if err != nil {
+// 		s.logger.With(
+// 			"error", err,
+// 			"path", path,
+// 		).Error("could not save recipe file")
+// 		return uuid.Nil, err
+// 	}
 
-	return id, nil
-}
+// 	return id, nil
+// }
 
 type DataTypeSourceCreate struct {
 	Cardinality     DataSourceCardinality
@@ -539,17 +538,6 @@ func (s *DataService) DataTypeCreateExternal(
 		value_args = append(value_args, *description)
 	}
 
-	if recipe != nil {
-		recipe_idx, err := s.DataTypeRecipeCreate(tx, recipe)
-		if err != nil {
-			s.logger.With(
-				"error", err,
-			).Error("could not save recipe file")
-			return err
-		}
-		fields = append(fields, "recipe")
-		value_args = append(value_args, recipe_idx)
-	}
 	if schema != uuid.Nil {
 		fields = append(fields, "_schema")
 		value_args = append(value_args, schema)
@@ -1394,9 +1382,136 @@ func parse_data_file_to_schema_csv(file *os.File, fields []DataSchemaField) ([]C
 	return data, nil
 }
 
-// StoredData represents teh actual data stored for a sample data.
-// Data is []ColumnData if Storage is `internal`.
-// Data is a string if Storage is `file`.
+type IngestionScriptRx struct {
+	Id          uuid.UUID `db:"_id"`
+	Type        uuid.UUID `db:"_type"`
+	Creator     uuid.UUID `db:"_creator"`
+	Cmd         uuid.UUID `db:"cmd"`
+	Label       string    `db:"label"`
+	Description string    `db:"description"`
+}
+
+type IngestionScriptCmdRx struct {
+	Id      uuid.UUID `db:"_id"`
+	Creator uuid.UUID `db:"_creator"`
+	Path    string    `db:"_path"`
+	Cmd     string    `db:"_cmd"`
+	Args    []string  `db:"_args"`
+}
+
+type IngestionScript struct {
+	Id          uuid.UUID
+	Type        uuid.UUID
+	Creator     uuid.UUID
+	Label       string
+	Description string
+	Cmd         IngestionScriptCmdRx
+}
+
+func (s *DataService) IngestionScriptsGetAll() ([]IngestionScript, error) {
+	script_query :=
+		`SELECT _id, _type, _creator, cmd, label, description
+		FROM ingestion_script_`
+	rows, _ := s.db.Conn.Query(s.ctx, script_query)
+	script_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[IngestionScriptRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion scripts")
+		return nil, err
+	}
+	cmd_ids := make([]uuid.UUID, len(script_rxs))
+	for idx, script := range script_rxs {
+		cmd_ids[idx] = script.Cmd
+	}
+
+	cmd_query :=
+		`SELECT _id, _creator, _path, _cmd, _args 
+		FROM ingestion_script_cmd_ WHERE _id=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, cmd_query, cmd_ids)
+	cmd_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[IngestionScriptCmdRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion script commands")
+		return nil, err
+	}
+
+	scripts := make([]IngestionScript, len(script_rxs))
+	for idx := range scripts {
+		scripts[idx].Id = script_rxs[idx].Id
+		scripts[idx].Type = script_rxs[idx].Type
+		scripts[idx].Creator = script_rxs[idx].Creator
+		scripts[idx].Label = script_rxs[idx].Label
+		scripts[idx].Description = script_rxs[idx].Description
+		cmd_idx := slices.IndexFunc(cmd_rxs, func(cmd IngestionScriptCmdRx) bool {
+			return cmd.Id == script_rxs[idx].Cmd
+		})
+		if cmd_idx < 0 {
+			panic("invalid ingestion script command")
+		}
+
+		scripts[idx].Cmd = cmd_rxs[cmd_idx]
+	}
+
+	return scripts, nil
+}
+
+type IngestionScriptCreate struct {
+	Type        uuid.UUID
+	Creator     uuid.UUID
+	Label       string
+	Description string
+	Path        string
+	Cmd         string
+	Args        []string
+}
+
+func (s *DataService) IngestionScriptCreate(script IngestionScriptCreate, file *multipart.FileHeader) error {
+	tx, err := s.db.Conn.Begin(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not begin transaction")
+		return err
+	}
+	defer tx.Rollback(s.ctx)
+
+	var cmd_id uuid.UUID
+	cmd_query :=
+		`INSERT INTO ingestion_script_cmd_ (_creator, _path, _cmd, _args) 
+		VALUES ($1, $2, $3, $4) RETURNING _id`
+	err = tx.QueryRow(s.ctx, cmd_query, script.Creator, script.Path, script.Cmd, script.Args).Scan(&cmd_id)
+	if err != nil {
+		s.logger.With("script", script).Error("could not create ingestion script command")
+		return err
+	}
+
+	script_query :=
+		`INSERT INTO ingestion_script_ (_type, _creator, cmd, label, description)
+		VALUES ($1, $2, $3, $4, $5)`
+	_, err = tx.Exec(s.ctx, script_query, script.Type, script.Creator, cmd_id, script.Label, script.Description)
+	if err != nil {
+		s.logger.With("script", script).Error("could not create ingestion script")
+		return err
+	}
+
+	err = SaveFormFile(file, script.Path)
+	if err != nil {
+		s.logger.With("error", err).Error("could not save ingestion script file")
+		return err
+	}
+
+	err = tx.Commit(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not commit transaction")
+		return err
+	}
+
+	return nil
+}
+
+// StoredData represents the actual data stored.
+// Data is []SchemaField if Storage is `internal`.
+// Data is a path (`string`) if Storage is `external`.
 type StoredData struct {
 	SampleData uuid.UUID
 	Storage    DataStorage

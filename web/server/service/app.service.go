@@ -166,8 +166,8 @@ func (s *AppService) AppData(key AppDataKey) (string, error) {
 type AppDataDir string
 
 const (
-	AppDataDirRecipe    AppDataDir = "recipe"
-	AppDataDirTransform AppDataDir = "transform"
+	AppDataDirIngestionScript AppDataDir = "ingestion"
+	AppDataDirTransform       AppDataDir = "transform"
 )
 
 func (s *AppService) AppDataDir(dir AppDataDir) (string, error) {

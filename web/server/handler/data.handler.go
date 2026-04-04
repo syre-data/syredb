@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
+	"path/filepath"
 	"syredb/database"
 	"syredb/service"
 
@@ -16,6 +19,7 @@ import (
 type DataHandler struct {
 	db              *database.DBConnection
 	data_service    *service.DataService
+	app_service     *service.AppService
 	user_service    *service.UserService
 	project_service *service.ProjectService
 }
@@ -23,12 +27,14 @@ type DataHandler struct {
 func NewDataHandler(
 	db *database.DBConnection,
 	data_service *service.DataService,
+	app_service *service.AppService,
 	user_service *service.UserService,
 	project_service *service.ProjectService,
 ) *DataHandler {
 	return &DataHandler{
 		db:              db,
 		data_service:    data_service,
+		app_service:     app_service,
 		user_service:    user_service,
 		project_service: project_service,
 	}
@@ -339,6 +345,92 @@ func (h *DataHandler) DataSchemaUpdate(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+func (h *DataHandler) IngestionScriptsGetAll(c *echo.Context) error {
+	scripts, err := h.data_service.IngestionScriptsGetAll()
+	if err != nil {
+		c.Logger().With("error", err).Error("could not get ingestion scripts")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.JSON(http.StatusOK, scripts)
+}
+
+func (h *DataHandler) IngestionScriptCreate(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdIngestionScriptCreate)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not get user role")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !has_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Debug("insufficient permissions to create ingestion script")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	label := c.FormValue("label")
+	if label == "" {
+		c.Logger().With("user", user_id).Error("empty label")
+		return c.NoContent(http.StatusBadRequest)
+	}
+	data_type, err := uuid.Parse(c.FormValue("data_type"))
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("invalid data type")
+		return c.NoContent(http.StatusBadRequest)
+	}
+	description := c.FormValue("description")
+
+	file, err := c.FormFile("script")
+	if err != nil {
+		c.Logger().With("user", user_id).Error("invalid ingestion script file")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	root_dir, err := h.app_service.AppDataDir(service.AppDataDirIngestionScript)
+	if err != nil {
+		c.Logger().Error("could not get app data dir")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	filename := fmt.Sprintf("%s.%s", rand.Text(), file.Filename)
+	cmd, err := ingestion_script_command_from_file_ext(filepath.Ext(filename))
+	if err != nil {
+		c.Logger().With("error", err, "file name", filename).Error("invalid filename extension")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	path := filepath.Join(root_dir, filename)
+	script := service.IngestionScriptCreate{
+		Type:        data_type,
+		Creator:     user_id,
+		Label:       label,
+		Description: description,
+		Path:        path,
+		Cmd:         cmd,
+		Args:        []string{},
+	}
+	h.data_service.IngestionScriptCreate(script, file)
+
+	return nil
+
+}
+
+func ingestion_script_command_from_file_ext(ext string) (string, error) {
+	switch ext {
+	case ".py":
+		return "python", nil
+	default:
+		return "", errors.New("unknown file type")
+	}
 }
 
 func (h *DataHandler) DownloadRawDataSingle(c *echo.Context) error {

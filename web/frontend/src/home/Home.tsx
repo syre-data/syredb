@@ -20,6 +20,8 @@ import DataTypeCreate from "./DataTypeCreate";
 import DataType from "./DataType";
 import DataTypeTransforms from "./DataTypeTransforms";
 import DataTypeTransformCreate from "./DataTypeTransformCreate";
+import IngestionScripts from "./IngestionScripts";
+import IngestionScriptCreate from "./IngestionScriptCreate";
 
 export default function Home() {
     return (
@@ -43,6 +45,14 @@ export default function Home() {
                 <Route path="/data-types" element={<DataTypes />} />
                 <Route path="/data-type/create" element={<DataTypeCreate />} />
                 <Route path="/data-type/:data_type_id" element={<DataType />} />
+                <Route
+                    path="/ingestion-scripts"
+                    element={<IngestionScripts />}
+                />
+                <Route
+                    path="/ingestion-script/create"
+                    element={<IngestionScriptCreate />}
+                />
                 <Route
                     path="/data-type-transforms"
                     element={<DataTypeTransforms />}

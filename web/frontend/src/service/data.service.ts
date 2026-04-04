@@ -273,15 +273,29 @@ function dataSchemaResourcesGet(
 ): Promise<types.DataSchemaResources> {
     const params = new URLSearchParams();
     params.append("id", data_schema_id.toString());
-    return fetch(`/api/data-schema?${params}`, {
+    return fetch("/api/data-schema?${params}", {
         credentials: "same-origin",
     }).then(async (resp) => (await resp.json()) as types.DataSchemaResources);
 }
 
 function dataTypeTransformsGetAll(): Promise<types.DataTypeTransformRx[]> {
-    return fetch(`/api/data-type-transforms`, {
+    return fetch("/api/data-type-transforms", {
         credentials: "same-origin",
     }).then(async (resp) => (await resp.json()) as types.DataTypeTransformRx[]);
+}
+
+function ingestionScriptsGetAll(): Promise<types.IngestionScript[]> {
+    return fetch("/api/ingestion-scripts", {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.IngestionScript[]);
+}
+
+function ingestionScriptCreate(data: FormData): Promise<Response> {
+    return fetch("/api/ingestion-script", {
+        credentials: "same-origin",
+        method: "post",
+        body: data,
+    });
 }
 
 export default {
@@ -301,4 +315,6 @@ export default {
     parseDataFileToSchema,
     dataTypeTransformCreate,
     dataTypeTransformsGetAll,
+    ingestionScriptsGetAll,
+    ingestionScriptCreate,
 };

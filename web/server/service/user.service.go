@@ -21,16 +21,18 @@ const AppEmailFromKey = "app:email:from"
 type DbPermissionId string
 
 const (
-	DbPermissionIdOwner            DbPermissionId = "owner"
-	DbPermissionIdUserCreate       DbPermissionId = "user_create"
-	DbPermissionIdUserModify       DbPermissionId = "user_modify"
-	DbPermissionIdDataSchemaCreate DbPermissionId = "data_schema_create"
-	DbPermissionIdDataSchemaModify DbPermissionId = "data_schema_modify"
-	DbPermissionIdDataTypeCreate   DbPermissionId = "data_type_create"
-	DbPermissionIdDataTypeModify   DbPermissionId = "data_type_modify"
-	DbPermissionIdTransformCreate  DbPermissionId = "transform_create"
-	DbPermissionIdTransformModify  DbPermissionId = "transform_modify"
-	DbPermissionIdProjectCreate    DbPermissionId = "project_create"
+	DbPermissionIdOwner                 DbPermissionId = "owner"
+	DbPermissionIdUserCreate            DbPermissionId = "user_create"
+	DbPermissionIdUserModify            DbPermissionId = "user_modify"
+	DbPermissionIdDataSchemaCreate      DbPermissionId = "data_schema_create"
+	DbPermissionIdDataSchemaModify      DbPermissionId = "data_schema_modify"
+	DbPermissionIdDataTypeCreate        DbPermissionId = "data_type_create"
+	DbPermissionIdDataTypeModify        DbPermissionId = "data_type_modify"
+	DbPermissionIdIngestionScriptCreate DbPermissionId = "ingestion_script_create"
+	DbPermissionIdIngestionScriptModify DbPermissionId = "ingestion_script_modify"
+	DbPermissionIdTransformCreate       DbPermissionId = "transform_create"
+	DbPermissionIdTransformModify       DbPermissionId = "transform_modify"
+	DbPermissionIdProjectCreate         DbPermissionId = "project_create"
 )
 
 type AccountStatus string

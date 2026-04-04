@@ -58,7 +58,7 @@ func main() {
 	auth_handler := handler.NewAuthHandler(db, auth_service)
 	user_handler := handler.NewUserHandler(db, user_service, app_service)
 	project_handler := handler.NewProjectHandler(db, project_service, user_service, sample_service)
-	data_handler := handler.NewDataHandler(db, data_service, user_service, project_service)
+	data_handler := handler.NewDataHandler(db, data_service, app_service, user_service, project_service)
 
 	transform_daemon_logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	transform_daemon := NewTransformDaemon(ctx, transform_daemon_logger, db, app_service, data_service)
@@ -241,6 +241,8 @@ func register_routes(
 	api.POST("/data-type", data.DataTypeCreate)
 	api.GET("/data-type", data.DataTypeGet)
 	api.PUT("/data-type", data.DataTypeUpdate)
+	api.GET("/ingestion-scripts", data.IngestionScriptsGetAll)
+	api.POST("/ingestion-script", data.IngestionScriptCreate)
 	api.GET("/data-type-transforms", data.DataTypeTransformsGetAll)
 	api.POST("/data-type-transform", data.DataTypeTransformCreate)
 	api.GET("/sample-data/single", data.DownloadRawDataSingle)

@@ -23,9 +23,9 @@ export const AppDataKeyAccountName = "app:account:name";
 export const AppDataKeyAccountLogo = "app:account:logo";
 export const AppDataKeyDataPath = "app:data:path";
 export type AppDataKey = typeof AppDataKeyEmailUrl | typeof AppDataKeyEmailUsername | typeof AppDataKeyEmailPassword | typeof AppDataKeyEmailFrom | typeof AppDataKeyAccountName | typeof AppDataKeyAccountLogo | typeof AppDataKeyDataPath;
-export const AppDataDirRecipe = "recipe";
+export const AppDataDirIngestionScript = "ingestion";
 export const AppDataDirTransform = "transform";
-export type AppDataDir = typeof AppDataDirRecipe | typeof AppDataDirTransform;
+export type AppDataDir = typeof AppDataDirIngestionScript | typeof AppDataDirTransform;
 
 //////////
 // source: common.go
@@ -187,10 +187,42 @@ export interface InvalidDataTypeError {
   Value: string;
   DType: ValueType;
 }
+export interface IngestionScriptRx {
+  Id: uuid.UUIDTypes;
+  Type: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Cmd: uuid.UUIDTypes;
+  Label: string;
+  Description: string;
+}
+export interface IngestionScriptCmdRx {
+  Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Path: string;
+  Cmd: string;
+  Args: string[];
+}
+export interface IngestionScript {
+  Id: uuid.UUIDTypes;
+  Type: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Label: string;
+  Description: string;
+  Cmd: IngestionScriptCmdRx;
+}
+export interface IngestionScriptCreate {
+  Type: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Label: string;
+  Description: string;
+  Path: string;
+  Cmd: string;
+  Args: string[];
+}
 /**
- * StoredData represents teh actual data stored for a sample data.
- * Data is []ColumnData if Storage is `internal`.
- * Data is a string if Storage is `file`.
+ * StoredData represents the actual data stored.
+ * Data is []SchemaField if Storage is `internal`.
+ * Data is a path (`string`) if Storage is `external`.
  */
 export interface StoredData {
   SampleData: uuid.UUIDTypes;
@@ -487,10 +519,12 @@ export const DbPermissionIdDataSchemaCreate = "data_schema_create";
 export const DbPermissionIdDataSchemaModify = "data_schema_modify";
 export const DbPermissionIdDataTypeCreate = "data_type_create";
 export const DbPermissionIdDataTypeModify = "data_type_modify";
+export const DbPermissionIdIngestionScriptCreate = "ingestion_script_create";
+export const DbPermissionIdIngestionScriptModify = "ingestion_script_modify";
 export const DbPermissionIdTransformCreate = "transform_create";
 export const DbPermissionIdTransformModify = "transform_modify";
 export const DbPermissionIdProjectCreate = "project_create";
-export type DbPermissionId = typeof DbPermissionIdOwner | typeof DbPermissionIdUserCreate | typeof DbPermissionIdUserModify | typeof DbPermissionIdDataSchemaCreate | typeof DbPermissionIdDataSchemaModify | typeof DbPermissionIdDataTypeCreate | typeof DbPermissionIdDataTypeModify | typeof DbPermissionIdTransformCreate | typeof DbPermissionIdTransformModify | typeof DbPermissionIdProjectCreate;
+export type DbPermissionId = typeof DbPermissionIdOwner | typeof DbPermissionIdUserCreate | typeof DbPermissionIdUserModify | typeof DbPermissionIdDataSchemaCreate | typeof DbPermissionIdDataSchemaModify | typeof DbPermissionIdDataTypeCreate | typeof DbPermissionIdDataTypeModify | typeof DbPermissionIdIngestionScriptCreate | typeof DbPermissionIdIngestionScriptModify | typeof DbPermissionIdTransformCreate | typeof DbPermissionIdTransformModify | typeof DbPermissionIdProjectCreate;
 export const AccountStatusActive = "active";
 export const AccountStatusDeactivated = "deactivated";
 export type AccountStatus = typeof AccountStatusActive | typeof AccountStatusDeactivated;

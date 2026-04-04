@@ -37,6 +37,8 @@ INSERT INTO _db_permission_ VALUES
     ('data_schema_modify', 'Modify data schema', 'Modify existing data schema'),
     ('data_type_create', 'Create data types', 'Create new data types'),
     ('data_type_modify', 'Modify data types', 'Modify existing data types'),
+    ('ingestion_script_create', 'Create ingestion script', 'Create ingestion scripts'),
+    ('ingestion_script_modify', 'Modify ingestion script', 'Modify ingestion scripts'),
     ('data_type_transform_create', 'Create data type transform', 'Create new data type transforms'),
     ('data_type_transform_modify', 'Modify data type transforms', 'Modify existing data type transforms'),
     ('project_create', 'Create project', 'Create new projects');
@@ -161,7 +163,7 @@ CREATE TABLE IF NOT EXISTS ingestion_script_ (
     _type UUID REFERENCES data_type_(_id) NOT NULL,
     _creator UUID REFERENCES user_(_id) NOT NULL,
     cmd UUID REFERENCES ingestion_script_cmd_(_id) NOT NULL,
-    label VARCHAR(128) NOT NULL,
+    label VARCHAR(128) NOT NULL UNIQUE,
     description TEXT
 );
 
