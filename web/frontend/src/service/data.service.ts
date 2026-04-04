@@ -7,7 +7,28 @@ function dataTypesGetAll(): Promise<types.DataType[]> {
     }).then(async (resp) => (await resp.json()) as types.DataType[]);
 }
 
-function dataTypeCreate(
+function dataTypeCreateInternal(
+    label: string,
+    description: string,
+    schema: Uint8Array<ArrayBufferLike>,
+): Promise<Response> {
+    const params = new URLSearchParams();
+    params.set("storage", types.DataStorageInternal);
+    const data = {
+        label,
+        description,
+        schema: uuid.stringify(schema),
+    };
+
+    return fetch(`/api/data-type?${params}`, {
+        credentials: "same-origin",
+        method: "post",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+    });
+}
+
+function dataTypeCreateExternal(
     label: string,
     sources: types.DataTypeSourceCreate[],
     description?: string,
@@ -34,12 +55,14 @@ function dataTypeCreate(
     });
 }
 
-function dataTypeGet(data_type: uuid.UUIDTypes): Promise<types.DataType> {
+function dataTypeGet(
+    data_type: uuid.UUIDTypes,
+): Promise<types.DataTypeInternal | types.DataTypeExternal> {
     const params = new URLSearchParams();
     params.append("id", data_type.toString());
     return fetch(`/api/data-type?${params}`, {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataType);
+    }).then(async (resp) => await resp.json());
 }
 
 function dataTypeUpdate(update: types.DataTypeUpdate): Promise<Response> {
@@ -51,10 +74,10 @@ function dataTypeUpdate(update: types.DataTypeUpdate): Promise<Response> {
     });
 }
 
-function dataSchemasGetAll(): Promise<types.DataSchemaRecord[]> {
+function dataSchemasGetAll(): Promise<types.DataSchemaRx[]> {
     return fetch("/api/data-schemas", {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataSchemaRecord[]);
+    }).then(async (resp) => (await resp.json()) as types.DataSchemaRx[]);
 }
 
 function saveProjectDataAll(
@@ -117,8 +140,8 @@ function dataTypeTransformCreate(
     transform: types.DataTypeTransformCreate,
 ): Promise<Response> {
     const data = new FormData();
-    data.append("input", transform.SourceSchema.toString());
-    data.append("output", transform.DestinationSchema.toString());
+    data.append("input", transform.Source.toString());
+    data.append("output", transform.Destination.toString());
     data.append("label", transform.Label);
     data.append("description", transform.Description);
     data.append("script", transform.Script);
@@ -131,7 +154,7 @@ function dataTypeTransformCreate(
 
 function parseDataFileToSchema(
     file: File,
-    schema: types.DataSchemaRecord,
+    schema: types.DataSchemaRx,
 ): Promise<any> {
     switch (file.type) {
         case "text/csv":
@@ -143,7 +166,7 @@ function parseDataFileToSchema(
 
 async function parseDataFileToSchemaCsv(
     file: File,
-    schema: types.DataSchemaRecord,
+    schema: types.DataSchemaRx,
 ) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -177,7 +200,7 @@ async function parseDataFileToSchemaCsv(
 
 function parse_data_file_to_schema_csv(
     content: string,
-    schema: types.DataSchemaRecord,
+    schema: types.DataSchemaRx,
 ) {
     if (content.length === 0) {
         throw new Error("NO_DATA");
@@ -209,7 +232,7 @@ function parse_data_file_to_schema_csv(
         const values = cols[idx]!.map((value) =>
             parse_data_file_parse_string_to_value(
                 value,
-                schema.Schema[idx]!.dtype,
+                schema.Schema[idx]!.DType,
             ),
         );
 
@@ -255,17 +278,16 @@ function dataSchemaResourcesGet(
     }).then(async (resp) => (await resp.json()) as types.DataSchemaResources);
 }
 
-function dataTypeTransformsGetAll(): Promise<types.DataTypeTransformRecord[]> {
+function dataTypeTransformsGetAll(): Promise<types.DataTypeTransformRx[]> {
     return fetch(`/api/data-type-transforms`, {
         credentials: "same-origin",
-    }).then(
-        async (resp) => (await resp.json()) as types.DataTypeTransformRecord[],
-    );
+    }).then(async (resp) => (await resp.json()) as types.DataTypeTransformRx[]);
 }
 
 export default {
     dataTypesGetAll,
-    dataTypeCreate,
+    dataTypeCreateInternal,
+    dataTypeCreateExternal,
     dataTypeGet,
     dataTypeUpdate,
     dataSchemaCreate,

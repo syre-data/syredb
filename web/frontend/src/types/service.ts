@@ -57,33 +57,45 @@ export type DataStorage = typeof DataStorageInternal | typeof DataStorageExterna
 export const DataSourceCardinalitySingle = "single";
 export const DataSourceCardinalityMultiple = "multiple";
 export type DataSourceCardinality = typeof DataSourceCardinalitySingle | typeof DataSourceCardinalityMultiple;
-export interface DataTypeSourceRecord {
+export interface DataTypeInternalStorageRx {
+  DataType: uuid.UUIDTypes;
+  Schema: uuid.UUIDTypes;
+}
+export interface DataTypeExternalSourceRx {
   Id: uuid.UUIDTypes;
   DataType: uuid.UUIDTypes;
-  Cardinality: DataSourceCardinality;
+  Label: string;
   Required: boolean;
-  ExtensionFilter: string[];
-  Label: string;
+  Cardinality: DataSourceCardinality;
   Description: string;
+  ExtFilter: string[];
 }
-export interface DataTypeRecord {
+export interface DataTypeRx {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
-  Recipe: uuid.UUIDTypes;
-  Schema: uuid.UUIDTypes;
+  Storage: DataStorage;
   Label: string;
   Description: string;
   Active: boolean;
 }
-export interface DataType {
+export type DataType = any;
+export interface DataTypeInternal {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
-  Schema: uuid.UUIDTypes;
-  Recipe: uuid.UUIDTypes;
+  Storage: DataStorage;
   Label: string;
   Description: string;
   Active: boolean;
-  Sources: DataTypeSourceRecord[];
+  Schema: uuid.UUIDTypes;
+}
+export interface DataTypeExternal {
+  Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Storage: DataStorage;
+  Label: string;
+  Description: string;
+  Active: boolean;
+  Sources: DataTypeExternalSourceRx[];
 }
 export interface DataTypeSourceCreate {
   Cardinality: DataSourceCardinality;
@@ -109,14 +121,14 @@ export interface DataTypeUpdate {
 export const DataSchemaCardinalitySingle = "single";
 export const DataSchemaCardinalityMultiple = "multiple";
 export type DataSchemaCardinality = typeof DataSchemaCardinalitySingle | typeof DataSchemaCardinalityMultiple;
-export interface DataSchemaRecord {
+export interface DataSchemaRx {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
   Cardinality: DataSchemaCardinality;
   Label: string;
   Description: string;
 }
-export interface DataSchemaFieldRecord {
+export interface DataSchemaFieldRx {
   Id: uuid.UUIDTypes;
   Label: string;
   DType: ValueType;
@@ -189,7 +201,7 @@ export interface SampleDataSchema {
   SampleData: uuid.UUIDTypes;
   DataSchema: uuid.UUIDTypes;
 }
-export interface DataSchemaRecord {
+export interface DataSchemaRx {
   Id: uuid.UUIDTypes;
   Schema: DataSchemaField[];
 }
@@ -203,27 +215,27 @@ export interface SampleInfo {
   Id: uuid.UUIDTypes;
   Label: string;
 }
-export interface DataSchemaRecord {
+export interface DataSchemaRx {
   Id: uuid.UUIDTypes;
   Label: string;
 }
-export interface SampleRecord {
+export interface SampleRx {
   Sample: uuid.UUIDTypes;
   SampleData: uuid.UUIDTypes;
   Label: string;
   Timestamp: Date;
 }
-export interface ProjectSampleRecord {
+export interface ProjectSampleRx {
   Sample: uuid.UUIDTypes;
   Label: string;
 }
-export interface SampleDataRecord {
+export interface SampleDataRx {
   Id: uuid.UUIDTypes;
   Sample: uuid.UUIDTypes;
   DataSchema: uuid.UUIDTypes;
   Timestamp: Date;
 }
-export interface DataSchemaRecord {
+export interface DataSchemaRx {
   Id: uuid.UUIDTypes;
   Label: string;
 }
@@ -236,7 +248,7 @@ export interface SampleDataUserPermissions {
   SampleData: uuid.UUIDTypes;
   Permissions: SampleDataUserPermission[];
 }
-export interface DataTypeTransformRecord {
+export interface DataTypeTransformRx {
   Id: uuid.UUIDTypes;
   Source: uuid.UUIDTypes;
   Destination: uuid.UUIDTypes;

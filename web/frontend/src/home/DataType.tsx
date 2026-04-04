@@ -10,7 +10,11 @@ import dataService from "@/service/data.service";
 import {
     DataSourceCardinalityMultiple,
     DataSourceCardinalitySingle,
-    type DataTypeSourceRecord,
+    DataStorageExternal,
+    DataStorageInternal,
+    type DataType,
+    type DataTypeExternal,
+    type DataTypeInternal,
     type DataTypeSourceUpdate,
     type DataTypeUpdate,
 } from "@/types";
@@ -63,19 +67,10 @@ function DataType({ data_type_id }: DataTypeProps) {
         queryKey: [QUERY_KEY_DATA_TYPE, data_type_id],
         queryFn: async () => dataService.dataTypeGet(data_type_id),
     });
-    const { data: data_schema } = useSuspenseQuery({
-        queryKey: [QUERY_KEY_DATA_SCHEMA, data_type.Schema],
-        queryFn: async () =>
-            data_type.Schema === uuid.NIL
-                ? null
-                : await dataService.dataSchemaResourcesGet(data_type.Schema),
-    });
     const { data: data_types } = useSuspenseQuery({
         queryKey: [QUERY_KEY_DATA_TYPES],
         queryFn: dataService.dataTypesGetAll,
     });
-
-    const queryClient = useQueryClient();
     const navigate = useNavigate();
 
     function close(e: MouseEvent<HTMLButtonElement>) {
@@ -86,79 +81,27 @@ function DataType({ data_type_id }: DataTypeProps) {
         navigate(-1);
     }
 
-    function validate_label(e: ChangeEvent<HTMLInputElement>) {
-        e.target.setCustomValidity("");
-        if (
-            data_types
-                .filter((type) => type.Id !== data_type_id)
-                .map((type) => type.Label)
-                .includes(e.target.value.trim())
-        ) {
-            e.target.setCustomValidity("Label already exists");
-        }
-    }
-
-    function download_recipe(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button !== MouseButton.Primary) {
-            return;
-        }
-
-        console.debug("TODO: Download recipe");
-    }
-
-    async function update(e: SubmitEvent<HTMLFormElement>) {
-        e.preventDefault();
-
-        const data = new FormData(e.target);
-        const label = data.get("label")!.toString().trim();
-        const active = !!data.get("active");
-        const description = data.get("description")!.toString().trim();
-        const sources = data_type.Sources.map((source) => source.Id).map(
-            (id) => {
-                const description = data
-                    .get(`source[${id}][description]`)!
-                    .toString()
-                    .trim();
-                const extension_filter = data
-                    .get(`source[${id}][extension_filter]`)!
-                    .toString()
-                    .split(",")
-                    .map((ext) => ext.trim())
-                    .filter((ext) => ext.length > 0);
-                return {
-                    Id: id,
-                    Description: description,
-                    ExtensionFilter: extension_filter,
-                } satisfies DataTypeSourceUpdate;
-            },
-        );
-
-        if (!label) {
-            console.error("label can not be empty");
-            return;
-        }
-
-        const update = {
-            Id: data_type.Id,
-            Label: label,
-            Active: active,
-            Description: description,
-            Sources: sources,
-        } satisfies DataTypeUpdate;
-        await dataService.dataTypeUpdate(update).then((resp) => {
-            if (resp.status === StatusCodes.OK) {
-                queryClient.invalidateQueries({
-                    queryKey: [QUERY_KEY_DATA_TYPES],
-                });
-
-                queryClient.invalidateQueries({
-                    queryKey: [QUERY_KEY_DATA_TYPE, data_type_id],
-                });
-                navigate(-1);
-            }
-
-            console.error(resp);
-        });
+    let content;
+    switch (data_type.Storage) {
+        case DataStorageInternal:
+            content = (
+                <DataTypeInternal
+                    dataType={data_type as DataTypeInternal}
+                    dataTypes={data_types}
+                />
+            );
+            break;
+        case DataStorageExternal:
+            content = (
+                <DataTypeExternal
+                    dataType={data_type as DataTypeExternal}
+                    dataTypes={data_types}
+                />
+            );
+            break;
+        default:
+            console.error(`invalid data type storage: ${data_type}`);
+            throw new Error("invalid data type storage");
     }
 
     return (
@@ -178,6 +121,73 @@ function DataType({ data_type_id }: DataTypeProps) {
                     </button>
                 </div>
             </div>
+            {content}
+        </div>
+    );
+}
+
+interface DataTypeInternalProps {
+    dataType: DataTypeInternal;
+    dataTypes: DataType[];
+}
+function DataTypeInternal({ dataType, dataTypes }: DataTypeInternalProps) {
+    const { data: data_schema } = useSuspenseQuery({
+        queryKey: [QUERY_KEY_DATA_SCHEMA, dataType.Schema],
+        queryFn: async () =>
+            await dataService.dataSchemaResourcesGet(dataType.Schema),
+    });
+    const queryClient = useQueryClient();
+    const navigate = useNavigate();
+
+    function validate_label(e: ChangeEvent<HTMLInputElement>) {
+        e.target.setCustomValidity("");
+        if (
+            dataTypes
+                .filter((type) => type.Id !== dataType.Id)
+                .map((type) => type.Label)
+                .includes(e.target.value.trim())
+        ) {
+            e.target.setCustomValidity("Label already exists");
+        }
+    }
+
+    async function update(e: SubmitEvent<HTMLFormElement>) {
+        e.preventDefault();
+
+        const data = new FormData(e.target);
+        const label = data.get("label")!.toString().trim();
+        const active = !!data.get("active");
+        const description = data.get("description")!.toString().trim();
+
+        if (!label) {
+            console.error("label can not be empty");
+            return;
+        }
+
+        const update = {
+            Id: dataType.Id,
+            Label: label,
+            Active: active,
+            Description: description,
+        } satisfies DataTypeUpdate;
+        await dataService.dataTypeUpdate(update).then((resp) => {
+            if (resp.status === StatusCodes.OK) {
+                queryClient.invalidateQueries({
+                    queryKey: [QUERY_KEY_DATA_TYPES],
+                });
+
+                queryClient.invalidateQueries({
+                    queryKey: [QUERY_KEY_DATA_TYPE, dataType.Id],
+                });
+                navigate(-1);
+            }
+
+            console.error(resp);
+        });
+    }
+
+    return (
+        <div>
             <div className="pt-4 px-4 flex gap-2">
                 <div>
                     <form className="flex flex-col gap-2" onSubmit={update}>
@@ -191,7 +201,7 @@ function DataType({ data_type_id }: DataTypeProps) {
                                         name="label"
                                         placeholder="Label"
                                         className="input-basic"
-                                        defaultValue={data_type.Label}
+                                        defaultValue={dataType.Label}
                                         onChange={validate_label}
                                         required
                                     />
@@ -205,7 +215,7 @@ function DataType({ data_type_id }: DataTypeProps) {
                                         name="active"
                                         placeholder="Active"
                                         className="input-basic"
-                                        defaultChecked={data_type.Active}
+                                        defaultChecked={dataType.Active}
                                     />
                                     <span className="pl-2">Active</span>
                                 </label>
@@ -218,19 +228,10 @@ function DataType({ data_type_id }: DataTypeProps) {
                                         placeholder="Description"
                                         className="input-basic"
                                         defaultValue={
-                                            data_type.Description ?? ""
+                                            dataType.Description ?? ""
                                         }
                                     ></textarea>
                                 </label>
-                            </div>
-                            <div>
-                                {data_type.Sources ? (
-                                    <DataTypeSources
-                                        sources={data_type.Sources}
-                                    />
-                                ) : (
-                                    "(no sources)"
-                                )}
                             </div>
                         </div>
                         <div>
@@ -241,34 +242,32 @@ function DataType({ data_type_id }: DataTypeProps) {
                     </form>
                 </div>
                 <div className="flex gap-2">
-                    {data_type.Recipe === uuid.NIL ? null : (
-                        <div>
+                    <div>
+                        <Link
+                            to={`/data-schema/${dataType.Schema}`}
+                            title="To data schema"
+                        >
                             <button
                                 type="button"
-                                className="btn-cmd"
-                                title="Download recipe"
-                                onMouseDown={download_recipe}
+                                className="btn-cmd flex gap-1 items-center"
                             >
-                                <Icon.Gear />
+                                <Icon.DataSchema />
+                                {data_schema?.DataSchema.Label}
                             </button>
-                        </div>
-                    )}
-                    {data_type.Schema === uuid.NIL ? null : (
-                        <div>
-                            <Link
-                                to={`/data-schema/${data_type.Schema}`}
-                                title="To data schema"
-                            >
-                                <button type="button" className="btn-cmd">
-                                    <Icon.DataSchema />
-                                </button>
-                            </Link>
-                        </div>
-                    )}
+                        </Link>
+                    </div>
                 </div>
             </div>
         </div>
     );
+}
+
+interface DataTypeExternalProps {
+    dataType: DataTypeExternal;
+    dataTypes: DataType[];
+}
+function DataTypeExternal({ dataType, dataTypes }: DataTypeExternalProps) {
+    return <div></div>;
 }
 
 interface DataTypeSourcesProps {

@@ -100,86 +100,160 @@ const (
 	DataSourceCardinalityMultiple DataSourceCardinality = "multiple"
 )
 
-type DataTypeSourceRecord struct {
-	Id              uuid.UUID             `db:"_id"`
-	DataType        uuid.UUID             `db:"_data_type"`
-	Cardinality     DataSourceCardinality `db:"_cardinality"`
-	Required        bool                  `db:"_required"`
-	ExtensionFilter []string              `db:"extension_filter"`
-	Label           string                `db:"label"`
-	Description     string                `db:"description"`
+type DataTypeInternalStorageRx struct {
+	DataType uuid.UUID `db:"_data_type"`
+	Schema   uuid.UUID `db:"_schema"`
 }
 
-type DataTypeRecord struct {
-	Id          uuid.UUID `db:"_id"`
-	Creator     uuid.UUID `db:"_creator"`
-	Recipe      uuid.UUID `db:"recipe"`
-	Schema      uuid.UUID `db:"_schema"`
-	Label       string    `db:"label"`
-	Description string    `db:"description"`
-	Active      bool      `db:"active"`
+type DataTypeExternalSourceRx struct {
+	Id          uuid.UUID             `db:"_id"`
+	DataType    uuid.UUID             `db:"_data_type"`
+	Label       string                `db:"_label"`
+	Required    bool                  `db:"_required"`
+	Cardinality DataSourceCardinality `db:"_cardinality"`
+	Description string                `db:"description"`
+	ExtFilter   []string              `db:"ext_filter"`
 }
 
-type DataType struct {
+type DataTypeRx struct {
+	Id          uuid.UUID   `db:"_id"`
+	Creator     uuid.UUID   `db:"_creator"`
+	Storage     DataStorage `db:"_storage"`
+	Label       string      `db:"label"`
+	Description string      `db:"description"`
+	Active      bool        `db:"active"`
+}
+
+type DataType interface {
+	DataStorage() DataStorage
+}
+
+type DataTypeInternal struct {
 	Id          uuid.UUID
 	Creator     uuid.UUID
-	Schema      uuid.UUID
-	Recipe      uuid.UUID
+	Storage     DataStorage
 	Label       string
 	Description string
 	Active      bool
-	Sources     []DataTypeSourceRecord
+	Schema      uuid.UUID
+}
+
+func (t DataTypeInternal) DataStorage() DataStorage {
+	return DataStorageInternal
+}
+
+type DataTypeExternal struct {
+	Id          uuid.UUID
+	Creator     uuid.UUID
+	Storage     DataStorage
+	Label       string
+	Description string
+	Active      bool
+	Sources     []DataTypeExternalSourceRx
+}
+
+func (t DataTypeExternal) DataStorage() DataStorage {
+	return DataStorageExternal
 }
 
 func (s *DataService) DataTypesGetAll() ([]DataType, error) {
 	data_type_query :=
-		`SELECT _id, _creator, _schema, recipe, label, description, active
+		`SELECT _id, _creator, _storage, label, description, active
 		FROM data_type_ ORDER BY label`
 	rows, _ := s.db.Conn.Query(s.ctx, data_type_query)
-	data_type_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeRecord])
+	data_type_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeRx])
 	if err != nil {
 		s.logger.With("error", err).Error("could not get data types")
 		return nil, err
 	}
 
-	data_types := make([]DataType, len(data_type_rxs))
-	for idx, rx := range data_type_rxs {
-		data_types[idx].Id = rx.Id
-		data_types[idx].Creator = rx.Creator
-		data_types[idx].Schema = rx.Schema
-		data_types[idx].Recipe = rx.Recipe
-		data_types[idx].Label = rx.Label
-		data_types[idx].Description = rx.Description
-		data_types[idx].Active = rx.Active
+	data_type_internal := make([]DataTypeInternal, 0, len(data_type_rxs))
+	data_type_external := make([]DataTypeExternal, 0, len(data_type_rxs))
+	for _, rx := range data_type_rxs {
+		switch rx.Storage {
+		case DataStorageInternal:
+			data := DataTypeInternal{
+				Id:          rx.Id,
+				Creator:     rx.Creator,
+				Storage:     rx.Storage,
+				Label:       rx.Label,
+				Description: rx.Description,
+				Active:      rx.Active,
+			}
+			data_type_internal = append(data_type_internal, data)
+		case DataStorageExternal:
+			data := DataTypeExternal{
+				Id:          rx.Id,
+				Creator:     rx.Creator,
+				Storage:     rx.Storage,
+				Label:       rx.Label,
+				Description: rx.Description,
+				Active:      rx.Active,
+			}
+			data_type_external = append(data_type_external, data)
+		}
 	}
 
-	data_type_ids := make([]uuid.UUID, len(data_types))
-	for idx, data_type := range data_types {
-		data_type_ids[idx] = data_type.Id
+	internal_ids := make([]uuid.UUID, len(data_type_internal))
+	for idx, rx := range data_type_internal {
+		internal_ids[idx] = rx.Id
 	}
-	source_query :=
-		`SELECT _id, _data_type, _cardinality, _required, extension_filter, label, description
-		FROM data_type_source_ WHERE _data_type=ANY($1)`
-	rows, _ = s.db.Conn.Query(s.ctx, source_query, data_type_ids)
-	sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeSourceRecord])
+	internal_query :=
+		`SELECT _data_type, _schema FROM data_type_internal_storage_
+		WHERE _data_type=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, internal_query, internal_ids)
+	internal_schemas, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeInternalStorageRx])
 	if err != nil {
-		s.logger.With("error", err).Error("could not get data type sources")
+		s.logger.With(
+			"error", err,
+			"data types", internal_ids,
+		).Error("could not get data type internal storage")
 		return nil, err
 	}
-
-	for _, source := range sources {
-		data_type_idx := slices.IndexFunc(data_types, func(data_type DataType) bool {
-			return source.DataType == data_type.Id
+	for _, rx := range internal_schemas {
+		idx := slices.IndexFunc(data_type_internal, func(data DataTypeInternal) bool {
+			return data.Id == rx.DataType
 		})
-		if data_type_idx < 0 {
-			s.logger.With(
-				"source", source,
-				"data types", data_types,
-			).Error("invalid data type source")
-			panic("invalid data type source")
+		if idx < 0 {
+			panic("invalid data type internal storage")
 		}
 
-		data_types[data_type_idx].Sources = append(data_types[data_type_idx].Sources, source)
+		data_type_internal[idx].Schema = rx.Schema
+	}
+
+	external_ids := make([]uuid.UUID, len(data_type_external))
+	for idx, rx := range data_type_external {
+		external_ids[idx] = rx.Id
+	}
+	external_query :=
+		`SELECT _id, _data_type, _label, _required, _cardinality, description, ext_filter
+		FROM data_type_external_source_ WHERE _data_type=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, external_query, external_ids)
+	external_sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeExternalSourceRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data types", external_ids,
+		).Error("could not get data type external sources")
+		return nil, err
+	}
+	for _, source := range external_sources {
+		idx := slices.IndexFunc(data_type_external, func(data DataTypeExternal) bool {
+			return data.Id == source.DataType
+		})
+		if idx < 0 {
+			panic("invalid data type external source")
+		}
+
+		data_type_external[idx].Sources = append(data_type_external[idx].Sources, source)
+	}
+
+	data_types := make([]DataType, 0, len(data_type_rxs))
+	for _, data := range data_type_internal {
+		data_types = append(data_types, data)
+	}
+	for _, data := range data_type_external {
+		data_types = append(data_types, data)
 	}
 
 	return data_types, nil
@@ -187,40 +261,67 @@ func (s *DataService) DataTypesGetAll() ([]DataType, error) {
 
 func (s *DataService) DataTypeGetById(id uuid.UUID) (DataType, error) {
 	data_type_query :=
-		`SELECT _id, _creator, _schema, recipe, label, description, active
+		`SELECT _id, _creator, _storage, label, description, active
 		FROM data_type_ WHERE _id=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, data_type_query, id)
-	rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataTypeRecord])
+	data_type, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataTypeRx])
 	if err != nil {
-		s.logger.With("error", err).Error("could not get data type")
-		return DataType{}, err
+		s.logger.With("error", err).Error("could not get data types")
+		return nil, err
 	}
 
-	data_type := DataType{
-		Id:          rx.Id,
-		Creator:     rx.Creator,
-		Schema:      rx.Schema,
-		Recipe:      rx.Recipe,
-		Label:       rx.Label,
-		Description: rx.Description,
-		Active:      rx.Active,
+	switch data_type.Storage {
+	case DataStorageInternal:
+		data_type_internal := DataTypeInternal{
+			Id:          data_type.Id,
+			Creator:     data_type.Creator,
+			Storage:     DataStorageInternal,
+			Label:       data_type.Label,
+			Description: data_type.Description,
+			Active:      data_type.Active,
+		}
+		internal_query :=
+			`SELECT _schema FROM data_type_internal_storage_
+			WHERE _data_type=$1`
+		err = s.db.Conn.QueryRow(s.ctx, internal_query, id).Scan(&data_type_internal.Schema)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data type", id,
+			).Error("could not get data type internal storage")
+			return nil, err
+		}
+
+		return data_type_internal, nil
+
+	case DataStorageExternal:
+		data_type_external := DataTypeExternal{
+			Id:          data_type.Id,
+			Creator:     data_type.Creator,
+			Storage:     DataStorageInternal,
+			Label:       data_type.Label,
+			Description: data_type.Description,
+			Active:      data_type.Active,
+		}
+		external_query :=
+			`SELECT _id, _data_type, _label, _required, _cardinality, description, ext_filter
+			FROM data_type_external_source_ WHERE _data_type=$1`
+		rows, _ = s.db.Conn.Query(s.ctx, external_query, id)
+		external_sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeExternalSourceRx])
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data type", id,
+			).Error("could not get data type external sources")
+			return nil, err
+		}
+
+		data_type_external.Sources = external_sources
+
+		return data_type_external, nil
 	}
 
-	source_query :=
-		`SELECT _id, _data_type, _cardinality, _required, extension_filter, label, description
-		FROM data_type_source_ WHERE _data_type=$1`
-	rows, _ = s.db.Conn.Query(s.ctx, source_query, id)
-	sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeSourceRecord])
-	if err != nil {
-		s.logger.With("error", err).Error("could not get data type sources")
-		return DataType{}, err
-	}
-
-	for _, source := range sources {
-		data_type.Sources = append(data_type.Sources, source)
-	}
-
-	return data_type, nil
+	panic("should not reach")
 }
 
 func (s *DataService) DataTypeRecipeCreate(tx pgx.Tx, recipe *multipart.FileHeader) (uuid.UUID, error) {
@@ -339,7 +440,83 @@ func (s *DataService) DataTypeSourcesCreate(tx pgx.Tx, data_type uuid.UUID, sour
 	return ids, nil
 }
 
-func (s *DataService) DataTypeCreate(
+func (s *DataService) dataTypeCreate(
+	tx pgx.Tx,
+	creator uuid.UUID,
+	storage DataStorage,
+	label string,
+	description *string,
+) (uuid.UUID, error) {
+	var type_id uuid.UUID
+	type_query :=
+		`INSERT INTO data_type_ (_creator, _storage, label, description)
+		VALUES ($1, $2, $3, $4) RETURNING _id`
+	err := tx.QueryRow(
+		s.ctx,
+		type_query,
+		creator,
+		storage,
+		label,
+		description,
+	).Scan(&type_id)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"creator", creator,
+			"storage", storage,
+			"label", label,
+			"description", description,
+		).Error("could not create data type")
+		return uuid.Nil, err
+	}
+
+	return type_id, nil
+}
+
+func (s *DataService) DataTypeCreateInternal(
+	creator uuid.UUID,
+	label string,
+	description *string,
+	data_schema uuid.UUID,
+) error {
+	tx, err := s.db.Conn.Begin(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not begin transaction")
+		return err
+	}
+	defer tx.Rollback(s.ctx)
+
+	type_id, err := s.dataTypeCreate(
+		tx,
+		creator,
+		DataStorageInternal,
+		label,
+		description,
+	)
+	if err != nil {
+		return err
+	}
+
+	storage_query := "INSERT INTO data_type_internal_storage_ (_data_type, _schema) VALUES ($1, $2)"
+	_, err = tx.Exec(s.ctx, storage_query, type_id, data_schema)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data schema", data_schema,
+		).Error("could not create data type storage")
+		return err
+	}
+
+	err = tx.Commit(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not commit data type create transaction")
+		return err
+	}
+
+	return nil
+}
+
+func (s *DataService) DataTypeCreateExternal(
 	creator uuid.UUID,
 	label string,
 	description *string,
@@ -487,7 +664,7 @@ const (
 	DataSchemaCardinalityMultiple DataSchemaCardinality = "multiple"
 )
 
-type DataSchemaRecord struct {
+type DataSchemaRx struct {
 	Id          uuid.UUID             `db:"_id"`
 	Creator     uuid.UUID             `db:"_creator"`
 	Cardinality DataSchemaCardinality `db:"_cardinality"`
@@ -495,7 +672,7 @@ type DataSchemaRecord struct {
 	Description string                `db:"description"`
 }
 
-type DataSchemaFieldRecord struct {
+type DataSchemaFieldRx struct {
 	Id          uuid.UUID `db:"_id"`
 	Label       string    `db:"_label"`
 	DType       ValueType `db:"_dtype"`
@@ -527,7 +704,7 @@ func (s *DataService) DataSchemasGetAll() ([]DataSchema, error) {
 		return nil, err
 	}
 
-	schemas_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaRecord])
+	schemas_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaRx])
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect data schemas")
 		return nil, err
@@ -540,7 +717,7 @@ func (s *DataService) DataSchemasGetAll() ([]DataSchema, error) {
 		return nil, err
 	}
 
-	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRecord])
+	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRx])
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect data schema fields")
 		return nil, err
@@ -586,7 +763,7 @@ func (s *DataService) DataSchemasGetById(schema_ids []uuid.UUID) ([]DataSchema, 
 		return nil, err
 	}
 
-	schemas_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaRecord])
+	schemas_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaRx])
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect data schemas")
 		return nil, err
@@ -601,7 +778,7 @@ func (s *DataService) DataSchemasGetById(schema_ids []uuid.UUID) ([]DataSchema, 
 		return nil, err
 	}
 
-	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRecord])
+	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRx])
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect data schema fields")
 		return nil, err
@@ -962,7 +1139,7 @@ func (s *DataService) DataSchemaGetResources(schema_id uuid.UUID) (DataSchemaRes
 		return DataSchemaResources{}, err
 	}
 
-	schema_rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataSchemaRecord])
+	schema_rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataSchemaRx])
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect data schemas")
 		return DataSchemaResources{}, err
@@ -977,7 +1154,7 @@ func (s *DataService) DataSchemaGetResources(schema_id uuid.UUID) (DataSchemaRes
 		return DataSchemaResources{}, err
 	}
 
-	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRecord])
+	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRx])
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect data schema fields")
 		return DataSchemaResources{}, err
@@ -1263,7 +1440,7 @@ func (s *DataService) SampleDataStoredById(sample_data_ids []uuid.UUID) ([]Store
 		}
 	}
 
-	type DataSchemaRecord struct {
+	type DataSchemaRx struct {
 		Id     uuid.UUID
 		Schema []DataSchemaField
 	}
@@ -1581,7 +1758,7 @@ func (s *DataService) SaveSampleDataMultiple(
 		s.logger.With("error", err, "samples", sample_ids).Error("could not get sample info")
 	}
 
-	type DataSchemaRecord struct {
+	type DataSchemaRx struct {
 		Id    uuid.UUID
 		Label string
 	}
@@ -1593,8 +1770,8 @@ func (s *DataService) SaveSampleDataMultiple(
 	}
 	schema_query := "SELECT _id, label FROM data_schema_ WHERE _id=ANY($1)"
 	rows, _ = s.db.Conn.Query(s.ctx, schema_query, data_schema_ids)
-	data_schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaRecord, error) {
-		var record DataSchemaRecord
+	data_schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaRx, error) {
+		var record DataSchemaRx
 		err := row.Scan(&record.Id, &record.Label)
 		return record, err
 	})
@@ -1620,7 +1797,7 @@ func (s *DataService) SaveSampleDataMultiple(
 		})
 		sample_info := sample_info[sample_info_idx]
 
-		data_schema_idx := slices.IndexFunc(data_schemas, func(record DataSchemaRecord) bool {
+		data_schema_idx := slices.IndexFunc(data_schemas, func(record DataSchemaRx) bool {
 			return record.Id == data_info.DataSchema
 		})
 		data_schema := data_schemas[data_schema_idx]
@@ -1705,7 +1882,7 @@ func (s *DataService) SaveDataSchemaSampleDataAll(
 	project uuid.UUID,
 	data_hierarchy []SaveDataHierarchy,
 ) (string, error) {
-	type SampleRecord struct {
+	type SampleRx struct {
 		Sample     uuid.UUID
 		SampleData uuid.UUID
 		Label      string
@@ -1718,8 +1895,8 @@ func (s *DataService) SaveDataSchemaSampleDataAll(
 		ON sample_._sample=data_._sample
 		WHERE sample_._project=$1 AND data_._schema=$2`
 	rows, _ := s.db.Conn.Query(s.ctx, sample_query, project, data_schema)
-	samples, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleRecord, error) {
-		var record SampleRecord
+	samples, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleRx, error) {
+		var record SampleRx
 		err := row.Scan(&record.Sample, &record.SampleData, &record.Label, &record.Timestamp)
 		return record, err
 	})
@@ -1750,7 +1927,7 @@ func (s *DataService) SaveDataSchemaSampleDataAll(
 	buf := new(bytes.Buffer)
 	archive := zip.NewWriter(buf)
 	for _, stored := range stored_data {
-		sample_idx := slices.IndexFunc(samples, func(record SampleRecord) bool {
+		sample_idx := slices.IndexFunc(samples, func(record SampleRx) bool {
 			return record.SampleData == stored.SampleData
 		})
 		if sample_idx < 0 {
@@ -1869,14 +2046,14 @@ func (s *DataService) save_data_schema_sample_data_file_path(
 // SaveProjectDataAll saves all sample data in a project into a zip archive.
 // It returns the path of the save location.
 func (s *DataService) SaveProjectDataAll(project uuid.UUID, hierarchy []SaveDataHierarchy) (string, error) {
-	type ProjectSampleRecord struct {
+	type ProjectSampleRx struct {
 		Sample uuid.UUID
 		Label  string
 	}
 	sample_query := "SELECT _sample, label FROM project_sample_membership_ WHERE _project=$1"
 	rows, _ := s.db.Conn.Query(s.ctx, sample_query, project)
-	project_samples, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ProjectSampleRecord, error) {
-		var record ProjectSampleRecord
+	project_samples, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ProjectSampleRx, error) {
+		var record ProjectSampleRx
 		err := row.Scan(&record.Sample, &record.Label)
 		return record, err
 	})
@@ -1888,7 +2065,7 @@ func (s *DataService) SaveProjectDataAll(project uuid.UUID, hierarchy []SaveData
 		return "", nil
 	}
 
-	type SampleDataRecord struct {
+	type SampleDataRx struct {
 		Id         uuid.UUID
 		Sample     uuid.UUID
 		DataSchema uuid.UUID
@@ -1900,8 +2077,8 @@ func (s *DataService) SaveProjectDataAll(project uuid.UUID, hierarchy []SaveData
 	}
 	data_query := "SELECT _id, _sample, _schema, timestamp FROM sample_data_ WHERE _sample=ANY($1)"
 	rows, _ = s.db.Conn.Query(s.ctx, data_query, sample_ids)
-	sample_data, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleDataRecord, error) {
-		var record SampleDataRecord
+	sample_data, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (SampleDataRx, error) {
+		var record SampleDataRx
 		err := row.Scan(&record.Id, &record.Sample, &record.DataSchema, &record.Timestamp)
 		return record, err
 	})
@@ -1910,7 +2087,7 @@ func (s *DataService) SaveProjectDataAll(project uuid.UUID, hierarchy []SaveData
 		return "", err
 	}
 
-	type DataSchemaRecord struct {
+	type DataSchemaRx struct {
 		Id    uuid.UUID
 		Label string
 	}
@@ -1922,8 +2099,8 @@ func (s *DataService) SaveProjectDataAll(project uuid.UUID, hierarchy []SaveData
 	}
 	schema_query := "SELECT _id, label FROM data_schema_ WHERE _id=ANY($1)"
 	rows, _ = s.db.Conn.Query(s.ctx, schema_query, data_schema_ids)
-	data_schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaRecord, error) {
-		var record DataSchemaRecord
+	data_schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaRx, error) {
+		var record DataSchemaRx
 		err := row.Scan(&record.Id, &record.Label)
 		return record, err
 	})
@@ -1948,7 +2125,7 @@ func (s *DataService) SaveProjectDataAll(project uuid.UUID, hierarchy []SaveData
 	buf := new(bytes.Buffer)
 	archive := zip.NewWriter(buf)
 	for _, stored := range stored_data {
-		data_sample_idx := slices.IndexFunc(sample_data, func(record SampleDataRecord) bool {
+		data_sample_idx := slices.IndexFunc(sample_data, func(record SampleDataRx) bool {
 			return record.Id == stored.SampleData
 		})
 		if data_sample_idx < 0 {
@@ -1957,12 +2134,12 @@ func (s *DataService) SaveProjectDataAll(project uuid.UUID, hierarchy []SaveData
 		}
 		data_info := sample_data[data_sample_idx]
 
-		project_sample_idx := slices.IndexFunc(project_samples, func(record ProjectSampleRecord) bool {
+		project_sample_idx := slices.IndexFunc(project_samples, func(record ProjectSampleRx) bool {
 			return record.Sample == data_info.Sample
 		})
 		project_sample := project_samples[project_sample_idx]
 
-		data_schema_idx := slices.IndexFunc(data_schemas, func(record DataSchemaRecord) bool {
+		data_schema_idx := slices.IndexFunc(data_schemas, func(record DataSchemaRx) bool {
 			return record.Id == data_info.DataSchema
 		})
 		data_schema := data_schemas[data_schema_idx]
@@ -2114,7 +2291,7 @@ type SampleDataUserPermissions struct {
 }
 
 func (s *DataService) GetSampleDataUserPermission(sample_data []uuid.UUID, user uuid.UUID) ([]SampleDataUserPermissions, error) {
-	type permissionRecord struct {
+	type permissionRx struct {
 		SampleData uuid.UUID
 		Permission SampleDataUserPermission
 	}
@@ -2123,8 +2300,8 @@ func (s *DataService) GetSampleDataUserPermission(sample_data []uuid.UUID, user 
 		`SELECT _sample_data, _permission FROM sample_data_user_permission_ 
 		WHERE _sample_data=ANY($1) AND _user=$2`
 	rows, _ := s.db.Conn.Query(s.ctx, query, sample_data, user)
-	records, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (permissionRecord, error) {
-		var permission permissionRecord
+	records, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (permissionRx, error) {
+		var permission permissionRx
 		err := row.Scan(&permission.SampleData, &permission.Permission)
 		return permission, err
 	})
@@ -2169,7 +2346,7 @@ func (s *DataService) ProjectRawDataAll(project uuid.UUID) ([]DataRecord, error)
 	return sample_data, err
 }
 
-type DataTypeTransformRecord struct {
+type DataTypeTransformRx struct {
 	Id          uuid.UUID `db:"_id"`
 	Source      uuid.UUID `db:"_source"`
 	Destination uuid.UUID `db:"_destination"`
@@ -2179,12 +2356,12 @@ type DataTypeTransformRecord struct {
 	Description string    `db:"description"`
 }
 
-func (s *DataService) DataTypeTransformsGetAll() ([]DataTypeTransformRecord, error) {
+func (s *DataService) DataTypeTransformsGetAll() ([]DataTypeTransformRx, error) {
 	query :=
 		`SELECT _id, _source, _destination, _script, _creator, label, description
 		FROM data_type_transform_`
 	rows, _ := s.db.Conn.Query(s.ctx, query)
-	transforms, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeTransformRecord])
+	transforms, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeTransformRx])
 	if err != nil {
 		s.logger.With(
 			"error", err,

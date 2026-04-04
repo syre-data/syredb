@@ -113,118 +113,67 @@ CREATE TABLE IF NOT EXISTS data_schema_field_ (
     PRIMARY KEY (_id, _label)
 );
 
-CREATE TABLE IF NOT EXISTS data_type_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _creator UUID REFERENCES user_(_id) NOT NULL,
-    label VARCHAR(128) UNIQUE NOT NULL,
-    description TEXT
-);
-
 CREATE TYPE data_source_storage AS ENUM (
     'internal', 
     'external'
 );
 
-CREATE TABLE IF NOT EXISTS data_type_source_ (
+CREATE TABLE IF NOT EXISTS data_type_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _data_type UUID REFERENCES data_type_(_id) NOT NULL,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
     _storage data_source_storage NOT NULL,
-    _required boolean NOT NULL,
-    label VARCHAR(128) NOT NULL,
+    label VARCHAR(128) UNIQUE NOT NULL,
     description TEXT,
-    UNIQUE (_data_type, label)
+    active boolean DEFAULT true NOT NULL
 );
-CREATE INDEX IF NOT EXISTS _data_type_source__data_type ON data_type_source_ (_data_type);
 
-CREATE TABLE IF NOT EXISTS data_type_source_internal_ (
-    _id UUID REFERENCES data_type_source_(_id) PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS data_type_internal_storage_ (
+    _data_type UUID REFERENCES data_type_(_id) PRIMARY KEY,
     _schema UUID REFERENCES data_schema_(_id)
 );
 
-CREATE TYPE data_source_cardinality AS ENUM (
+CREATE TYPE data_type_external_source_cardinality AS ENUM (
     'single',
     'multiple'
 );
 
-CREATE TABLE IF NOT EXISTS data_type_source_external_ (
-    _id UUID REFERENCES data_type_source_(_id) PRIMARY KEY,
-    _cardinality data_source_cardinality NOT NULL,
-    ext_filter VARCHAR(64)[]
+CREATE TABLE IF NOT EXISTS data_type_external_source_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _data_type UUID REFERENCES data_type_(_id) NOT NULL,
+    _label VARCHAR(128) NOT NULL,
+    _required boolean NOT NULL,
+    _cardinality data_type_external_source_cardinality NOT NULL,
+    description TEXT,
+    ext_filter VARCHAR(64)[],
+    UNIQUE (_data_type, _label)
 );
 
-CREATE TABLE IF NOT EXISTS data_type_transform_script_ (
+CREATE TABLE IF NOT EXISTS ingestion_script_cmd_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _creator UUID REFERENCES user_(_id) NOT NULL,
-    _path VARCHAR(1024) NOT NULL UNIQUE,
-    _cmd VARCHAR(1024) NOT NULL,
+    _path VARCHAR(2048) NOT NULL,
+    _cmd VARCHAR(1024),
     _args VARCHAR(64)[] DEFAULT array[]::varchar[]
 );
 
-CREATE TABLE IF NOT EXISTS data_type_transform_ (
+CREATE TABLE IF NOT EXISTS ingestion_script_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _input UUID REFERENCES data_type_(_id) NOT NULL,
+    _type UUID REFERENCES data_type_(_id) NOT NULL,
     _creator UUID REFERENCES user_(_id) NOT NULL,
-    script UUID REFERENCES data_type_transform_script_(_id) NOT NULL,
+    cmd UUID REFERENCES ingestion_script_cmd_(_id) NOT NULL,
     label VARCHAR(128) NOT NULL,
     description TEXT
 );
 
-CREATE TABLE IF NOT EXISTS data_type_transform_output_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _transform UUID REFERENCES data_type_transform_(_id) NOT NULL,
-    label VARCHAR(128) NOT NULL,
-    description TEXT,
-    UNIQUE (_transform, label)
-);
-CREATE INDEX IF NOT EXISTS data_type_transform_output__transform ON data_type_transform_output_ (_transform);
-
--- CREATE TABLE IF NOT EXISTS _transform_script_history_ (
---     _id UUID PRIMARY KEY,
---     _data_type_transform UUID REFERENCES data_type_transform_(_id),
---     _path VARCHAR(1024) NOT NULL UNIQUE,
---     _cmd VARCHAR(1024) NOT NULL,
---     _args VARCHAR(64)[] DEFAULT array[]::varchar[],
---     _expiration TIMESTAMP(3) WITH TIME ZONE NOT NULL
--- );
-
-CREATE TYPE data_source_creator_type AS ENUM (
+CREATE TYPE data_creator_type AS ENUM (
     'user',
-    'api',
     'transform'
-);
-
-CREATE TABLE IF NOT EXISTS data_source_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _type UUID REFERENCES data_type_source_(_id) NOT NULL,
-    _creator_type data_source_creator_type NOT NULL,
-    label VARCHAR(256)
-);
-
-CREATE TABLE IF NOT EXISTS data_source_creator_user_ (
-    _id UUID REFERENCES data_source_(_id) PRIMARY KEY,
-    _creator UUID REFERENCES user_(_id) NOT NULL
-);
-
--- CREATE TABLE IF NOT EXISTS data_source_creator_api_ (
---     _id UUID REFERENCES data_source_(_id) PRIMARY KEY,
---     _creator UUID REFERENCES user_(_id) NOT NULL
--- );
-
-CREATE TABLE IF NOT EXISTS data_source_creator_transform_ (
-    _id UUID REFERENCES data_source_(_id) PRIMARY KEY,
-    _creator UUID REFERENCES data_type_transform_(_id) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS data_source_external_ (
-    _id UUID REFERENCES data_source_(_id) PRIMARY KEY,
-    _path VARCHAR(1024) NOT NULL UNIQUE,
-    _ext VARCHAR(64)
 );
 
 CREATE TABLE IF NOT EXISTS data_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _creator UUID REFERENCES user_(_id) NOT NULL,
     _type UUID REFERENCES data_type_(_id) NOT NULL,
+    _creator_type data_creator_type NOT NULL,
     timestamp TIMESTAMP(3) WITH TIME ZONE NOT NULL,
     visibility visibility DEFAULT 'private' NOT NULL
 );
@@ -294,6 +243,42 @@ CREATE TYPE data_type_transform_job_status AS ENUM (
     'failed'
 );
 
+CREATE TABLE IF NOT EXISTS data_source_external_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _data UUID REFERENCES data_(_id) NOT NULL,
+    _source UUID REFERENCES data_type_external_source_(_id) NOT NULL,
+    _path VARCHAR(2048) NOT NULL UNIQUE,
+    label VARCHAR(256)
+);
+
+CREATE TABLE IF NOT EXISTS data_type_transform_cmd_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    _path VARCHAR(2048) NOT NULL UNIQUE,
+    _cmd VARCHAR(1024) NOT NULL,
+    _args VARCHAR(64)[] DEFAULT array[]::varchar[]
+);
+
+CREATE TABLE IF NOT EXISTS data_type_transform_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _type UUID REFERENCES data_type_(_id) NOT NULL,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    _source UUID REFERENCES data_type_(_id) NOT NULL,
+    _destination UUID REFERENCES data_type_(_id) NOT NULL,
+    cmd UUID REFERENCES data_type_transform_cmd_(_id) NOT NULL,
+    label VARCHAR(128) NOT NULL,
+    description TEXT
+);
+
+-- CREATE TABLE IF NOT EXISTS _transform_script_history_ (
+--     _id UUID PRIMARY KEY,
+--     _data_type_transform UUID REFERENCES data_type_transform_(_id),
+--     _path VARCHAR(1024) NOT NULL UNIQUE,
+--     _cmd VARCHAR(1024) NOT NULL,
+--     _args VARCHAR(64)[] DEFAULT array[]::varchar[],
+--     _expiration TIMESTAMP(3) WITH TIME ZONE NOT NULL
+-- );
+
 CREATE TABLE IF NOT EXISTS _data_type_transform_queue_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _transform UUID REFERENCES data_type_transform_(_id) NOT NULL,
@@ -325,6 +310,16 @@ CREATE TRIGGER new_data_type_transform_job
 AFTER INSERT ON _data_type_transform_queue_
 FOR EACH ROW
 EXECUTE FUNCTION notify_data_type_transform_job();
+
+CREATE TABLE IF NOT EXISTS data_creator_user_ (
+    _data UUID REFERENCES data_(_id) PRIMARY KEY,
+    _creator UUID REFERENCES user_(_id) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS data_creator_transform_ (
+    _data UUID REFERENCES data_(_id) PRIMARY KEY,
+    _creator UUID REFERENCES data_type_transform_(_id) NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS data_group_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,

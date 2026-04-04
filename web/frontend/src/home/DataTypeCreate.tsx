@@ -36,6 +36,7 @@ function DataTypeCreateError({ error, resetErrorBoundary }: FallbackProps) {
 interface DataTypeSourceInput {
     id: number;
     label: string;
+    storage: types.DataStorage;
 }
 
 function DataTypeCreate() {
@@ -49,7 +50,7 @@ function DataTypeCreate() {
     });
     const navigate = useNavigate();
 
-    const [sources, setSources] = useState<DataTypeSourceInput[]>([]);
+    const [storage, setStorage] = useState(types.DataStorageInternal);
 
     function cancel(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
@@ -58,44 +59,43 @@ function DataTypeCreate() {
 
         navigate(-1);
     }
-
-    function create_data_type(e: SubmitEvent<HTMLFormElement>) {
-        e.preventDefault();
-
-        const labelInput = document.getElementById(
-            "label",
-        )! as HTMLInputElement;
-        const dataSchemaInput = document.getElementById(
-            "data_schema",
+    async function create_data_type_storage_internal(
+        data: FormData,
+        label: string,
+        description: string,
+    ) {
+        const schemaInput = document.getElementById(
+            "storage[schema]",
         )! as HTMLSelectElement;
-        const recipeInput = document.getElementById(
-            "recipe",
-        ) as HTMLInputElement;
-        labelInput.setCustomValidity("");
-        dataSchemaInput.setCustomValidity("");
 
-        let data = new FormData(e.target);
-        let label = data.get("label")!.toString().trim();
-        let description = data.get("description")!.toString().trim();
-        let schema_str = data.get("data_schema")!.toString();
-        let recipe = recipeInput.files ? recipeInput.files[0] : undefined;
-
-        if (label.length === 0) {
-            labelInput.setCustomValidity("Label must be set");
+        const schema_str = data.get("storage[schema]")!.toString();
+        if (!schema_str) {
+            schemaInput.setCustomValidity("Data schema is reuqired");
+            return;
         }
-        if (data_types.findIndex((type) => type.Label === label) > -1) {
-            labelInput.setCustomValidity("Duplicate label");
+        if (data_schemas.findIndex((s) => s.Id === schema_str) < 0) {
+            schemaInput.setCustomValidity("Data schema does not exist");
+            return;
         }
+        const data_schema = uuid.parse(schema_str);
 
-        const data_schema =
-            schema_str === "" ? undefined : uuid.parse(schema_str);
-        if (
-            data_schema &&
-            data_schemas.findIndex((s) => s.Id === data_schema) < 0
-        ) {
-            dataSchemaInput.setCustomValidity("Data schema does not exist");
-        }
+        await dataService
+            .dataTypeCreateInternal(label, description, data_schema)
+            .then((resp) => {
+                if (resp.status === StatusCodes.OK) {
+                    navigate(-1);
+                    return;
+                }
 
+                console.error(resp);
+            });
+    }
+
+    async function create_data_type_storage_external(
+        data: FormData,
+        label: string,
+        description: string,
+    ) {
         const sources_input = [];
         for (const idx in sources) {
             const key = `source[${idx}]`;
@@ -156,10 +156,65 @@ function DataTypeCreate() {
             });
     }
 
+    async function create_data_type(e: SubmitEvent<HTMLFormElement>) {
+        e.preventDefault();
+
+        const labelInput = document.getElementById(
+            "label",
+        )! as HTMLInputElement;
+        labelInput.setCustomValidity("");
+
+        let data = new FormData(e.target);
+        let label = data.get("label")!.toString().trim();
+        let description = data.get("description")!.toString().trim();
+
+        if (label.length === 0) {
+            labelInput.setCustomValidity("Label must be set");
+            return;
+        }
+        if (data_types.findIndex((type) => type.Label === label) > -1) {
+            labelInput.setCustomValidity("Label already exists");
+            return;
+        }
+
+        switch (storage) {
+            case types.DataStorageInternal:
+                await create_data_type_storage_internal(
+                    data,
+                    label,
+                    description,
+                );
+                break;
+            case types.DataStorageExternal:
+                await create_data_type_storage_external(
+                    data,
+                    label,
+                    description,
+                );
+                break;
+            default:
+                console.error(`Invalid data storage: ${storage}`);
+                const input = document.getElementById(
+                    "storage[internal]",
+                )! as HTMLInputElement;
+                input.setCustomValidity("Invalid value");
+                return;
+        }
+    }
+
     return (
         <div>
-            <div>
-                <h2>Create data type</h2>
+            <div className="px-4 pt-2 flex justify-between">
+                <h2 className="text-lg">Create data type</h2>
+                <div>
+                    <button
+                        type="button"
+                        className="btn-cmd"
+                        onMouseDown={cancel}
+                    >
+                        <icon.Close />
+                    </button>
+                </div>
             </div>
             <form className="flex flex-col gap-4" onSubmit={create_data_type}>
                 <div className="px-4 pt-2 flex flex-col gap-2">
@@ -188,54 +243,51 @@ function DataTypeCreate() {
                         </label>
                     </div>
                     <div>
-                        <SourcesList
-                            sources={sources}
-                            setSources={setSources}
-                        />
+                        <fieldset className="flex gap-2 ">
+                            <legend>Storage</legend>
+                            <label>
+                                <input
+                                    type="radio"
+                                    id={`storage[internal]`}
+                                    name={`storage`}
+                                    value={types.DataStorageInternal}
+                                    onChange={(_) =>
+                                        setStorage(types.DataStorageInternal)
+                                    }
+                                    defaultChecked={
+                                        storage === types.DataStorageInternal
+                                    }
+                                    className="input-basic"
+                                />
+                                <span className="pl-2">Internal</span>
+                            </label>
+                            <label>
+                                <input
+                                    type="radio"
+                                    id={`storage[external]`}
+                                    name={`storage`}
+                                    value={types.DataStorageExternal}
+                                    onChange={(_) =>
+                                        setStorage(types.DataStorageExternal)
+                                    }
+                                    defaultChecked={
+                                        storage === types.DataStorageExternal
+                                    }
+                                    className="input-basic"
+                                />
+                                <span className="pl-2">External</span>
+                            </label>
+                        </fieldset>
                     </div>
-                    <div>
-                        <label className="flex gap-2">
-                            <span>Output schema</span>
-                            <select
-                                id="data_schema"
-                                name="data_schema"
-                                className="input-basic"
-                            >
-                                <option value="">(none)</option>
-                                {data_schemas.map((schema) => (
-                                    <option
-                                        key={schema.Id.toString()}
-                                        value={schema.Id.toString()}
-                                    >
-                                        {schema.Label}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                    </div>
-                    <div>
-                        <label className="flex gap-2">
-                            <span>Recipe</span>
-                            <input
-                                type="file"
-                                id="recipe"
-                                name="recipe"
-                                className="input-basic"
-                                accept=".py"
-                            />
-                        </label>
-                    </div>
+                    {storage === types.DataStorageInternal ? (
+                        <StorageInternal dataSchemas={data_schemas} />
+                    ) : (
+                        <StorageExternal />
+                    )}
                 </div>
                 <div className="px-4 flex gap-2">
                     <button type="submit" className="btn-submit">
-                        Create data type
-                    </button>
-                    <button
-                        type="button"
-                        className="btn-submit"
-                        onMouseDown={cancel}
-                    >
-                        Cancel
+                        Create
                     </button>
                 </div>
             </form>
@@ -243,11 +295,40 @@ function DataTypeCreate() {
     );
 }
 
-interface SourcesListProps {
-    sources: DataTypeSourceInput[];
-    setSources: React.Dispatch<React.SetStateAction<DataTypeSourceInput[]>>;
+interface StorageInternalProps {
+    dataSchemas: types.DataSchema[];
 }
-function SourcesList({ sources, setSources }: SourcesListProps) {
+function StorageInternal({ dataSchemas }: StorageInternalProps) {
+    return (
+        <>
+            <div>
+                <label>
+                    <span className="sr-only">Data schema</span>
+                    <select
+                        id={`storage[schema]`}
+                        name={`storage[schema]`}
+                        className="input-basic"
+                        required
+                    >
+                        <option value="" disabled selected hidden>
+                            Data schema
+                        </option>
+                        {dataSchemas.map((schema) => (
+                            <option value={schema.Id.toString()}>
+                                {schema.Label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+            </div>
+        </>
+    );
+}
+
+interface SourcesListProps {}
+function StorageExternal({}: SourcesListProps) {
+    const [sources, setSources] = useState<DataTypeSourceInput[]>([]);
+
     function add_source(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== common.MouseButton.Primary) {
             return;
@@ -260,6 +341,7 @@ function SourcesList({ sources, setSources }: SourcesListProps) {
         const source = {
             id,
             label: "",
+            storage: types.DataStorageInternal,
         } satisfies DataTypeSourceInput;
         setSources([...sources, source]);
     }
@@ -275,17 +357,23 @@ function SourcesList({ sources, setSources }: SourcesListProps) {
     function update_label(idx: number, e: ChangeEvent<HTMLInputElement>) {
         const source = sources[idx]!;
         source.label = e.target.value;
+        if (source.label.length === 0) {
+            setSources([...sources]);
+            return;
+        }
 
         e.target.setCustomValidity("");
         const matching = sources.findIndex(
             (s) => s.id !== source.id && s.label === e.target.value,
         );
-        if (source.label && matching > -1) {
+        if (matching > -1) {
             e.target.setCustomValidity(
                 `Label must be unique. Duplicates ${matching + 1}.`,
             );
             e.target.reportValidity();
         }
+
+        setSources([...sources]);
     }
 
     return (
@@ -343,42 +431,6 @@ function SourcesList({ sources, setSources }: SourcesListProps) {
                                     </div>
                                 </div>
                                 <div>
-                                    <fieldset>
-                                        <legend className="sr-only">
-                                            Cardinality
-                                        </legend>
-                                        <div className="flex gap-2">
-                                            <label title="Accept a single file">
-                                                <input
-                                                    type="radio"
-                                                    id={`source[${idx}][cardinality][single]`}
-                                                    name={`source[${idx}][cardinality]`}
-                                                    value={
-                                                        types.DataSourceCardinalitySingle
-                                                    }
-                                                    defaultChecked={true}
-                                                />
-                                                <span className="pl-2">
-                                                    Single
-                                                </span>
-                                            </label>
-                                            <label title="Accepts multiple files">
-                                                <input
-                                                    type="radio"
-                                                    id={`source[${idx}][cardinality][multiple]`}
-                                                    name={`source[${idx}][cardinality]`}
-                                                    value={
-                                                        types.DataSourceCardinalityMultiple
-                                                    }
-                                                />
-                                                <span className="pl-2">
-                                                    Multiple
-                                                </span>
-                                            </label>
-                                        </div>
-                                    </fieldset>
-                                </div>
-                                <div>
                                     <label>
                                         <input
                                             type="checkbox"
@@ -402,6 +454,36 @@ function SourcesList({ sources, setSources }: SourcesListProps) {
                                             placeholder="Description"
                                         ></textarea>
                                     </label>
+                                </div>
+                                <div>
+                                    <fieldset className="flex gap-2">
+                                        <legend>Cardinality</legend>
+                                        <label title="Accept a single file">
+                                            <input
+                                                type="radio"
+                                                id={`source[${idx}][cardinality][single]`}
+                                                name={`source[${idx}][cardinality]`}
+                                                value={
+                                                    types.DataSourceCardinalitySingle
+                                                }
+                                                defaultChecked={true}
+                                            />
+                                            <span className="pl-2">Single</span>
+                                        </label>
+                                        <label title="Accepts multiple files">
+                                            <input
+                                                type="radio"
+                                                id={`source[${idx}][cardinality][multiple]`}
+                                                name={`source[${idx}][cardinality]`}
+                                                value={
+                                                    types.DataSourceCardinalityMultiple
+                                                }
+                                            />
+                                            <span className="pl-2">
+                                                Multiple
+                                            </span>
+                                        </label>
+                                    </fieldset>
                                 </div>
                                 <div>
                                     <label title="Comma separated list of accepted file extensions (e.g. 'jpg, png, bmp')">

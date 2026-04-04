@@ -35,6 +35,66 @@ func NewDataHandler(
 }
 
 func (h *DataHandler) DataTypeCreate(c *echo.Context) error {
+	storage := c.QueryParam("storage")
+	switch storage {
+	case string(service.DataStorageInternal):
+		return h.DataTypeCreateInternal(c)
+	case string(service.DataStorageExternal):
+		return h.DataTypeCreateExternal(c)
+	default:
+		return c.NoContent(http.StatusBadRequest)
+	}
+}
+
+func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
+	type dataTypeCreateInternal struct {
+		Label       string
+		Description string
+		Schema      uuid.UUID
+	}
+
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	sufficient_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdDataTypeCreate)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not validate user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !sufficient_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Error("insuffiecient permission to create raw data type")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	var data dataTypeCreateInternal
+	err = c.Bind(&data)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not bind data")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	var description *string
+	if len(data.Description) > 0 {
+		description = &data.Description
+	}
+	err = h.data_service.DataTypeCreateInternal(user_id, data.Label, description, data.Schema)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not create data type")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	sufficient_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdDataTypeCreate)
 	if err != nil {
@@ -87,7 +147,7 @@ func (h *DataHandler) DataTypeCreate(c *echo.Context) error {
 	var recipe *multipart.FileHeader
 	recipe, _ = c.FormFile("recipe")
 
-	err = h.data_service.DataTypeCreate(user_id, label, description, sources, data_schema, recipe)
+	err = h.data_service.DataTypeCreateExternal(user_id, label, description, sources, data_schema, recipe)
 	if err != nil {
 		c.Logger().With(
 			"error", err,

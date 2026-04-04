@@ -130,7 +130,11 @@ function DataTypeListItem({ data_type }: DataTypeListItemProps) {
                 {data_type.Description}
             </div>
             <div className="col-3 whitespace-nowrap">
-                {data_type.Recipe === uuid.NIL ? null : <icon.FileCode />}
+                {data_type.Storage === types.DataStorageInternal ? (
+                    <icon.DataSchema title="Internal storage" />
+                ) : (
+                    <icon.Files title="External storage" />
+                )}
             </div>
             <div className="col-4">
                 <Link

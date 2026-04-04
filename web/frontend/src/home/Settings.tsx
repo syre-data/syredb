@@ -50,6 +50,13 @@ function Nav() {
                     </Link>
                 </div>
                 <div>
+                    <Link to="/ingest-scripts" title="Ingest scripts">
+                        <button type="button" className="btn-cmd">
+                            <icon.Ingest />
+                        </button>
+                    </Link>
+                </div>
+                <div>
                     <Link
                         to="/data-type-transforms"
                         title="Data type transforms"
