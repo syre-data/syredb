@@ -230,20 +230,6 @@ func (h *DataHandler) DataTypesGetAll(c *echo.Context) error {
 
 }
 
-func (h *DataHandler) DataTypeTransformsGetAll(c *echo.Context) error {
-	user_id := c.Get(UserIdKey).(uuid.UUID)
-	transforms, err := h.data_service.DataTypeTransformsGetAll()
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"user", user_id,
-		).Error("could not get data type transforms")
-		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	return c.JSON(http.StatusOK, transforms)
-}
-
 func (h *DataHandler) DataSchemasGetAll(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	schemas, err := h.data_service.DataSchemasGetAll()
@@ -799,7 +785,29 @@ func (h *DataHandler) DownloadRawDataProject(c *echo.Context) error {
 	// return c.Attachment(tmpfile.Name(), "data.zip")
 }
 
+func (h *DataHandler) DataTypeTransformsGetAll(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	transforms, err := h.data_service.DataTypeTransformsGetAll()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not get data type transforms")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.JSON(http.StatusOK, transforms)
+}
+
 func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
+	type transformData struct {
+		Source      uuid.UUID             `form:"source"`
+		Destination uuid.UUID             `form:"destination"`
+		Script      *multipart.FileHeader `form:"script"`
+		Label       string                `form:"label"`
+		Description string                `form:"description"`
+	}
+
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdTransformCreate)
 	if err != nil {
@@ -816,45 +824,35 @@ func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
-	var transform service.DataTypeTransformCreate
-	transform.Source, err = uuid.Parse(c.FormValue("source"))
+	var data transformData
+	err = c.Bind(&data)
 	if err != nil {
 		c.Logger().With(
-			"error", err,
 			"user", user_id,
-			"input", c.FormValue("input"),
-		).Error("could not parse transform input")
+		).Error("could not bind data type transform")
 		return c.NoContent(http.StatusBadRequest)
 	}
-	transform.Destination, err = uuid.Parse(c.FormValue("destination"))
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"user", user_id,
-			"output", c.FormValue("output"),
-		).Error("could not parse transform output")
-		return c.NoContent(http.StatusBadRequest)
-	}
-	if transform.Source == transform.Destination {
-		c.Logger().With(
-			"error", "source and destination schema must be different",
-			"user", user_id,
-		).Error("could not create transform")
-		return c.NoContent(http.StatusBadRequest)
-	}
-	transform.Script, err = c.FormFile("script")
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"user", user_id,
-			"script", c.FormValue("script"),
-		).Error("could not parse transform script")
-		return c.NoContent(http.StatusBadRequest)
-	}
-	transform.Label = c.FormValue("label")
-	transform.Description = c.FormValue("description")
 
-	_, err = h.data_service.DataTypeTransformCreate(user_id, transform)
+	cmd, err := data_type_transform_command_from_file_ext(filepath.Ext(data.Script.Filename))
+	if err != nil {
+		c.Logger().With(
+			"user", user_id,
+			"file name", data.Script.Filename,
+		).Error("could not get data type transform command")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	transform := service.DataTypeTransformCreate{
+		Creator:     user_id,
+		Source:      data.Source,
+		Destination: data.Destination,
+		Label:       data.Label,
+		Description: data.Description,
+		Cmd:         cmd,
+		Args:        []string{},
+		Script:      data.Script,
+	}
+	_, err = h.data_service.DataTypeTransformCreate(transform)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -864,4 +862,13 @@ func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+func data_type_transform_command_from_file_ext(ext string) (string, error) {
+	switch ext {
+	case ".py":
+		return "python", nil
+	default:
+		return "", errors.New("unknown file type")
+	}
 }

@@ -167,6 +167,33 @@ CREATE TABLE IF NOT EXISTS ingestion_script_ (
     description TEXT
 );
 
+CREATE TABLE IF NOT EXISTS data_type_transform_cmd_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    _path VARCHAR(2048) NOT NULL UNIQUE,
+    _cmd VARCHAR(1024) NOT NULL,
+    _args VARCHAR(64)[] DEFAULT array[]::varchar[]
+);
+
+CREATE TABLE IF NOT EXISTS data_type_transform_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    _source UUID REFERENCES data_type_(_id) NOT NULL,
+    _destination UUID REFERENCES data_type_(_id) NOT NULL,
+    cmd UUID REFERENCES data_type_transform_cmd_(_id) NOT NULL,
+    label VARCHAR(128) NOT NULL,
+    description TEXT
+);
+
+-- CREATE TABLE IF NOT EXISTS _transform_script_history_ (
+--     _id UUID PRIMARY KEY,
+--     _data_type_transform UUID REFERENCES data_type_transform_(_id),
+--     _path VARCHAR(1024) NOT NULL UNIQUE,
+--     _cmd VARCHAR(1024) NOT NULL,
+--     _args VARCHAR(64)[] DEFAULT array[]::varchar[],
+--     _expiration TIMESTAMP(3) WITH TIME ZONE NOT NULL
+-- );
+
 CREATE TYPE data_creator_type AS ENUM (
     'user',
     'transform'
@@ -238,13 +265,6 @@ DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION enforce_data_has_owner();
 
-CREATE TYPE data_type_transform_job_status AS ENUM (
-    'pending',
-    'running',
-    'completed',
-    'failed'
-);
-
 CREATE TABLE IF NOT EXISTS data_source_external_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _data UUID REFERENCES data_(_id) NOT NULL,
@@ -253,33 +273,12 @@ CREATE TABLE IF NOT EXISTS data_source_external_ (
     label VARCHAR(256)
 );
 
-CREATE TABLE IF NOT EXISTS data_type_transform_cmd_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _creator UUID REFERENCES user_(_id) NOT NULL,
-    _path VARCHAR(2048) NOT NULL UNIQUE,
-    _cmd VARCHAR(1024) NOT NULL,
-    _args VARCHAR(64)[] DEFAULT array[]::varchar[]
+CREATE TYPE data_type_transform_job_status AS ENUM (
+    'pending',
+    'running',
+    'completed',
+    'failed'
 );
-
-CREATE TABLE IF NOT EXISTS data_type_transform_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _type UUID REFERENCES data_type_(_id) NOT NULL,
-    _creator UUID REFERENCES user_(_id) NOT NULL,
-    _source UUID REFERENCES data_type_(_id) NOT NULL,
-    _destination UUID REFERENCES data_type_(_id) NOT NULL,
-    cmd UUID REFERENCES data_type_transform_cmd_(_id) NOT NULL,
-    label VARCHAR(128) NOT NULL,
-    description TEXT
-);
-
--- CREATE TABLE IF NOT EXISTS _transform_script_history_ (
---     _id UUID PRIMARY KEY,
---     _data_type_transform UUID REFERENCES data_type_transform_(_id),
---     _path VARCHAR(1024) NOT NULL UNIQUE,
---     _cmd VARCHAR(1024) NOT NULL,
---     _args VARCHAR(64)[] DEFAULT array[]::varchar[],
---     _expiration TIMESTAMP(3) WITH TIME ZONE NOT NULL
--- );
 
 CREATE TABLE IF NOT EXISTS _data_type_transform_queue_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,

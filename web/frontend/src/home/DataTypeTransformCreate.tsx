@@ -6,8 +6,9 @@ import {
 import { Loading, SuspenseError } from "@/components";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
-import type { DataTypeTransformCreate, DataTypeTransformRecord } from "@/types";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import type { DataTypeTransformCreate, DataTypeTransformRx } from "@/types";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { StatusCodes } from "http-status-codes";
 import {
     Suspense,
     type ChangeEvent,
@@ -46,6 +47,11 @@ function DataTypeTransformCreate() {
         queryKey: [QUERY_KEY_DATA_TYPES],
         queryFn: dataService.dataTypesGetAll,
     });
+    const { data: transforms } = useSuspenseQuery({
+        queryKey: [QUERY_KEY_DATA_TYPE_TRANSFORMS],
+        queryFn: dataService.dataTypeTransformsGetAll,
+    });
+    const queryClient = useQueryClient();
     const navigate = useNavigate();
 
     function close(e: MouseEvent<HTMLButtonElement>) {
@@ -54,6 +60,20 @@ function DataTypeTransformCreate() {
         }
 
         navigate(-1);
+    }
+
+    function validate_label(e: ChangeEvent<HTMLInputElement>) {
+        const input = e.target;
+        const label = input.value;
+        input.setCustomValidity("");
+        if (label.length === 0) {
+            input.setCustomValidity("Label is required");
+        }
+        if (
+            transforms.findIndex((transform) => transform.Label === label) > -1
+        ) {
+            input.setCustomValidity("Label already exists");
+        }
     }
 
     function validate_source_dest(e: ChangeEvent<HTMLSelectElement>) {
@@ -73,22 +93,19 @@ function DataTypeTransformCreate() {
         }
     }
 
-    function create(e: SubmitEvent<HTMLFormElement>) {
+    function create_data_type_transform(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault();
 
         const data = new FormData(e.target);
-        const label = data.get("label")!.toString().trim();
-        const source = data.get("source")!.toString();
-        const destination = data.get("destination")!.toString();
-        let description = data.get("description")!.toString().trim();
-        const transform = {
-            Source: source,
-            Destination: destination,
-            Label: label,
-            Description: description,
-        } satisfies DataTypeTransformCreate;
+        dataService.dataTypeTransformCreate(data).then((resp) => {
+            if (resp.status == StatusCodes.OK) {
+                queryClient.invalidateQueries({
+                    queryKey: [QUERY_KEY_DATA_TYPE_TRANSFORMS],
+                });
 
-        dataService.dataTypeTransformCreate(transform);
+                navigate(-1);
+            }
+        });
     }
 
     return (
@@ -106,7 +123,10 @@ function DataTypeTransformCreate() {
                 </div>
             </div>
             <div className="pt-4">
-                <form onSubmit={create} className="flex flex-col gap-2 px-4">
+                <form
+                    onSubmit={create_data_type_transform}
+                    className="flex flex-col gap-2 px-4"
+                >
                     <div className="flex flex-col gap-2">
                         <div>
                             <label>
@@ -117,51 +137,73 @@ function DataTypeTransformCreate() {
                                     name="label"
                                     className="input-basic"
                                     placeholder="Label"
+                                    onChange={validate_label}
                                     required
                                 />
                             </label>
                         </div>
-                        <div>
-                            <label className="flex gap-2">
-                                <span>Source</span>
-                                <select
-                                    id="source"
-                                    name="source"
-                                    className="input-basic"
-                                    onChange={validate_source_dest}
-                                >
-                                    {data_types.map((data_type) => (
-                                        <option
-                                            key={data_type.Id.toString()}
-                                            value={data_type.Id.toString()}
-                                            title={data_type.Description ?? ""}
-                                        >
-                                            {data_type.Label}
+                        <div className="flex gap-2 items-center">
+                            <div>
+                                <label>
+                                    <span className="sr-only">
+                                        Source data type
+                                    </span>
+                                    <select
+                                        id="source"
+                                        name="source"
+                                        className="input-basic"
+                                        onChange={validate_source_dest}
+                                        required
+                                    >
+                                        <option disabled hidden selected>
+                                            Source
                                         </option>
-                                    ))}
-                                </select>
-                            </label>
-                        </div>
-                        <div>
-                            <label className="flex gap-2">
-                                <span>Destination</span>
-                                <select
-                                    id="destination"
-                                    name="destination"
-                                    className="input-basic"
-                                    onChange={validate_source_dest}
-                                >
-                                    {data_types.map((data_type) => (
-                                        <option
-                                            key={data_type.Id.toString()}
-                                            value={data_type.Id.toString()}
-                                            title={data_type.Description ?? ""}
-                                        >
-                                            {data_type.Label}
+                                        {data_types.map((data_type) => (
+                                            <option
+                                                key={data_type.Id.toString()}
+                                                value={data_type.Id.toString()}
+                                                title={
+                                                    data_type.Description ?? ""
+                                                }
+                                            >
+                                                {data_type.Label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+                            <div>
+                                <Icon.ArrowRight />
+                            </div>
+                            <div>
+                                <label>
+                                    <span className="sr-only">
+                                        Destination data type
+                                    </span>
+                                    <select
+                                        id="destination"
+                                        name="destination"
+                                        className="input-basic"
+                                        onChange={validate_source_dest}
+                                        required
+                                    >
+                                        <option disabled hidden selected>
+                                            Destination
                                         </option>
-                                    ))}
-                                </select>
-                            </label>
+                                        {data_types.map((data_type) => (
+                                            <option
+                                                key={data_type.Id.toString()}
+                                                value={data_type.Id.toString()}
+                                                title={
+                                                    data_type.Description ?? ""
+                                                }
+                                            >
+                                                {data_type.Label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
                         </div>
                         <div>
                             <label className="flex gap-2">

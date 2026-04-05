@@ -136,22 +136,6 @@ function dataSchemaUpdate(update: types.DataSchemaUpdate): Promise<Response> {
     });
 }
 
-function dataTypeTransformCreate(
-    transform: types.DataTypeTransformCreate,
-): Promise<Response> {
-    const data = new FormData();
-    data.append("input", transform.Source.toString());
-    data.append("output", transform.Destination.toString());
-    data.append("label", transform.Label);
-    data.append("description", transform.Description);
-    data.append("script", transform.Script);
-    return fetch("/api/transform", {
-        credentials: "same-origin",
-        method: "post",
-        body: data,
-    });
-}
-
 function parseDataFileToSchema(
     file: File,
     schema: types.DataSchemaRx,
@@ -278,10 +262,18 @@ function dataSchemaResourcesGet(
     }).then(async (resp) => (await resp.json()) as types.DataSchemaResources);
 }
 
-function dataTypeTransformsGetAll(): Promise<types.DataTypeTransformRx[]> {
+function dataTypeTransformsGetAll(): Promise<types.DataTypeTransform[]> {
     return fetch("/api/data-type-transforms", {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataTypeTransformRx[]);
+    }).then(async (resp) => (await resp.json()) as types.DataTypeTransform[]);
+}
+
+function dataTypeTransformCreate(data: FormData): Promise<Response> {
+    return fetch("/api/data-type-transform", {
+        credentials: "same-origin",
+        method: "post",
+        body: data,
+    });
 }
 
 function ingestionScriptsGetAll(): Promise<types.IngestionScript[]> {

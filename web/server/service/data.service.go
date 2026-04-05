@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -2463,20 +2464,38 @@ func (s *DataService) ProjectRawDataAll(project uuid.UUID) ([]DataRecord, error)
 
 type DataTypeTransformRx struct {
 	Id          uuid.UUID `db:"_id"`
+	Creator     uuid.UUID `db:"_creator"`
 	Source      uuid.UUID `db:"_source"`
 	Destination uuid.UUID `db:"_destination"`
-	Script      string    `db:"_script"`
-	Creator     User      `db:"_creator"`
+	Cmd         uuid.UUID `db:"cmd"`
 	Label       string    `db:"label"`
 	Description string    `db:"description"`
 }
 
-func (s *DataService) DataTypeTransformsGetAll() ([]DataTypeTransformRx, error) {
-	query :=
-		`SELECT _id, _source, _destination, _script, _creator, label, description
+type DataTypeTransformCmdRx struct {
+	Id      uuid.UUID `db:"_id"`
+	Creator uuid.UUID `db:"_creator"`
+	Path    string    `db:"_path"`
+	Cmd     string    `db:"_cmd"`
+	Args    []string  `db:"_args"`
+}
+
+type DataTypeTransform struct {
+	Id          uuid.UUID
+	Creator     uuid.UUID
+	Source      uuid.UUID
+	Destination uuid.UUID
+	Label       string
+	Description string
+	Cmd         DataTypeTransformCmdRx
+}
+
+func (s *DataService) DataTypeTransformsGetAll() ([]DataTypeTransform, error) {
+	transform_query :=
+		`SELECT _id, _creator, _source, _destination, cmd, label, description
 		FROM data_type_transform_`
-	rows, _ := s.db.Conn.Query(s.ctx, query)
-	transforms, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeTransformRx])
+	rows, _ := s.db.Conn.Query(s.ctx, transform_query)
+	transform_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeTransformRx])
 	if err != nil {
 		s.logger.With(
 			"error", err,
@@ -2484,30 +2503,62 @@ func (s *DataService) DataTypeTransformsGetAll() ([]DataTypeTransformRx, error) 
 		return nil, err
 	}
 
+	cmd_ids := make([]uuid.UUID, len(transform_rxs))
+	for idx, transform := range transform_rxs {
+		cmd_ids[idx] = transform.Cmd
+	}
+	cmd_query :=
+		`SELECT _id, _creator, _path, _cmd, _args FROM data_type_transform_cmd_
+		WHERE _id=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, cmd_query, cmd_ids)
+	cmd_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeTransformCmdRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get data type transform commands")
+		return nil, err
+	}
+
+	transforms := make([]DataTypeTransform, len(transform_rxs))
+	for idx := range transforms {
+		transforms[idx].Id = transform_rxs[idx].Id
+		transforms[idx].Creator = transform_rxs[idx].Creator
+		transforms[idx].Source = transform_rxs[idx].Source
+		transforms[idx].Destination = transform_rxs[idx].Destination
+		transforms[idx].Label = transform_rxs[idx].Label
+		transforms[idx].Description = transform_rxs[idx].Description
+
+		cmd_idx := slices.IndexFunc(cmd_rxs, func(cmd DataTypeTransformCmdRx) bool {
+			return cmd.Id == transform_rxs[idx].Cmd
+		})
+		if cmd_idx < 0 {
+			panic("invalid data type transform command")
+		}
+
+		transforms[idx].Cmd = cmd_rxs[cmd_idx]
+	}
+
 	return transforms, nil
 }
 
 type DataTypeTransformCreate struct {
+	Creator     uuid.UUID
 	Source      uuid.UUID
 	Destination uuid.UUID
-	Script      *multipart.FileHeader
 	Label       string
 	Description string
+	Cmd         string
+	Args        []string
+	Script      *multipart.FileHeader
 }
 
-func (s *DataService) DataTypeTransformCreate(user uuid.UUID, transform DataTypeTransformCreate) (uuid.UUID, error) {
+func (s *DataService) DataTypeTransformCreate(transform DataTypeTransformCreate) (uuid.UUID, error) {
 	transform_path, err := s.app_service.AppDataDir(AppDataDirTransform)
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"key", AppDataKeyDataPath,
 		).Error("could not get app data path")
-		return uuid.Nil, err
-	}
-
-	transform_id, err := uuid.NewV7()
-	if err != nil {
-		s.logger.With("error", err).Error("could not create transform id")
 		return uuid.Nil, err
 	}
 
@@ -2518,44 +2569,64 @@ func (s *DataService) DataTypeTransformCreate(user uuid.UUID, transform DataType
 	}
 	defer tx.Rollback(s.ctx)
 
-	script_ext := filepath.Ext(transform.Script.Filename)
-	transform_script_name := fmt.Sprintf("%s%s", transform_id, script_ext)
-	script_path := filepath.Join(transform_path, transform_script_name)
+	s.logger.Debug("fielname", "filename", transform.Script.Filename)
+	filename := fmt.Sprintf("%s.%s", rand.Text(), transform.Script.Filename)
+	script_path := filepath.Join(transform_path, filename)
 
-	query :=
-		`INSERT INTO data_type_transform_ (_id, _source, _destination, _script, _creator, label, description) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`
-	_, err = tx.Exec(
+	var cmd_id uuid.UUID
+	cmd_query :=
+		`INSERT INTO data_type_transform_cmd_ (_creator, _path, _cmd, _args)
+		VALUES ($1, $2, $3, $4) RETURNING _id`
+	err = tx.QueryRow(
 		s.ctx,
-		query,
-		transform_id,
-		transform.Source,
-		transform.Destination,
+		cmd_query,
+		transform.Creator,
 		script_path,
-		user,
-		transform.Label,
-		transform.Description,
-	)
+		transform.Cmd,
+		transform.Args,
+	).Scan(&cmd_id)
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"user", user,
+			"transform", transform,
+		).Error("could not create data type transform command")
+		return uuid.Nil, err
+	}
+
+	var transform_id uuid.UUID
+	transform_query :=
+		`INSERT INTO data_type_transform_ 
+		(_creator, _source, _destination, cmd, label, description) 
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING _id`
+	err = tx.QueryRow(
+		s.ctx,
+		transform_query,
+		transform.Creator,
+		transform.Source,
+		transform.Destination,
+		cmd_id,
+		transform.Label,
+		transform.Description,
+	).Scan(&transform_id)
+	if err != nil {
+		s.logger.With(
+			"error", err,
 			"transform", transform,
 		).Error("could not create transform")
 		return uuid.Nil, err
 	}
 
-	trigger_fn_name := fmt.Sprintf("enqueue_transform_job_%s", uuid_to_sql_string(transform_id))
+	trigger_fn_name := fmt.Sprintf("enqueue_data_type_transform_job_%s", uuid_to_sql_string(transform_id))
 	trigger_fn_query := fmt.Sprintf(
 		`CREATE FUNCTION %s()
 		RETURNS TRIGGER
 		LANGUAGE plpgsql
 		AS $$
 		BEGIN
-			INSERT INTO _transform_queue_ (_transform, _payload)
+			INSERT INTO _data_type_transform_queue_ (_transform, _payload)
 			VALUES (
 				'%s'::uuid,
-				NEW._sample_data
+				NEW._data
 			);
 
 			RETURN NEW;
@@ -2574,11 +2645,12 @@ func (s *DataService) DataTypeTransformCreate(user uuid.UUID, transform DataType
 
 	trigger_query := fmt.Sprintf(
 		`CREATE TRIGGER %s_after_insert
-		AFTER INSERT ON %s
+		AFTER INSERT ON data_
 		FOR EACH ROW
+		WHEN (NEW._type = '%s'::uuid)
 		EXECUTE FUNCTION %s();`,
 		trigger_fn_name,
-		data_storage_table_name_from_schema_id(transform.Source),
+		transform.Source.String(),
 		trigger_fn_name,
 	)
 	_, err = tx.Exec(s.ctx, trigger_query)
@@ -2589,41 +2661,11 @@ func (s *DataService) DataTypeTransformCreate(user uuid.UUID, transform DataType
 		return uuid.Nil, err
 	}
 
-	err = os.MkdirAll(transform_path, os.ModePerm)
+	err = SaveFormFile(transform.Script, script_path)
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"path", transform_path,
-		).Error("could not create transform directory")
-		return uuid.Nil, err
-	}
-
-	dst, err := os.Create(script_path)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"path", script_path,
-		).Error("could not create transform script file")
-		return uuid.Nil, err
-	}
-	defer dst.Close()
-
-	src, err := transform.Script.Open()
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"script", transform.Script.Filename,
-		).Error("could not open transform script file")
-		return uuid.Nil, err
-	}
-	defer src.Close()
-
-	_, err = io.Copy(dst, src)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"path", script_path,
-		).Error("could not write to transform script file")
+		).Error("could not create transform script")
 		return uuid.Nil, err
 	}
 

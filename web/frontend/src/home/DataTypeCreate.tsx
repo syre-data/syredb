@@ -314,7 +314,10 @@ function StorageInternal({ dataSchemas }: StorageInternalProps) {
                             Data schema
                         </option>
                         {dataSchemas.map((schema) => (
-                            <option value={schema.Id.toString()}>
+                            <option
+                                key={schema.Id.toString()}
+                                value={schema.Id.toString()}
+                            >
                                 {schema.Label}
                             </option>
                         ))}

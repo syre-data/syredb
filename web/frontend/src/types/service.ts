@@ -282,19 +282,38 @@ export interface SampleDataUserPermissions {
 }
 export interface DataTypeTransformRx {
   Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
   Source: uuid.UUIDTypes;
   Destination: uuid.UUIDTypes;
-  Script: string;
-  Creator: User;
+  Cmd: uuid.UUIDTypes;
   Label: string;
   Description: string;
 }
-export interface DataTypeTransformCreate {
+export interface DataTypeTransformCmdRx {
+  Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Path: string;
+  Cmd: string;
+  Args: string[];
+}
+export interface DataTypeTransform {
+  Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
   Source: uuid.UUIDTypes;
   Destination: uuid.UUIDTypes;
-  Script?: any /* multipart.FileHeader */;
   Label: string;
   Description: string;
+  Cmd: DataTypeTransformCmdRx;
+}
+export interface DataTypeTransformCreate {
+  Creator: uuid.UUIDTypes;
+  Source: uuid.UUIDTypes;
+  Destination: uuid.UUIDTypes;
+  Label: string;
+  Description: string;
+  Cmd: string;
+  Args: string[];
+  Script?: any /* multipart.FileHeader */;
 }
 
 //////////

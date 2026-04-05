@@ -29,7 +29,7 @@ export default function () {
                         className="btn-cmd"
                         onMouseDown={back}
                     >
-                        <icon.BackArrow />
+                        <icon.ArrowBack />
                     </button>
                 </div>
             </div>

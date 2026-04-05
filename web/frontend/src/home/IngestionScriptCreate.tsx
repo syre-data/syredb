@@ -6,7 +6,6 @@ import {
 import { Loading, SuspenseError } from "@/components";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
-import type { IngestionScript } from "@/types";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import {
     Suspense,
@@ -15,7 +14,7 @@ import {
     type SubmitEvent,
 } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 
 export default function () {
     return (
@@ -117,6 +116,7 @@ function IngestionScripts() {
                                 name="label"
                                 placeholder="Label"
                                 className="input-basic"
+                                onChange={validate_label}
                                 required
                             />
                         </label>

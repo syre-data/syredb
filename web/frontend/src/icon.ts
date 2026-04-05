@@ -16,6 +16,7 @@ import {
     FaRegCircleXmark,
     FaSpinner,
     FaTrash,
+    FaArrowRight,
     FaX,
 } from "react-icons/fa6";
 import { FcMultipleInputs } from "react-icons/fc";
@@ -27,7 +28,8 @@ import { BsFile, BsFiles } from "react-icons/bs";
 import { LuSquareFunction } from "react-icons/lu";
 
 export default {
-    BackArrow: IoIosArrowRoundBack,
+    ArrowBack: IoIosArrowRoundBack,
+    ArrowRight: FaArrowRight,
     CaretDown: FaCaretDown,
     Check: FaCheck,
     CircleX: FaRegCircleXmark,
