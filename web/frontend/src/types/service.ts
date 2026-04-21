@@ -24,8 +24,9 @@ export const AppDataKeyAccountLogo = "app:account:logo";
 export const AppDataKeyDataPath = "app:data:path";
 export type AppDataKey = typeof AppDataKeyEmailUrl | typeof AppDataKeyEmailUsername | typeof AppDataKeyEmailPassword | typeof AppDataKeyEmailFrom | typeof AppDataKeyAccountName | typeof AppDataKeyAccountLogo | typeof AppDataKeyDataPath;
 export const AppDataDirIngestionScript = "ingestion";
+export const AppDataDirIngestionScriptSource = "ingestion_source";
 export const AppDataDirTransform = "transform";
-export type AppDataDir = typeof AppDataDirIngestionScript | typeof AppDataDirTransform;
+export type AppDataDir = typeof AppDataDirIngestionScript | typeof AppDataDirIngestionScriptSource | typeof AppDataDirTransform;
 
 //////////
 // source: common.go
@@ -97,15 +98,13 @@ export interface DataTypeExternal {
   Active: boolean;
   Sources: DataTypeExternalSourceRx[];
 }
-export interface DataTypeSourceCreate {
+export interface ExternalSourceCreate {
   Cardinality: DataSourceCardinality;
   Required: boolean;
   ExtensionFilter: string[];
   Label: string;
   Description?: string;
 }
-export const FieldsPerRecord = 5;
-export const RecordOffset = 1;
 export interface DataTypeSourceUpdate {
   Id: uuid.UUIDTypes;
   Description: string;
@@ -132,11 +131,13 @@ export interface DataSchemaFieldRx {
   Id: uuid.UUIDTypes;
   Label: string;
   DType: ValueType;
+  Index: number /* uint */;
   Description: string;
 }
 export interface DataSchemaField {
   Label: string;
   DType: ValueType;
+  Index: number /* uint */;
   Description: string;
 }
 export interface DataSchema {
@@ -150,16 +151,12 @@ export interface DataSchema {
 export interface InvalidSampleDataColumnLabels {
   Labels: string[];
 }
-export const PATTERN = `^[\\w_]+\$`;
 export interface DataSchemaCreate {
   Cardinality: DataSchemaCardinality;
   Schema: DataSchemaField[];
   Label: string;
   Description: string;
 }
-export const NumFields = 3;
-export const ArgsOffset = 1;
-export const TABLE_NAME_PREFIX = "data_schema";
 export interface DataSchemaUpdate {
   Id: uuid.UUIDTypes;
   Label: string;
@@ -202,6 +199,15 @@ export interface IngestionScriptCmdRx {
   Cmd: string;
   Args: string[];
 }
+export interface IngestionScriptSourceRx {
+  Id: uuid.UUIDTypes;
+  Script: uuid.UUIDTypes;
+  Label: string;
+  Required: boolean;
+  Cardinality: DataSourceCardinality;
+  Description: string;
+  ExtFilter: string[];
+}
 export interface IngestionScript {
   Id: uuid.UUIDTypes;
   Type: uuid.UUIDTypes;
@@ -209,6 +215,7 @@ export interface IngestionScript {
   Label: string;
   Description: string;
   Cmd: IngestionScriptCmdRx;
+  Sources: IngestionScriptSourceRx[];
 }
 export interface IngestionScriptCreate {
   Type: uuid.UUIDTypes;
@@ -218,6 +225,7 @@ export interface IngestionScriptCreate {
   Path: string;
   Cmd: string;
   Args: string[];
+  Sources: ExternalSourceCreate[];
 }
 /**
  * StoredData represents the actual data stored.
@@ -315,14 +323,42 @@ export interface DataTypeTransformCreate {
   Args: string[];
   Script?: any /* multipart.FileHeader */;
 }
+export const DataCreatorTypeUser = "user";
+export const DataCreatorTypeTransform = "transform";
+export type DataCreatorType = typeof DataCreatorTypeUser | typeof DataCreatorTypeTransform;
+export interface Note {
+  Timestamp: Date;
+  Visibility: Visibility;
+  Content: string;
+}
+export type DataIngestionMethod = string;
+export const DataIngestionManual: DataIngestionMethod = "manual";
+export const DataIngestionScript: DataIngestionMethod = "script";
+export interface DataCreate {
+  Type: uuid.UUIDTypes;
+  CreatorType: DataCreatorType;
+  Timestamp: Date;
+  Visibility: Visibility;
+  Properties: Property[];
+  Notes: Note[];
+  IngestionMethod: DataIngestionMethod;
+  IngestionScript: uuid.UUIDTypes;
+  IngestionScriptSources: { [key: uuid.UUIDTypes]: (any /* multipart.FileHeader */ | undefined)[]};
+}
+export const DataPermissionKeyOwner = "owner";
+export const DataPermissionKeyRead = "read";
+export const DataPermissionKeyNoteCreate = "note_create";
+export const DataPermissionKeyPropertiesModify = "properties_modify";
+export type DataPermissionKey = typeof DataPermissionKeyOwner | typeof DataPermissionKeyRead | typeof DataPermissionKeyNoteCreate | typeof DataPermissionKeyPropertiesModify;
 
 //////////
 // source: project.service.go
 
 export const ProjectPermissionOwner = "owner";
-export const ProjectPermissionCreateSample = "create_sample";
 export const ProjectPermissionRead = "read";
-export type ProjectPermission = typeof ProjectPermissionOwner | typeof ProjectPermissionCreateSample | typeof ProjectPermissionRead;
+export const ProjectPermissionDataCreate = "data_create";
+export const ProjectPermissionDataGroupCreate = "data_group_create";
+export type ProjectPermission = typeof ProjectPermissionOwner | typeof ProjectPermissionRead | typeof ProjectPermissionDataCreate | typeof ProjectPermissionDataGroupCreate;
 export const ProjectSamplePermissionModifyLabel = "modify_label";
 export const ProjectSamplePermissionModifyTags = "modify_tags";
 export const ProjectSamplePermissionModifyProperties = "modify_properties";
@@ -365,11 +401,9 @@ export interface ProjectSampleNote {
   Timestamp: Date;
   Content: string;
 }
-export interface ProjectSample {
+export interface ProjectData {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
-  MembershipCreator: uuid.UUIDTypes;
-  MembershipCreated: Date;
   Label: string;
   Tags: string[];
   Properties: Property[];
@@ -388,7 +422,7 @@ export interface DerivedData {
   SampleData: uuid.UUIDTypes;
   Schema: uuid.UUIDTypes;
 }
-export interface ProjectSampleGroup {
+export interface ProjectDataGroup {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
   Label: string;
@@ -396,22 +430,21 @@ export interface ProjectSampleGroup {
   Properties: Property[];
   Samples: uuid.UUIDTypes[];
 }
-export interface SampleGroupRelation {
+export interface DataGroupRelation {
   Parent: uuid.UUIDTypes;
   Child: uuid.UUIDTypes;
 }
 export interface ProjectResources {
   Project: Project;
-  ProjectTags: string[];
-  Samples: ProjectSample[];
-  RawData: DataRecord[];
+  Tags: string[];
+  Data: ProjectData[];
   DataSchemas: DataSchema[];
-  SampleGroups: ProjectSampleGroup[];
-  SampleGroupRelations: SampleGroupRelation[];
+  DataGroups: ProjectDataGroup[];
+  DataGroupRelations: DataGroupRelation[];
   ProjectNoteCount: number /* uint */;
   ProjectPermissions: ProjectPermission[];
 }
-export interface ProjectSampleInfo {
+export interface ProjectDataInfo {
   Id: uuid.UUIDTypes;
   Tags: string[];
   Properties: Property[];
@@ -511,6 +544,12 @@ export interface ProjectSampleMembership {
   Timestamp: Date;
   Label: string;
 }
+export interface ProjectDataMembership {
+  Project: uuid.UUIDTypes;
+  Data: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Label: string;
+}
 
 //////////
 // source: sample.service.go
@@ -531,19 +570,20 @@ export const AppEmailUrlKey = "app:email:url";
 export const AppEmailUsernameKey = "app:email:username";
 export const AppEmailPasswordKey = "app:email:password";
 export const AppEmailFromKey = "app:email:from";
-export const DbPermissionIdOwner = "owner";
-export const DbPermissionIdUserCreate = "user_create";
-export const DbPermissionIdUserModify = "user_modify";
-export const DbPermissionIdDataSchemaCreate = "data_schema_create";
-export const DbPermissionIdDataSchemaModify = "data_schema_modify";
-export const DbPermissionIdDataTypeCreate = "data_type_create";
-export const DbPermissionIdDataTypeModify = "data_type_modify";
-export const DbPermissionIdIngestionScriptCreate = "ingestion_script_create";
-export const DbPermissionIdIngestionScriptModify = "ingestion_script_modify";
-export const DbPermissionIdTransformCreate = "transform_create";
-export const DbPermissionIdTransformModify = "transform_modify";
-export const DbPermissionIdProjectCreate = "project_create";
-export type DbPermissionId = typeof DbPermissionIdOwner | typeof DbPermissionIdUserCreate | typeof DbPermissionIdUserModify | typeof DbPermissionIdDataSchemaCreate | typeof DbPermissionIdDataSchemaModify | typeof DbPermissionIdDataTypeCreate | typeof DbPermissionIdDataTypeModify | typeof DbPermissionIdIngestionScriptCreate | typeof DbPermissionIdIngestionScriptModify | typeof DbPermissionIdTransformCreate | typeof DbPermissionIdTransformModify | typeof DbPermissionIdProjectCreate;
+export const DbPermissionOwner = "owner";
+export const DbPermissionUserCreate = "user_create";
+export const DbPermissionUserModify = "user_modify";
+export const DbPermissionDataSchemaCreate = "data_schema_create";
+export const DbPermissionDataSchemaModify = "data_schema_modify";
+export const DbPermissionDataTypeCreate = "data_type_create";
+export const DbPermissionDataTypeModify = "data_type_modify";
+export const DbPermissionIngestionScriptCreate = "ingestion_script_create";
+export const DbPermissionIngestionScriptModify = "ingestion_script_modify";
+export const DbPermissionTransformCreate = "transform_create";
+export const DbPermissionTransformModify = "transform_modify";
+export const DbPermissionProjectCreate = "project_create";
+export const DbPermissionDataCreate = "data_create";
+export type DbPermission = typeof DbPermissionOwner | typeof DbPermissionUserCreate | typeof DbPermissionUserModify | typeof DbPermissionDataSchemaCreate | typeof DbPermissionDataSchemaModify | typeof DbPermissionDataTypeCreate | typeof DbPermissionDataTypeModify | typeof DbPermissionIngestionScriptCreate | typeof DbPermissionIngestionScriptModify | typeof DbPermissionTransformCreate | typeof DbPermissionTransformModify | typeof DbPermissionProjectCreate | typeof DbPermissionDataCreate;
 export const AccountStatusActive = "active";
 export const AccountStatusDeactivated = "deactivated";
 export type AccountStatus = typeof AccountStatusActive | typeof AccountStatusDeactivated;
@@ -560,11 +600,11 @@ export interface User {
   AccountStatus: AccountStatus;
   Email: string;
   Name: string;
-  DbPermissions: DbPermissionId[];
+  DbPermissions: DbPermission[];
 }
 export interface UserCreate {
   Email: string;
   Name: string;
   Password: string;
-  DbPermissions: DbPermissionId[];
+  DbPermissions: DbPermission[];
 }

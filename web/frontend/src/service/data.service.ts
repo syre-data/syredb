@@ -1,4 +1,5 @@
 import * as types from "@/types";
+import type { IngestionScriptCreateData } from "@/types/handler";
 import * as uuid from "uuid";
 
 function dataTypesGetAll(): Promise<types.DataType[]> {
@@ -30,7 +31,7 @@ function dataTypeCreateInternal(
 
 function dataTypeCreateExternal(
     label: string,
-    sources: types.DataTypeSourceCreate[],
+    sources: types.DataTypeExternalSourceRx[],
     description?: string,
     data_schema?: Uint8Array<ArrayBufferLike>,
     recipe?: File,
@@ -257,7 +258,7 @@ function dataSchemaResourcesGet(
 ): Promise<types.DataSchemaResources> {
     const params = new URLSearchParams();
     params.append("id", data_schema_id.toString());
-    return fetch("/api/data-schema?${params}", {
+    return fetch(`/api/data-schema?${params}`, {
         credentials: "same-origin",
     }).then(async (resp) => (await resp.json()) as types.DataSchemaResources);
 }
@@ -282,11 +283,51 @@ function ingestionScriptsGetAll(): Promise<types.IngestionScript[]> {
     }).then(async (resp) => (await resp.json()) as types.IngestionScript[]);
 }
 
-function ingestionScriptCreate(data: FormData): Promise<Response> {
+function ingestionScriptCreate(
+    script_data: IngestionScriptCreateData,
+    script: File,
+): Promise<Response> {
+    const data = new FormData();
+    data.set("data", JSON.stringify(script_data));
+    data.set("script", script);
+
     return fetch("/api/ingestion-script", {
         credentials: "same-origin",
         method: "post",
         body: data,
+    });
+}
+
+function ingestionScriptsForDataType(
+    data_type: uuid.UUIDTypes,
+): Promise<types.IngestionScript[]> {
+    const params = new URLSearchParams();
+    params.set("data_type", data_type.toString());
+    return fetch(`/api/ingestion-scripts?${params}`, {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.IngestionScript[]);
+}
+
+function projectDataCreate(
+    project: uuid.UUIDTypes,
+    data: types.DataCreate[],
+    labels: string[],
+    sourceFiles: [string, File][],
+) {
+    const params = new URLSearchParams();
+    params.set("project", project.toString());
+
+    const body = new FormData();
+    body.set("data", JSON.stringify(data));
+    body.set("project_labels", JSON.stringify(labels));
+    for (const [key, file] of sourceFiles) {
+        body.set(key, file);
+    }
+
+    return fetch(`/api/data?${params}`, {
+        credentials: "same-origin",
+        method: "post",
+        body,
     });
 }
 
@@ -309,4 +350,6 @@ export default {
     dataTypeTransformsGetAll,
     ingestionScriptsGetAll,
     ingestionScriptCreate,
+    ingestionScriptsForDataType,
+    projectDataCreate,
 };

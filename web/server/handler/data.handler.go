@@ -8,8 +8,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"syredb/database"
 	"syredb/service"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -60,7 +62,7 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 	}
 
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	sufficient_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdDataTypeCreate)
+	sufficient_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionDataTypeCreate)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -102,7 +104,7 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 
 func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	sufficient_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdDataTypeCreate)
+	sufficient_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionDataTypeCreate)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -128,7 +130,7 @@ func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 		description = &description_str
 	}
 
-	var sources []service.DataTypeSourceCreate
+	var sources []service.ExternalSourceCreate
 	err = json.Unmarshal([]byte(c.FormValue("sources")), &sources)
 	if err != nil {
 		c.Logger().With(
@@ -257,7 +259,7 @@ func (h *DataHandler) DataSchemaCreate(c *echo.Context) error {
 		).Error("could not bind data")
 	}
 
-	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdDataSchemaCreate)
+	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionDataSchemaCreate)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -333,19 +335,49 @@ func (h *DataHandler) DataSchemaUpdate(c *echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (h *DataHandler) IngestionScriptsGetAll(c *echo.Context) error {
-	scripts, err := h.data_service.IngestionScriptsGetAll()
-	if err != nil {
-		c.Logger().With("error", err).Error("could not get ingestion scripts")
-		return c.NoContent(http.StatusInternalServerError)
-	}
+func (h *DataHandler) IngestionScriptsGet(c *echo.Context) error {
+	data_type := c.QueryParam("data_type")
+	if data_type == "" {
+		scripts, err := h.data_service.IngestionScriptsGetAll()
+		if err != nil {
+			c.Logger().With("error", err).Error("could not get ingestion scripts")
+			return c.NoContent(http.StatusInternalServerError)
+		}
 
-	return c.JSON(http.StatusOK, scripts)
+		return c.JSON(http.StatusOK, scripts)
+	} else {
+		data_type_id, err := uuid.Parse(data_type)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"data type", data_type,
+			).Error("could not parse data type")
+			return c.NoContent(http.StatusBadRequest)
+		}
+
+		scripts, err := h.data_service.IngestionScriptsGetForDataType(data_type_id)
+		if err != nil {
+			c.Logger().With("error", err).Error("could not get ingestion scripts")
+			return c.NoContent(http.StatusInternalServerError)
+		}
+
+		return c.JSON(http.StatusOK, scripts)
+
+	}
+}
+
+type IngestionScriptCreateData struct {
+	Type        uuid.UUID
+	Label       string
+	Description string
+	Cmd         string
+	Args        []string
+	Sources     []service.ExternalSourceCreate
 }
 
 func (h *DataHandler) IngestionScriptCreate(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdIngestionScriptCreate)
+	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIngestionScriptCreate)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -360,20 +392,15 @@ func (h *DataHandler) IngestionScriptCreate(c *echo.Context) error {
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
-	label := c.FormValue("label")
-	if label == "" {
-		c.Logger().With("user", user_id).Error("empty label")
-		return c.NoContent(http.StatusBadRequest)
-	}
-	data_type, err := uuid.Parse(c.FormValue("data_type"))
+	var data IngestionScriptCreateData
+	err = json.Unmarshal([]byte(c.FormValue("data")), &data)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
-			"user", user_id,
-		).Error("invalid data type")
+			"data", c.FormValue("data"),
+		).Error("could not parse data")
 		return c.NoContent(http.StatusBadRequest)
 	}
-	description := c.FormValue("description")
 
 	file, err := c.FormFile("script")
 	if err != nil {
@@ -396,13 +423,14 @@ func (h *DataHandler) IngestionScriptCreate(c *echo.Context) error {
 
 	path := filepath.Join(root_dir, filename)
 	script := service.IngestionScriptCreate{
-		Type:        data_type,
+		Type:        data.Type,
 		Creator:     user_id,
-		Label:       label,
-		Description: description,
+		Label:       data.Label,
+		Description: data.Description,
 		Path:        path,
 		Cmd:         cmd,
 		Args:        []string{},
+		Sources:     data.Sources,
 	}
 	h.data_service.IngestionScriptCreate(script, file)
 
@@ -809,7 +837,7 @@ func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 	}
 
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIdTransformCreate)
+	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionTransformCreate)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -871,4 +899,210 @@ func data_type_transform_command_from_file_ext(ext string) (string, error) {
 	default:
 		return "", errors.New("unknown file type")
 	}
+}
+
+type DataCreate struct {
+	Type                   uuid.UUID
+	CreatorType            service.DataCreatorType
+	Timestamp              time.Time
+	Visibility             service.Visibility
+	Properties             []service.Property
+	Notes                  []service.Note
+	IngestionMethod        service.DataIngestionMethod
+	IngestionScript        uuid.UUID
+	IngestionScriptSources map[string]string
+}
+
+func (h *DataHandler) DataCreate(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+
+	sufficient_permission, err := h.user_service.UserHasPermission(
+		user_id,
+		service.DbPermissionDataCreate,
+	)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not get user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !sufficient_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Error("insufficient permission to create data")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	project_id := uuid.Nil
+	project_id_str := c.QueryParam("project")
+	if project_id_str != "" {
+		project_id, err = uuid.Parse(project_id_str)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"id", c.Param("id"),
+			).Error("could not parse project id")
+			return c.NoContent(http.StatusBadRequest)
+		}
+
+		sufficient_permission_project, err := h.project_service.UserHasProjectPermission(
+			service.ProjectPermissionDataCreate,
+			user_id,
+			project_id,
+		)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"user", user_id,
+				"project", project_id,
+			).Error("could not get user project permissions")
+			return c.NoContent(http.StatusInternalServerError)
+		}
+		if !sufficient_permission_project {
+			c.Logger().With(
+				"user", user_id,
+				"project", project_id,
+			).Error("insufficient permission to create project data")
+			return c.NoContent(http.StatusUnauthorized)
+		}
+	}
+
+	var info []DataCreate
+	err = json.Unmarshal([]byte(c.FormValue("data")), &info)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", c.FormValue("data"),
+		).Error("could not parse data")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	data := make([]service.DataCreate, len(info))
+	for idx, datum := range info {
+		data[idx].Type = datum.Type
+		data[idx].CreatorType = datum.CreatorType
+		data[idx].Timestamp = datum.Timestamp
+		data[idx].Visibility = datum.Visibility
+		data[idx].Properties = datum.Properties
+		data[idx].Notes = datum.Notes
+		data[idx].IngestionMethod = datum.IngestionMethod
+		data[idx].IngestionScript = datum.IngestionScript
+		data[idx].IngestionScriptSources = make(map[uuid.UUID][]*multipart.FileHeader, len(datum.IngestionScriptSources))
+		for source, name := range datum.IngestionScriptSources {
+			file, err := c.FormFile(name)
+			if err != nil {
+				c.Logger().With(
+					"error", err,
+					"source", source,
+					"file", name,
+				).Error("could not get form file")
+				return c.NoContent(http.StatusBadRequest)
+			}
+
+			sid, err := uuid.Parse(source)
+			if err != nil {
+				c.Logger().With(
+					"error", err,
+					"source", source,
+				).Error("could not parse data source id")
+				return c.NoContent(http.StatusBadRequest)
+			}
+
+			data[idx].IngestionScriptSources[sid] = []*multipart.FileHeader{file}
+		}
+	}
+
+	err = h.dataCreateValidateIngestionScriptSources(data)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not get data ingestion script")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	data_ids, err := h.data_service.DataCreate(data, user_id, user_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data", info,
+		).Error("could not create data")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	if project_id != uuid.Nil {
+		var project_labels []string
+		err = json.Unmarshal([]byte(c.FormValue("project_labels")), &project_labels)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"data", c.FormValue("data"),
+			).Error("could not parse data")
+			return c.NoContent(http.StatusBadRequest)
+		}
+
+		memberships := make([]service.ProjectDataMembership, len(data_ids))
+		for idx, data_id := range data_ids {
+			memberships[idx] = service.ProjectDataMembership{
+				Project: project_id,
+				Data:    data_id,
+				Creator: user_id,
+				Label:   "",
+			}
+		}
+		err = h.project_service.DataMembershipCreate(memberships)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"project", project_id,
+				"data", data_ids,
+			).Error("could not create project data memberships")
+			return c.NoContent(http.StatusInternalServerError)
+		}
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+func (h *DataHandler) dataCreateValidateIngestionScriptSources(data []service.DataCreate) error {
+	ingestion_scripts := []service.IngestionScript{}
+	for _, datum := range data {
+		script_idx := slices.IndexFunc(ingestion_scripts, func(script service.IngestionScript) bool {
+			return script.Id == datum.IngestionScript
+		})
+		if script_idx > -1 {
+			continue
+		}
+
+		script, err := h.data_service.IngestionScriptGet(datum.IngestionScript)
+		if err != nil {
+			return fmt.Errorf("could not get ingestion script %s: %w", datum.IngestionScript, err)
+		}
+
+		ingestion_scripts = append(ingestion_scripts, script)
+	}
+
+	for _, datum := range data {
+		script_idx := slices.IndexFunc(ingestion_scripts, func(script service.IngestionScript) bool {
+			return script.Id == datum.IngestionScript
+		})
+		script := ingestion_scripts[script_idx]
+
+		for _, src := range script.Sources {
+			files, exists := datum.IngestionScriptSources[src.Id]
+			if src.Required {
+				if !exists {
+					return errors.New("data is missing required ingestion script source")
+				}
+			}
+			if src.Cardinality == service.DataSourceCardinalitySingle {
+				if len(files) > 1 {
+					return errors.New("data has multiple sources for single cardinality source")
+				}
+			}
+		}
+	}
+
+	return nil
 }

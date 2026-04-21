@@ -260,6 +260,7 @@ export function InputPropertyValue({
             const quant_props = { ...props };
             delete quant_props.id;
             delete quant_props.name;
+            delete quant_props.placeholder;
             let default_magnitude;
             let default_unit;
             if (defaultValue) {

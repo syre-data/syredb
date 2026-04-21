@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS _db_permission_ (
     label VARCHAR(128) UNIQUE NOT NULL, 
     description TEXT
 );
-INSERT INTO _db_permission_ VALUES
+INSERT INTO (_id, label, description) _db_permission_ VALUES
     ('owner', 'Owner', 'Full permissions'),
     ('user_create', 'Create users', 'Create new users'),
     ('user_modify', 'Modify users', 'Modify users'),
@@ -41,7 +41,8 @@ INSERT INTO _db_permission_ VALUES
     ('ingestion_script_modify', 'Modify ingestion script', 'Modify ingestion scripts'),
     ('data_type_transform_create', 'Create data type transform', 'Create new data type transforms'),
     ('data_type_transform_modify', 'Modify data type transforms', 'Modify existing data type transforms'),
-    ('project_create', 'Create project', 'Create new projects');
+    ('project_create', 'Create project', 'Create new projects'),
+    ('data_create', 'Create data', 'Create new data');
 
 CREATE TABLE IF NOT EXISTS db_user_permission_ (
     _user UUID REFERENCES user_(_id) NOT NULL,
@@ -111,8 +112,10 @@ CREATE TABLE IF NOT EXISTS data_schema_field_ (
     _id UUID REFERENCES data_schema_(_id) NOT NULL,
     _label VARCHAR(128) NOT NULL,
     _dtype value_type NOT NULL, 
+    index INT NOT NULL,
     description TEXT,
-    PRIMARY KEY (_id, _label)
+    PRIMARY KEY (_id, _label),
+    UNIQUE (_id, index)
 );
 
 CREATE TYPE data_source_storage AS ENUM (
@@ -134,7 +137,7 @@ CREATE TABLE IF NOT EXISTS data_type_internal_storage_ (
     _schema UUID REFERENCES data_schema_(_id)
 );
 
-CREATE TYPE data_type_external_source_cardinality AS ENUM (
+CREATE TYPE source_cardinality AS ENUM (
     'single',
     'multiple'
 );
@@ -144,7 +147,7 @@ CREATE TABLE IF NOT EXISTS data_type_external_source_ (
     _data_type UUID REFERENCES data_type_(_id) NOT NULL,
     _label VARCHAR(128) NOT NULL,
     _required boolean NOT NULL,
-    _cardinality data_type_external_source_cardinality NOT NULL,
+    _cardinality source_cardinality NOT NULL,
     description TEXT,
     ext_filter VARCHAR(64)[],
     UNIQUE (_data_type, _label)
@@ -167,6 +170,17 @@ CREATE TABLE IF NOT EXISTS ingestion_script_ (
     description TEXT
 );
 
+CREATE TABLE IF NOT EXISTS ingestion_script_source_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _script UUID REFERENCES ingestion_script_(_id) NOT NULL,
+    _label VARCHAR(128) NOT NULL,
+    _required boolean NOT NULL,
+    _cardinality source_cardinality NOT NULL,
+    description TEXT,
+    ext_filter VARCHAR(64)[],
+    UNIQUE (_script, _label)
+);
+
 CREATE TABLE IF NOT EXISTS data_type_transform_cmd_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _creator UUID REFERENCES user_(_id) NOT NULL,
@@ -181,8 +195,9 @@ CREATE TABLE IF NOT EXISTS data_type_transform_ (
     _source UUID REFERENCES data_type_(_id) NOT NULL,
     _destination UUID REFERENCES data_type_(_id) NOT NULL,
     cmd UUID REFERENCES data_type_transform_cmd_(_id) NOT NULL,
+    active boolean DEFAULT true NOT NULL
     label VARCHAR(128) NOT NULL,
-    description TEXT
+    description TEXT,
 );
 
 -- CREATE TABLE IF NOT EXISTS _transform_script_history_ (
@@ -265,6 +280,13 @@ DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION enforce_data_has_owner();
 
+CREATE TABLE IF NOT EXISTS data_ingestion_script_source_ (
+    _data UUID REFERENCES data_(_id) NOT NULL,
+    _source UUID REFERENCES ingestion_script_source_(_id) NOT NULL,
+    _path VARCHAR(2048) PRIMARY KEY,
+    _filename VARCHAR(256) NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS data_source_external_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _data UUID REFERENCES data_(_id) NOT NULL,
@@ -291,6 +313,25 @@ CREATE TABLE IF NOT EXISTS _data_type_transform_queue_ (
 );
 CREATE INDEX IF NOT EXISTS _data_type_transform_queue__status ON _data_type_transform_queue_ (status);
 
+CREATE OR REPLACE FUNCTION enqueue_data_type_transform_job()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO _data_type_transform_queue_ (_transform, _payload)
+    SELECT t._id, NEW._id
+    FROM data_type_transform_ t
+    WHERE t._source = NEW._type AND t.active=true;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER enqueue_data_type_transform
+AFTER INSERT ON data_
+FOR EACH ROW
+EXECUTE FUNCTION enqueue_data_type_transform_job();
+
 CREATE OR REPLACE FUNCTION notify_data_type_transform_job()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -299,7 +340,7 @@ BEGIN
     PERFORM pg_notify(
         'new_data_type_transform_job',
         json_build_object(
-            'id', NEW.id
+            'id', NEW._id
         )::text
     );
 
@@ -435,6 +476,7 @@ CREATE TABLE IF NOT EXISTS _project_permission_ (
 );
 INSERT INTO _project_permission_ (_id, label, description) VALUES 
     ('owner', 'Owner', 'Full permission'),
+    ('data_create', 'Create data', 'Create data in the project'),
     ('data_group_create', 'Create data groups', 'Create data groups in the project'),
     ('read', 'Read', 'Project is visible');
 
@@ -456,6 +498,40 @@ CREATE TABLE IF NOT EXISTS project_note_ (
     _project UUID REFERENCES project_(_id) NOT NULL,
     _creator UUID REFERENCES user_(_id) NOT NULL,
     note TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS project_data_membership_ (
+    _project UUID REFERENCES project_(_id) NOT NULL,
+    _data UUID REFERENCES data_(_id) NOT NULL,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    label VARCHAR(256),
+    PRIMARY KEY (_project, _data)
+);
+
+CREATE TABLE IF NOT EXISTS project_data_tag_ (
+    _project UUID REFERENCES project_(_id) NOT NULL,
+    _data UUID REFERENCES data_(_id) NOT NULL,
+    _tag VARCHAR(512) NOT NULL,
+    PRIMARY KEY (_project, _data, _tag)
+);
+
+CREATE TABLE IF NOT EXISTS project_data_property_ (
+    _project UUID REFERENCES project_(_id) NOT NULL,
+    _data UUID REFERENCES data_(_id) NOT NULL,
+    _key VARCHAR(512) NOT NULL,
+    _type property_type NOT NULL,
+    value JSONB NOT NULL,
+    PRIMARY KEY (_project, _data, _key)
+);
+
+CREATE TABLE IF NOT EXISTS project_data_note_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _project UUID REFERENCES project_(_id) NOT NULL,
+    _data UUID REFERENCES data_(_id) NOT NULL,
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    timestamp TIMESTAMP(3) WITH TIME ZONE DEFAULT NOW() NOT NULL, 
+    visibility visibility DEFAULT 'private' NOT NULL,
+    content TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS project_data_group_tag_ (

@@ -1,4 +1,4 @@
-import { AiOutlinePlus, AiOutlineReload } from "react-icons/ai";
+import { AiOutlinePlus, AiOutlineReload, AiOutlineMinus } from "react-icons/ai";
 import {
     FaUser,
     FaCheck,
@@ -48,6 +48,7 @@ export default {
     Ingest: FcMultipleInputs,
     LeftArrow: FaArrowLeft,
     Logout: IoIosLogOut,
+    Minus: AiOutlineMinus,
     Pen: MdEdit,
     Plus: AiOutlinePlus,
     PowerOff: FaPowerOff,

@@ -135,7 +135,7 @@ function DataTypeCreate() {
                 Label: label,
                 Description: description,
                 ExtensionFilter: extension_filter,
-            } satisfies types.DataTypeSourceCreate);
+            } satisfies types.ExternalSourceCreate);
         }
 
         dataService

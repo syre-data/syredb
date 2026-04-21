@@ -47,7 +47,7 @@ func (h *UserHandler) UserGet(c *echo.Context) error {
 	return c.JSON(http.StatusOK, user)
 }
 
-func (h *UserHandler) guard_user_has_permission(c *echo.Context, permission service.DbPermissionId) error {
+func (h *UserHandler) guard_user_has_permission(c *echo.Context, permission service.DbPermission) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	is_owner, err := h.user_service.UserHasPermission(user_id, permission)
 	if err != nil {
@@ -62,7 +62,7 @@ func (h *UserHandler) guard_user_has_permission(c *echo.Context, permission serv
 }
 
 func (h *UserHandler) UsersAll(c *echo.Context) error {
-	err := h.guard_user_has_permission(c, service.DbPermissionIdUserModify)
+	err := h.guard_user_has_permission(c, service.DbPermissionUserModify)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (h *UserHandler) UsersAll(c *echo.Context) error {
 }
 
 func (h *UserHandler) UserCreate(c *echo.Context) error {
-	err := h.guard_user_has_permission(c, service.DbPermissionIdUserCreate)
+	err := h.guard_user_has_permission(c, service.DbPermissionUserCreate)
 	if err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (h *UserHandler) UserCreate(c *echo.Context) error {
 }
 
 func (h *UserHandler) UserUpdate(c *echo.Context) error {
-	err := h.guard_user_has_permission(c, service.DbPermissionIdUserModify)
+	err := h.guard_user_has_permission(c, service.DbPermissionUserModify)
 	if err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ func (h *UserHandler) UserUpdate(c *echo.Context) error {
 }
 
 func (h *UserHandler) DeactivateUser(c *echo.Context) error {
-	err := h.guard_user_has_permission(c, service.DbPermissionIdUserModify)
+	err := h.guard_user_has_permission(c, service.DbPermissionUserModify)
 	if err != nil {
 		return err
 	}

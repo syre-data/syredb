@@ -366,7 +366,7 @@ func (s *DataService) DataTypeGetById(id uuid.UUID) (DataType, error) {
 // 	return id, nil
 // }
 
-type DataTypeSourceCreate struct {
+type ExternalSourceCreate struct {
 	Cardinality     DataSourceCardinality
 	Required        bool
 	ExtensionFilter []string
@@ -374,7 +374,7 @@ type DataTypeSourceCreate struct {
 	Description     *string
 }
 
-func (s *DataService) DataTypeSourcesCreate(tx pgx.Tx, data_type uuid.UUID, sources []DataTypeSourceCreate) ([]uuid.UUID, error) {
+func (s *DataService) DataTypeSourcesCreate(tx pgx.Tx, data_type uuid.UUID, sources []ExternalSourceCreate) ([]uuid.UUID, error) {
 	if len(sources) == 0 {
 		return []uuid.UUID{}, nil
 	}
@@ -386,12 +386,12 @@ func (s *DataService) DataTypeSourcesCreate(tx pgx.Tx, data_type uuid.UUID, sour
 		VALUES`,
 	)
 
-	const FieldsPerRecord = 5
-	const RecordOffset = 1
-	args := make([]any, len(sources)*FieldsPerRecord+RecordOffset)
+	const fieldsPerRecord = 5
+	const recordOffset = 1
+	args := make([]any, len(sources)*fieldsPerRecord+recordOffset)
 	args[0] = data_type
 	for idx, source := range sources {
-		cardinality_idx := idx*FieldsPerRecord + RecordOffset
+		cardinality_idx := idx*fieldsPerRecord + recordOffset
 		required_idx := cardinality_idx + 1
 		extension_filter_idx := required_idx + 1
 		label_idx := extension_filter_idx + 1
@@ -520,7 +520,7 @@ func (s *DataService) DataTypeCreateExternal(
 	creator uuid.UUID,
 	label string,
 	description *string,
-	sources []DataTypeSourceCreate,
+	sources []ExternalSourceCreate,
 	schema uuid.UUID,
 	recipe *multipart.FileHeader,
 ) error {
@@ -665,12 +665,14 @@ type DataSchemaFieldRx struct {
 	Id          uuid.UUID `db:"_id"`
 	Label       string    `db:"_label"`
 	DType       ValueType `db:"_dtype"`
+	Index       uint      `db:"index"`
 	Description string    `db:"description"`
 }
 
 type DataSchemaField struct {
 	Label       string    `db:"_label"`
 	DType       ValueType `db:"_dtype"`
+	Index       uint      `db:"index"`
 	Description string    `db:"description"`
 }
 
@@ -685,7 +687,7 @@ type DataSchema struct {
 
 func (s *DataService) DataSchemasGetAll() ([]DataSchema, error) {
 	schemas_query :=
-		`SELECT _id, _creator, _cardinality, label, description
+		`SELECT _id, _creator, _cardinality, label, index, description
 		FROM data_schema_ ORDER BY _id DESC`
 	rows, err := s.db.Conn.Query(s.ctx, schemas_query)
 	if err != nil {
@@ -720,10 +722,14 @@ func (s *DataService) DataSchemasGetAll() ([]DataSchema, error) {
 				fields = append(fields, DataSchemaField{
 					Label:       field.Label,
 					DType:       field.DType,
+					Index:       field.Index,
 					Description: field.Description,
 				})
 			}
 		}
+		slices.SortFunc(fields, func(a DataSchemaField, b DataSchemaField) int {
+			return int(a.Index) - int(b.Index)
+		})
 
 		schemas[idx] = DataSchema{
 			Id:          schema_rx.Id,
@@ -759,7 +765,7 @@ func (s *DataService) DataSchemasGetById(schema_ids []uuid.UUID) ([]DataSchema, 
 	}
 
 	fields_query :=
-		`SELECT _id, _label, _dtype, description 
+		`SELECT _id, _label, _dtype, index, description 
 		FROM data_schema_field_ WHERE _id=ANY($1)`
 	rows, err = s.db.Conn.Query(s.ctx, fields_query, schema_ids)
 	if err != nil {
@@ -781,11 +787,15 @@ func (s *DataService) DataSchemasGetById(schema_ids []uuid.UUID) ([]DataSchema, 
 				fields = append(fields, DataSchemaField{
 					Label:       field.Label,
 					DType:       field.DType,
+					Index:       field.Index,
 					Description: field.Description,
 				})
 			}
 		}
 
+		slices.SortFunc(fields, func(a DataSchemaField, b DataSchemaField) int {
+			return int(a.Index) - int(b.Index)
+		})
 		schemas[idx] = DataSchema{
 			Id:          schema_rx.Id,
 			Creator:     schema_rx.Creator,
@@ -827,8 +837,8 @@ func validate_data_schema_storage_table_column_labels(schema []DataSchemaField) 
 }
 
 func is_valid_table_column_label(label string) bool {
-	const PATTERN = `^[\w_]+$`
-	match, err := regexp.MatchString(PATTERN, label)
+	const pattern = `^[\w_]+$`
+	match, err := regexp.MatchString(pattern, label)
 	if err != nil {
 		panic(err)
 	}
@@ -844,7 +854,7 @@ type DataSchemaCreate struct {
 }
 
 func (s *DataService) DataSchemaCreate(user_id uuid.UUID, data_schema DataSchemaCreate) error {
-	has_permission, err := s.user_service.UserHasPermission(user_id, DbPermissionIdDataSchemaCreate)
+	has_permission, err := s.user_service.UserHasPermission(user_id, DbPermissionDataSchemaCreate)
 	if err != nil {
 		return err
 	}
@@ -931,26 +941,28 @@ func (s *DataService) data_schema_create_schema(
 	var query strings.Builder
 	query.WriteString(
 		`INSERT INTO data_schema_field_ 
-		(_id, _label, _dtype, description) VALUES `,
+		(_id, _label, _dtype, index, description) VALUES `,
 	)
 
-	const NumFields = 3
-	const ArgsOffset = 1
-	args := make([]any, len(schema)*NumFields+ArgsOffset)
+	const numFields = 3
+	const argsOffset = 1
+	args := make([]any, len(schema)*numFields+argsOffset)
 	args[0] = schema_id
 	for idx, field := range schema {
 		if idx > 0 {
 			query.WriteString(", ")
 		}
 
-		idx_label := idx*NumFields + ArgsOffset
+		idx_label := idx*numFields + argsOffset
 		idx_dtype := idx_label + 1
-		idx_description := idx_dtype + 1
+		idx_index := idx_dtype + 1
+		idx_description := idx_index + 1
 		fmt.Fprintf(
 			&query,
-			"($1, $%d, $%d, $%d)",
+			"($1, $%d, $%d, $%d, $%d)",
 			idx_label+1,
 			idx_dtype+1,
+			idx_index+1,
 			idx_description+1,
 		)
 
@@ -961,6 +973,7 @@ func (s *DataService) data_schema_create_schema(
 
 		args[idx_label] = field.Label
 		args[idx_dtype] = field.DType
+		args[idx_index] = idx
 		args[idx_description] = description
 	}
 
@@ -1015,11 +1028,11 @@ func data_storage_table_columns_from_schema(cardinality DataSchemaCardinality, s
 }
 
 func data_storage_table_name_from_schema_id(schema_id uuid.UUID) string {
-	const TABLE_NAME_PREFIX = "data_schema"
+	const tableNamePrefix = "data_schema"
 	schema_name := strings.ReplaceAll(schema_id.String(), "-", "_")
 	return fmt.Sprintf(
 		"%s_%s_",
-		TABLE_NAME_PREFIX,
+		tableNamePrefix,
 		schema_name,
 	)
 }
@@ -1135,7 +1148,7 @@ func (s *DataService) DataSchemaGetResources(schema_id uuid.UUID) (DataSchemaRes
 	}
 
 	fields_query :=
-		`SELECT _id, _label, _dtype, description 
+		`SELECT _id, _label, _dtype, index, description 
 		FROM data_schema_field_ WHERE _id=$1`
 	rows, err = s.db.Conn.Query(s.ctx, fields_query, schema_id)
 	if err != nil {
@@ -1154,9 +1167,13 @@ func (s *DataService) DataSchemaGetResources(schema_id uuid.UUID) (DataSchemaRes
 		fields[idx] = DataSchemaField{
 			Label:       field.Label,
 			DType:       field.DType,
+			Index:       field.Index,
 			Description: field.Description,
 		}
 	}
+	slices.SortFunc(fields, func(a DataSchemaField, b DataSchemaField) int {
+		return int(a.Index) - int(b.Index)
+	})
 
 	schema := DataSchema{
 		Id:          schema_rx.Id,
@@ -1177,7 +1194,7 @@ func (s *DataService) DataSchemaGetResources(schema_id uuid.UUID) (DataSchemaRes
 
 	permissions_query := "SELECT _permission FROM db_user_permission_ WHERE _user=$1"
 	rows, _ = s.db.Conn.Query(s.ctx, permissions_query, schema.Creator)
-	permissions, err := pgx.CollectRows(rows, pgx.RowTo[DbPermissionId])
+	permissions, err := pgx.CollectRows(rows, pgx.RowTo[DbPermission])
 	if err != nil {
 		s.logger.With("error", err, "user", schema.Creator).Error("could not get data schema creator permissions")
 		return DataSchemaResources{}, err
@@ -1400,6 +1417,16 @@ type IngestionScriptCmdRx struct {
 	Args    []string  `db:"_args"`
 }
 
+type IngestionScriptSourceRx struct {
+	Id          uuid.UUID             `db:"_id"`
+	Script      uuid.UUID             `db:"_script"`
+	Label       string                `db:"_label"`
+	Required    bool                  `db:"_required"`
+	Cardinality DataSourceCardinality `db:"_cardinality"`
+	Description string                `db:"description"`
+	ExtFilter   []string              `db:"ext_filter"`
+}
+
 type IngestionScript struct {
 	Id          uuid.UUID
 	Type        uuid.UUID
@@ -1407,6 +1434,7 @@ type IngestionScript struct {
 	Label       string
 	Description string
 	Cmd         IngestionScriptCmdRx
+	Sources     []IngestionScriptSourceRx
 }
 
 func (s *DataService) IngestionScriptsGetAll() ([]IngestionScript, error) {
@@ -1458,6 +1486,127 @@ func (s *DataService) IngestionScriptsGetAll() ([]IngestionScript, error) {
 	return scripts, nil
 }
 
+func (s *DataService) IngestionScriptsGetForDataType(data_type uuid.UUID) ([]IngestionScript, error) {
+	script_query :=
+		`SELECT _id, _type, _creator, cmd, label, description
+		FROM ingestion_script_ WHERE _type=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, script_query, data_type)
+	script_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[IngestionScriptRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion scripts")
+		return nil, err
+	}
+	cmd_ids := make([]uuid.UUID, len(script_rxs))
+	for idx, script := range script_rxs {
+		cmd_ids[idx] = script.Cmd
+	}
+
+	cmd_query :=
+		`SELECT _id, _creator, _path, _cmd, _args 
+		FROM ingestion_script_cmd_ WHERE _id=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, cmd_query, cmd_ids)
+	cmd_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[IngestionScriptCmdRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion script commands")
+		return nil, err
+	}
+
+	script_ids := make([]uuid.UUID, len(script_rxs))
+	for idx, script := range script_rxs {
+		script_ids[idx] = script.Id
+	}
+	source_query :=
+		`SELECT _id, _script, _label, _required, _cardinality, description, ext_filter
+		FROM ingestion_script_source_ WHERE _script=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, source_query, script_ids)
+	sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[IngestionScriptSourceRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion script source")
+		return nil, err
+	}
+
+	scripts := make([]IngestionScript, len(script_rxs))
+	for idx := range scripts {
+		script_id := script_rxs[idx].Id
+		scripts[idx].Id = script_id
+		scripts[idx].Type = script_rxs[idx].Type
+		scripts[idx].Creator = script_rxs[idx].Creator
+		scripts[idx].Label = script_rxs[idx].Label
+		scripts[idx].Description = script_rxs[idx].Description
+		cmd_idx := slices.IndexFunc(cmd_rxs, func(cmd IngestionScriptCmdRx) bool {
+			return cmd.Id == script_rxs[idx].Cmd
+		})
+		if cmd_idx < 0 {
+			panic("invalid ingestion script command")
+		}
+		scripts[idx].Cmd = cmd_rxs[cmd_idx]
+
+		for _, source := range sources {
+			if source.Script == script_id {
+				scripts[idx].Sources = append(scripts[idx].Sources, source)
+			}
+		}
+	}
+
+	return scripts, nil
+}
+
+func (s *DataService) IngestionScriptGet(id uuid.UUID) (IngestionScript, error) {
+	script_query :=
+		`SELECT _id, _type, _creator, cmd, label, description
+		FROM ingestion_script_ WHERE _id=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, script_query, id)
+	script_rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[IngestionScriptRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion scripts")
+		return IngestionScript{}, err
+	}
+
+	cmd_query :=
+		`SELECT _id, _creator, _path, _cmd, _args 
+		FROM ingestion_script_cmd_ WHERE _id=$1`
+	rows, _ = s.db.Conn.Query(s.ctx, cmd_query, script_rx.Cmd)
+	cmd_rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[IngestionScriptCmdRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion script command")
+		return IngestionScript{}, err
+	}
+
+	source_query :=
+		`SELECT _id, _script, _label, _required, _cardinality, description, ext_filter
+		FROM ingestion_script_source_ WHERE _script=$1`
+	rows, _ = s.db.Conn.Query(s.ctx, source_query, id)
+	sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[IngestionScriptSourceRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion script source")
+		return IngestionScript{}, err
+	}
+
+	script := IngestionScript{
+		Id:          id,
+		Type:        script_rx.Type,
+		Creator:     script_rx.Creator,
+		Label:       script_rx.Label,
+		Description: script_rx.Description,
+		Cmd:         cmd_rx,
+		Sources:     sources,
+	}
+
+	return script, nil
+}
+
 type IngestionScriptCreate struct {
 	Type        uuid.UUID
 	Creator     uuid.UUID
@@ -1466,6 +1615,7 @@ type IngestionScriptCreate struct {
 	Path        string
 	Cmd         string
 	Args        []string
+	Sources     []ExternalSourceCreate
 }
 
 func (s *DataService) IngestionScriptCreate(script IngestionScriptCreate, file *multipart.FileHeader) error {
@@ -1486,12 +1636,67 @@ func (s *DataService) IngestionScriptCreate(script IngestionScriptCreate, file *
 		return err
 	}
 
+	var script_id uuid.UUID
 	script_query :=
 		`INSERT INTO ingestion_script_ (_type, _creator, cmd, label, description)
-		VALUES ($1, $2, $3, $4, $5)`
-	_, err = tx.Exec(s.ctx, script_query, script.Type, script.Creator, cmd_id, script.Label, script.Description)
+		VALUES ($1, $2, $3, $4, $5) RETURNING _id`
+	err = tx.QueryRow(
+		s.ctx,
+		script_query,
+		script.Type,
+		script.Creator,
+		cmd_id,
+		script.Label,
+		script.Description,
+	).Scan(&script_id)
 	if err != nil {
 		s.logger.With("script", script).Error("could not create ingestion script")
+		return err
+	}
+
+	const sourceQueryFields = 5
+	const sourceQueryOffset = 1
+	source_query_args := make([]any, sourceQueryOffset+sourceQueryFields*len(script.Sources))
+	source_query_args[0] = script_id
+	var source_query strings.Builder
+	source_query.WriteString(
+		`INSERT INTO ingestion_script_source_ 
+		(_script, _label, _required, _cardinality, description, ext_filter)
+		VALUES `,
+	)
+	for idx, source := range script.Sources {
+		if idx > 0 {
+			source_query.WriteString(", ")
+		}
+
+		label_idx := idx*sourceQueryFields + sourceQueryOffset
+		required_idx := label_idx + 1
+		cardinality_idx := required_idx + 1
+		description_idx := cardinality_idx + 1
+		ext_filter_idx := description_idx + 1
+		source_query_args[label_idx] = source.Label
+		source_query_args[required_idx] = source.Required
+		source_query_args[cardinality_idx] = source.Cardinality
+		source_query_args[description_idx] = source.Description
+		source_query_args[ext_filter_idx] = source.ExtensionFilter
+		fmt.Fprintf(
+			&source_query,
+			"($1, $%d, $%d, $%d, $%d, $%d)",
+			label_idx+1,
+			required_idx+1,
+			cardinality_idx+1,
+			description_idx+1,
+			ext_filter_idx+1,
+		)
+	}
+
+	_, err = tx.Exec(s.ctx, source_query.String(), source_query_args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"query", source_query.String(),
+			"args", source_query_args,
+		).Error("could not create ingestion script sources")
 		return err
 	}
 
@@ -2616,51 +2821,6 @@ func (s *DataService) DataTypeTransformCreate(transform DataTypeTransformCreate)
 		return uuid.Nil, err
 	}
 
-	trigger_fn_name := fmt.Sprintf("enqueue_data_type_transform_job_%s", uuid_to_sql_string(transform_id))
-	trigger_fn_query := fmt.Sprintf(
-		`CREATE FUNCTION %s()
-		RETURNS TRIGGER
-		LANGUAGE plpgsql
-		AS $$
-		BEGIN
-			INSERT INTO _data_type_transform_queue_ (_transform, _payload)
-			VALUES (
-				'%s'::uuid,
-				NEW._data
-			);
-
-			RETURN NEW;
-		END;
-		$$;`,
-		trigger_fn_name,
-		transform_id,
-	)
-	_, err = tx.Exec(s.ctx, trigger_fn_query)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-		).Error("could not create transform trigger function")
-		return uuid.Nil, err
-	}
-
-	trigger_query := fmt.Sprintf(
-		`CREATE TRIGGER %s_after_insert
-		AFTER INSERT ON data_
-		FOR EACH ROW
-		WHEN (NEW._type = '%s'::uuid)
-		EXECUTE FUNCTION %s();`,
-		trigger_fn_name,
-		transform.Source.String(),
-		trigger_fn_name,
-	)
-	_, err = tx.Exec(s.ctx, trigger_query)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-		).Error("could not create transform trigger")
-		return uuid.Nil, err
-	}
-
 	err = SaveFormFile(transform.Script, script_path)
 	if err != nil {
 		s.logger.With(
@@ -2675,4 +2835,371 @@ func (s *DataService) DataTypeTransformCreate(transform DataTypeTransformCreate)
 		return uuid.Nil, err
 	}
 	return transform_id, nil
+}
+
+type DataCreatorType string
+
+const (
+	DataCreatorTypeUser      DataCreatorType = "user"
+	DataCreatorTypeTransform DataCreatorType = "transform"
+)
+
+type Note struct {
+	Timestamp  time.Time
+	Visibility Visibility
+	Content    string
+}
+
+type DataIngestionMethod string
+
+const (
+	DataIngestionManual DataIngestionMethod = "manual"
+	DataIngestionScript DataIngestionMethod = "script"
+)
+
+type DataCreate struct {
+	Type                   uuid.UUID
+	CreatorType            DataCreatorType
+	Timestamp              time.Time
+	Visibility             Visibility
+	Properties             []Property
+	Notes                  []Note
+	IngestionMethod        DataIngestionMethod
+	IngestionScript        uuid.UUID
+	IngestionScriptSources map[uuid.UUID][]*multipart.FileHeader
+}
+
+func (s *DataService) DataCreate(
+	data []DataCreate,
+	creator uuid.UUID,
+	owner uuid.UUID,
+) ([]uuid.UUID, error) {
+	if len(data) == 0 {
+		return []uuid.UUID{}, nil
+	}
+
+	tx, err := s.db.Conn.Begin(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not begin transaction")
+		return nil, err
+	}
+	defer tx.Rollback(s.ctx)
+
+	data_ids := make([]uuid.UUID, len(data))
+	data_query :=
+		`INSERT INTO data_ (_type, _creator_type, timestamp, visibility) 
+		VALUES ($1, $2, $3, $4) RETURNING _id`
+	for idx, datum := range data {
+		var id uuid.UUID
+		err = tx.QueryRow(
+			s.ctx,
+			data_query,
+			datum.Type,
+			datum.CreatorType,
+			datum.Timestamp,
+			datum.Visibility,
+		).Scan(&id)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", datum,
+			).Error("could not create data")
+			return nil, err
+		}
+
+		data_ids[idx] = id
+	}
+
+	err = s.dataCreatePermissions(tx, data_ids, owner)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.dataCreateProperties(tx, data, data_ids)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.dataCreateNotes(tx, data, data_ids, creator)
+	if err != nil {
+		return nil, err
+	}
+
+	for idx, datum := range data {
+		switch datum.IngestionMethod {
+		case DataIngestionManual:
+			panic("TODO: Manual data ingestion")
+		case DataIngestionScript:
+			var save_err error
+			data_id := data_ids[idx]
+			filepaths, err := s.dataCreateDataIngestionScriptSources(tx, data_id, datum.IngestionScriptSources)
+			for source, files := range datum.IngestionScriptSources {
+				source_paths := filepaths[source]
+				for idx, file := range files {
+					filepath := source_paths[idx]
+					err = SaveFormFile(file, filepath)
+					if err != nil {
+						s.logger.With(
+							"error", err,
+							"data", data_id,
+							"source", source,
+						).Error("could not save data ingestion source file")
+						save_err = err
+						break
+					}
+				}
+
+				if save_err != nil {
+					break
+				}
+			}
+
+			if save_err != nil {
+				for _, files := range filepaths {
+					for _, filepath := range files {
+						err = os.Remove(filepath)
+						if !os.IsNotExist(err) {
+							s.logger.With(
+								"error", err,
+								"file", filepath,
+							).Error("could not remove file")
+						}
+					}
+				}
+
+				return nil, save_err
+			}
+		default:
+			panic(fmt.Sprintf("unexpected service.DataIngestionMethod: %#v", datum.IngestionMethod))
+		}
+	}
+
+	err = tx.Commit(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not create data")
+		return nil, err
+	}
+
+	return data_ids, nil
+}
+
+type DataPermissionKey string
+
+const (
+	DataPermissionKeyOwner            DataPermissionKey = "owner"
+	DataPermissionKeyRead             DataPermissionKey = "read"
+	DataPermissionKeyNoteCreate       DataPermissionKey = "note_create"
+	DataPermissionKeyPropertiesModify DataPermissionKey = "properties_modify"
+)
+
+func (s *DataService) dataCreatePermissions(tx pgx.Tx, data_ids []uuid.UUID, owner uuid.UUID) error {
+	const argsOffset = 2
+
+	args := make([]any, len(data_ids)+argsOffset)
+	args[0] = owner
+	args[1] = DataPermissionKeyOwner
+	var query strings.Builder
+	query.WriteString("INSERT INTO data_user_permission_ (_data, _user, _permission) VALUES ")
+	for idx, id := range data_ids {
+		if idx > 0 {
+			query.WriteString(", ")
+		}
+
+		fmt.Fprintf(&query, "($%d, $1, $2)", idx+argsOffset+1)
+		args[idx+argsOffset] = id
+	}
+
+	_, err := tx.Exec(s.ctx, query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"query", query.String(),
+			"args", args,
+		).Error("could not create data user permissions")
+		return err
+	}
+
+	return nil
+}
+
+func (s *DataService) dataCreateProperties(tx pgx.Tx, data []DataCreate, data_ids []uuid.UUID) error {
+	num_properties := 0
+	for _, datum := range data {
+		num_properties += len(datum.Properties)
+	}
+	if num_properties == 0 {
+		return nil
+	}
+
+	const numFields = 4
+	args := make([]any, num_properties*numFields)
+	var query strings.Builder
+	query.WriteString(
+		`INSERT INTO data_properties_ (_data, _key, _type, value) VALUES `,
+	)
+	idx := 0
+	for ddx, datum := range data {
+		for _, property := range datum.Properties {
+			data_idx := idx * numFields
+			key_idx := data_idx + 1
+			type_idx := key_idx + 1
+			value_idx := type_idx + 1
+
+			args[data_idx] = data_ids[ddx]
+			args[key_idx] = property.Key
+			args[type_idx] = property.Type
+			args[value_idx] = property.Value
+
+			if idx > 0 {
+				query.WriteString(", ")
+			}
+			fmt.Fprintf(
+				&query,
+				"($%d, $%d, $%d, $%d)",
+				data_idx+1,
+				key_idx+1,
+				type_idx+1,
+				value_idx+1,
+			)
+
+			idx += 1
+		}
+	}
+
+	_, err := tx.Exec(s.ctx, query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"query", query.String(),
+			"args", args,
+		).Error("could not create data properties")
+		return err
+	}
+
+	return nil
+}
+
+func (s *DataService) dataCreateNotes(tx pgx.Tx, data []DataCreate, data_ids []uuid.UUID, creator uuid.UUID) error {
+	num_notes := 0
+	for _, datum := range data {
+		num_notes += len(datum.Notes)
+	}
+	if num_notes == 0 {
+		return nil
+	}
+
+	const numFields = 4
+	const argOffset = 1
+	args := make([]any, num_notes*numFields)
+	args[0] = creator
+	var query strings.Builder
+	query.WriteString(
+		`INSERT INTO data_properties_ (_data, _creator, timestamp, visibility, content) VALUES `,
+	)
+	idx := 0
+	for ddx, datum := range data {
+		for _, note := range datum.Notes {
+			data_idx := idx*numFields + argOffset
+			timestamp_idx := data_idx + 1
+			visibility_idx := timestamp_idx + 1
+			content_idx := visibility_idx + 1
+
+			args[data_idx] = data_ids[ddx]
+			args[timestamp_idx] = note.Timestamp
+			args[visibility_idx] = note.Visibility
+			args[content_idx] = note.Content
+
+			if idx > 0 {
+				query.WriteString(", ")
+			}
+			fmt.Fprintf(
+				&query,
+				"($%d, $1, $%d, $%d, $%d)",
+				data_idx+1,
+				timestamp_idx+1,
+				visibility_idx+1,
+				content_idx+1,
+			)
+
+			idx += 1
+		}
+	}
+
+	_, err := tx.Exec(s.ctx, query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"query", query.String(),
+			"args", args,
+		).Error("could not create data notes")
+		return err
+	}
+
+	return nil
+}
+
+// dataCreateDataIngestionScriptSources returns the file paths each file should be saved to.
+func (s *DataService) dataCreateDataIngestionScriptSources(
+	tx pgx.Tx,
+	data_id uuid.UUID,
+	sources map[uuid.UUID][]*multipart.FileHeader,
+) (map[uuid.UUID][]string, error) {
+	const argsOffset = 1
+	const argsPerFile = 2
+
+	base_dir, err := s.app_service.AppDataDir(AppDataDirIngestionScriptSource)
+	if err != nil {
+		s.logger.With("error", err).Error("could not get ingestion script source data directory")
+		return nil, err
+	}
+
+	num_args := argsOffset + len(sources)
+	for _, files := range sources {
+		num_args += len(files) * argsPerFile
+	}
+	args := make([]any, num_args)
+	args[0] = data_id
+	var query strings.Builder
+	query.WriteString(
+		"INSERT INTO data_ingestion_script_source_ (_data, _source, _path, _filename) VALUES ",
+	)
+	rxidx := 0
+	argidx := argsOffset
+	paths := make(map[uuid.UUID][]string, len(sources))
+	for source, files := range sources {
+		src_idx := argidx
+		argidx += 1
+		args[src_idx] = source
+
+		source_paths := make([]string, len(files))
+		for f_idx, file := range files {
+			if rxidx > 0 {
+				query.WriteString(", ")
+			}
+
+			path_idx := src_idx + 1
+			filename_idx := path_idx + 1
+			argidx += argsPerFile
+
+			filename := fmt.Sprintf("%s.%d.%s", data_id, f_idx, file.Filename)
+			path := filepath.Join(base_dir, source.String(), filename)
+			args[path_idx] = path
+			args[filename_idx] = file.Filename
+
+			fmt.Fprintf(
+				&query,
+				"($1, $%d, $%d, $%d)",
+				src_idx+1,
+				path_idx+1,
+				filename_idx+1,
+			)
+			source_paths[f_idx] = path
+
+			rxidx += 1
+		}
+
+		paths[source] = source_paths
+	}
+
+	return paths, nil
 }

@@ -130,9 +130,9 @@ const (
 )
 
 type transformJobInfo struct {
-	Id        uuid.UUID
-	Transform uuid.UUID
-	Payload   uuid.UUID
+	Id        uuid.UUID `db:"_id"`
+	Transform uuid.UUID `db:"_transform"`
+	Payload   uuid.UUID `db:"_payload"`
 }
 
 func (d *TransformDaemon) pollPending() ([]transformJobInfo, error) {
@@ -141,15 +141,7 @@ func (d *TransformDaemon) pollPending() ([]transformJobInfo, error) {
 		transformJobStatusPending,
 	)
 	rows, _ := d.db.Conn.Query(d.ctx, query)
-	jobs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (transformJobInfo, error) {
-		var job transformJobInfo
-		err := row.Scan(
-			&job.Id,
-			&job.Transform,
-			&job.Payload,
-		)
-		return job, err
-	})
+	jobs, err := pgx.CollectRows(rows, pgx.RowToStructByName[transformJobInfo])
 	if err != nil {
 		d.logger.With("error", err).Error("could not poll transform queue")
 		return nil, err

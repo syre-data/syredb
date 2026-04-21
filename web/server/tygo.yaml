@@ -21,8 +21,9 @@ packages:
 
   - path: "syredb/handler"
     output_path: "../frontend/src/types/handler.ts"
-    include_files:
-      - "project.handler.go"
+    exclude_files:
+      - "errors.go"
+      - "auth.handler.go"
     frontmatter: |
       import * as uuid from "uuid"
     enum_style: "union"

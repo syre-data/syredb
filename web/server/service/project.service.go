@@ -19,9 +19,10 @@ import (
 type ProjectPermission string
 
 const (
-	ProjectPermissionOwner        ProjectPermission = "owner"
-	ProjectPermissionCreateSample ProjectPermission = "create_sample"
-	ProjectPermissionRead         ProjectPermission = "read"
+	ProjectPermissionOwner           ProjectPermission = "owner"
+	ProjectPermissionRead            ProjectPermission = "read"
+	ProjectPermissionDataCreate      ProjectPermission = "data_create"
+	ProjectPermissionDataGroupCreate ProjectPermission = "data_group_create"
 )
 
 type ProjectSamplePermission string
@@ -226,15 +227,13 @@ type ProjectSampleNote struct {
 	Content   string
 }
 
-type ProjectSample struct {
-	Id                uuid.UUID
-	Creator           uuid.UUID
-	MembershipCreator uuid.UUID
-	MembershipCreated time.Time
-	Label             string
-	Tags              []string
-	Properties        []Property
-	NoteCount         uint
+type ProjectData struct {
+	Id         uuid.UUID
+	Creator    uuid.UUID
+	Label      string
+	Tags       []string
+	Properties []Property
+	NoteCount  uint
 }
 
 type DataRecord struct {
@@ -252,7 +251,7 @@ type DerivedData struct {
 	Schema     uuid.UUID
 }
 
-type ProjectSampleGroup struct {
+type ProjectDataGroup struct {
 	Id          uuid.UUID
 	Creator     uuid.UUID
 	Label       string
@@ -261,21 +260,20 @@ type ProjectSampleGroup struct {
 	Samples     []uuid.UUID
 }
 
-type SampleGroupRelation struct {
+type DataGroupRelation struct {
 	Parent uuid.UUID
 	Child  uuid.UUID
 }
 
 type ProjectResources struct {
-	Project              Project
-	ProjectTags          []string
-	Samples              []ProjectSample
-	RawData              []DataRecord
-	DataSchemas          []DataSchema
-	SampleGroups         []ProjectSampleGroup
-	SampleGroupRelations []SampleGroupRelation
-	ProjectNoteCount     uint
-	ProjectPermissions   []ProjectPermission
+	Project            Project
+	Tags               []string
+	Data               []ProjectData
+	DataSchemas        []DataSchema
+	DataGroups         []ProjectDataGroup
+	DataGroupRelations []DataGroupRelation
+	ProjectNoteCount   uint
+	ProjectPermissions []ProjectPermission
 }
 
 func (s *ProjectService) GetProjectResources(
@@ -317,7 +315,7 @@ func (s *ProjectService) GetProjectResources(
 
 	project_tags_query := "SELECT _tag FROM project_tag_ WHERE _project=$1"
 	project_tag_rows, _ := s.db.Conn.Query(s.ctx, project_tags_query, project_id)
-	project_resources.ProjectTags, err = pgx.CollectRows(
+	project_resources.Tags, err = pgx.CollectRows(
 		project_tag_rows,
 		pgx.RowTo[string],
 	)
@@ -343,76 +341,49 @@ func (s *ProjectService) GetProjectResources(
 		).Error("could not get project note count")
 	}
 
-	project_sample_membership_query :=
-		`SELECT _sample, _creator, _timestamp, label 
-		FROM project_sample_membership_ 
-		WHERE _project=$1
-		ORDER BY label`
-	project_sample_membership_rows, _ := s.db.Conn.Query(
+	project_data_membership_query :=
+		`SELECT _data, _creator, label
+		FROM project_data_membership_ 
+		WHERE _project=$1`
+	project_data_membership_rows, _ := s.db.Conn.Query(
 		s.ctx,
-		project_sample_membership_query,
+		project_data_membership_query,
 		project_id,
 	)
-	project_resources.Samples, err = pgx.CollectRows(
-		project_sample_membership_rows,
-		func(row pgx.CollectableRow) (ProjectSample, error) {
-			var sample ProjectSample
-			err := row.Scan(
-				&sample.Id,
-				&sample.MembershipCreator,
-				&sample.MembershipCreated,
-				&sample.Label,
-			)
-			return sample, err
-		},
+	project_data, err := pgx.CollectRows(
+		project_data_membership_rows,
+		pgx.RowToStructByName[ProjectData],
 	)
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"query", project_sample_membership_query,
 			"project", project_id,
-		).Error("could not get project sample memberships")
-		project_resources.Samples = []ProjectSample{}
+		).Error("could not get project data memberships")
+		project_resources.Data = []ProjectData{}
 	}
 
-	sample_ids := make([]uuid.UUID, len(project_resources.Samples))
-	for idx, sample := range project_resources.Samples {
-		sample_ids[idx] = sample.Id
+	data_ids := make([]uuid.UUID, len(project_data))
+	for idx, data := range project_data {
+		data_ids[idx] = data.Id
 	}
 
-	sample_info, err := s.get_project_resources_sample_info(user_id, project_id, sample_ids)
+	data_info, err := s.get_project_resources_data_info(user_id, project_id, data_ids)
 	if err != nil {
 		return ProjectResources{}, err
 	}
-	for _, info := range sample_info {
-		idx := slices.IndexFunc(project_resources.Samples, func(sample ProjectSample) bool {
-			return sample.Id == info.Id
+	project_resources.Data = make([]ProjectData, len(data_info))
+	for _, info := range data_info {
+		idx := slices.IndexFunc(project_resources.Data, func(data ProjectData) bool {
+			return data.Id == info.Id
 		})
 		if idx < 0 {
-			s.logger.With("sample", info.Id).Error("could not find sample")
-			panic("could not find sample")
+			s.logger.With("data", info.Id).Error("could not find data")
+			panic("could not find data")
 		}
 
-		project_resources.Samples[idx].Tags = info.Tags
-		project_resources.Samples[idx].Properties = info.Properties
-		project_resources.Samples[idx].NoteCount = info.NoteCount
-	}
-
-	sample_data_query :=
-		`SELECT _id, _sample, _creator, _path, _type, _filename, label, timestamp, visibility FROM data_ 
-		WHERE _sample=ANY($1)`
-	raw_data_rows, _ := s.db.Conn.Query(s.ctx, sample_data_query, sample_ids)
-	project_resources.RawData, err = pgx.CollectRows(
-		raw_data_rows,
-		pgx.RowToStructByName[DataRecord],
-	)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"query", sample_data_query,
-			"samples", sample_ids,
-		).Error("could not get sample data")
-		return ProjectResources{}, err
+		project_resources.Data[idx].Tags = info.Tags
+		project_resources.Data[idx].Properties = info.Properties
+		project_resources.Data[idx].NoteCount = info.NoteCount
 	}
 
 	data_schema_ids := []uuid.UUID{}
@@ -425,136 +396,104 @@ func (s *ProjectService) GetProjectResources(
 	return project_resources, nil
 }
 
-type ProjectSampleInfo struct {
+type ProjectDataInfo struct {
 	Id         uuid.UUID
 	Tags       []string
 	Properties []Property
 	NoteCount  uint
 }
 
-func (s *ProjectService) get_project_resources_sample_info(
+func (s *ProjectService) get_project_resources_data_info(
 	user_id uuid.UUID,
 	project_id uuid.UUID,
-	sample_ids []uuid.UUID,
-) ([]ProjectSampleInfo, error) {
-	info := make([]ProjectSampleInfo, len(sample_ids))
-	for idx, sample_id := range sample_ids {
-		info[idx].Id = sample_id
+	data_ids []uuid.UUID,
+) ([]ProjectDataInfo, error) {
+	info := make([]ProjectDataInfo, len(data_ids))
+	for idx, data_id := range data_ids {
+		info[idx].Id = data_id
 	}
 
 	tags_query :=
-		`SELECT _sample, _tag FROM project_sample_tag_
-		WHERE _project=$1 AND _sample=ANY($2)
-		GROUP BY _sample`
-	rows, _ := s.db.Conn.Query(s.ctx, tags_query, sample_ids)
+		`SELECT _data, _tag FROM project_data_tag_
+		WHERE _project=$1 AND _data=ANY($2)
+		GROUP BY _data`
+	rows, _ := s.db.Conn.Query(s.ctx, tags_query, data_ids)
 	for rows.Next() {
-		var sample_id uuid.UUID
+		var data_id uuid.UUID
 		var tags []string
-		err := rows.Scan(&sample_id, &tags)
+		err := rows.Scan(&data_id, &tags)
 		if err != nil {
-			s.logger.With("error", err).Error("could not get sample tags")
+			s.logger.With("error", err).Error("could not get data tags")
 			return nil, err
 		}
 
-		sample_info_idx := slices.IndexFunc(info, func(sample_info ProjectSampleInfo) bool {
-			return sample_info.Id == sample_id
+		data_info_idx := slices.IndexFunc(info, func(data_info ProjectDataInfo) bool {
+			return data_info.Id == data_id
 		})
-		if sample_info_idx < 0 {
-			s.logger.With("sample", sample_id).Error("could not find sample")
-			panic("could not find sample")
+		if data_info_idx < 0 {
+			s.logger.With("data", data_id).Error("could not find data")
+			panic("could not find data")
 		}
 
-		info[sample_info_idx].Tags = tags
+		info[data_info_idx].Tags = tags
 	}
 
 	properties_query :=
-		`SELECT _sample, _key, _type, value FROM sample_property_
-		WHERE _sample=ANY($1)
-		GROUP BY _sample`
-	rows, _ = s.db.Conn.Query(s.ctx, properties_query, sample_ids)
+		`SELECT _data, _key, _type, value FROM project_data_property_
+		WHERE _project=$1 AND _data=ANY($2) GROUP BY _data`
+	rows, _ = s.db.Conn.Query(s.ctx, properties_query, data_ids)
 	for rows.Next() {
-		var sample_id uuid.UUID
+		var data_id uuid.UUID
 		var properties []Property
-		err := rows.Scan(&sample_id, &properties)
+		err := rows.Scan(&data_id, &properties)
 		if err != nil {
 			s.logger.With(
 				"error", err,
 				"query", properties_query,
-				"samples", sample_ids,
-			).Error("could not get sample properties")
+				"data", data_ids,
+			).Error("could not get data properties")
 			return nil, err
 		}
 
-		sample_info_idx := slices.IndexFunc(info, func(sample_info ProjectSampleInfo) bool {
-			return sample_info.Id == sample_id
+		data_info_idx := slices.IndexFunc(info, func(data_info ProjectDataInfo) bool {
+			return data_info.Id == data_id
 		})
-		if sample_info_idx < 0 {
-			s.logger.With("sample", sample_id).Error("could not find sample")
-			panic("could not find sample")
+		if data_info_idx < 0 {
+			s.logger.With("data", data_id).Error("could not find data")
+			panic("could not find data")
 		}
 
-		info[sample_info_idx].Properties = properties
+		info[data_info_idx].Properties = properties
 	}
 
 	note_count_query :=
-		`SELECT _sample, COUNT(*) FROM sample_note_ 
-		WHERE _sample=ANY($1) AND (_creator=$2 OR visibility='public')
-		GROUP BY _sample`
-	rows, _ = s.db.Conn.Query(s.ctx, note_count_query, sample_ids, user_id)
+		`SELECT _data, COUNT(*) FROM project_data_note_ 
+		WHERE _data=ANY($1) AND (_creator=$2 OR visibility='public')
+		GROUP BY _data`
+	rows, _ = s.db.Conn.Query(s.ctx, note_count_query, data_ids, user_id)
 	for rows.Next() {
-		var sample_id uuid.UUID
+		var data_id uuid.UUID
 		var count uint
-		err := rows.Scan(&sample_id, &count)
+		err := rows.Scan(&data_id, &count)
 		if err != nil {
 			s.logger.With(
 				"error", err,
 				"query", note_count_query,
-				"samples", sample_ids,
+				"data", data_ids,
 				"user", user_id,
-			).Error("could not get sample note count")
+			).Error("could not get data note count")
 			return nil, err
 		}
 
-		sample_info_idx := slices.IndexFunc(info, func(sample_info ProjectSampleInfo) bool {
-			return sample_info.Id == sample_id
+		data_info_idx := slices.IndexFunc(info, func(data_info ProjectDataInfo) bool {
+			return data_info.Id == data_id
 		})
-		if sample_info_idx < 0 {
-			s.logger.With("sample", sample_id).Error("could not find sample")
-			panic("could not find sample")
+		if data_info_idx < 0 {
+			s.logger.With("data", data_id).Error("could not find data")
+			panic("could not find data")
 		}
 
-		info[sample_info_idx].NoteCount = count
-	}
-
-	project_note_count_query :=
-		`SELECT _sample, COUNT(*) FROM project_sample_note_ 
-		WHERE _project=$1 AND _sample=ANY($2) AND (_creator=$2 OR visibility='public')
-		GROUP BY _sample`
-	rows, _ = s.db.Conn.Query(s.ctx, project_note_count_query, project_id, sample_ids, user_id)
-	for rows.Next() {
-		var sample_id uuid.UUID
-		var count uint
-		err := rows.Scan(&sample_id, &count)
-		if err != nil {
-			s.logger.With(
-				"error", err,
-				"query", project_note_count_query,
-				"project", project_id,
-				"samples", sample_ids,
-				"user", user_id,
-			).Error("could not get project sample note count")
-			return nil, err
-		}
-
-		sample_info_idx := slices.IndexFunc(info, func(sample_info ProjectSampleInfo) bool {
-			return sample_info.Id == sample_id
-		})
-		if sample_info_idx < 0 {
-			s.logger.With("sample", sample_id).Error("could not find sample")
-			panic("could not find sample")
-		}
-
-		info[sample_info_idx].NoteCount += count
+		info[data_info_idx].NoteCount = count
 	}
 
 	return info, nil
@@ -1983,4 +1922,54 @@ func (s *ProjectService) GetProjectSampleMembershipsByProject(project uuid.UUID)
 	}
 
 	return memberships, nil
+}
+
+type ProjectDataMembership struct {
+	Project uuid.UUID `db:"_project"`
+	Data    uuid.UUID `db:"_data"`
+	Creator uuid.UUID `db:"_creator"`
+	Label   string    `db:"label"`
+}
+
+func (s *ProjectService) DataMembershipCreate(memberships []ProjectDataMembership) error {
+	const numFields = 4
+	args := make([]any, len(memberships)*numFields)
+	var query strings.Builder
+	query.WriteString(
+		"INSERT INTO project_data_membership_ (_project, _data, _creator, label) VALUES ",
+	)
+	for idx, membership := range memberships {
+		project_idx := idx * numFields
+		data_idx := project_idx + 1
+		creator_idx := data_idx + 1
+		label_idx := creator_idx + 1
+
+		args[project_idx] = membership.Project
+		args[data_idx] = membership.Data
+		args[creator_idx] = membership.Creator
+		args[label_idx] = membership.Label
+
+		if idx > 0 {
+			query.WriteString(", ")
+		}
+		fmt.Fprintf(
+			&query,
+			"($%d, $%d, $%d, $%d)",
+			project_idx+1,
+			data_idx+1,
+			creator_idx+1,
+			label_idx+1,
+		)
+	}
+
+	_, err := s.db.Conn.Exec(s.ctx, query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"memberships", memberships,
+		).Error("could not create project data memberships")
+		return err
+	}
+
+	return nil
 }

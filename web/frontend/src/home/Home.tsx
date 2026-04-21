@@ -7,7 +7,7 @@ import UserCreate from "./UserCreate";
 import ProjectCreate from "./ProjectCreate";
 import Project from "./Project";
 import ProjectSettings from "./ProjectSettings";
-import ProjectSamplesCreate from "./ProjectSamplesCreate";
+import ProjectDataCreate from "./ProjectDataCreate";
 import DataSchemaCreate from "./DataSchemaCreate";
 import DataSchema from "./DataSchema";
 import SampleEdit from "./SampleEdit";
@@ -61,24 +61,16 @@ export default function Home() {
                     path="/data-type-transform/create"
                     element={<DataTypeTransformCreate />}
                 />
-                <Route path="/project">
-                    <Route path="create" element={<ProjectCreate />} />
-                    <Route path=":project_id">
-                        <Route index element={<Project />} />
-                        <Route path="settings" element={<ProjectSettings />} />
-                        <Route
-                            path="samples/create"
-                            element={<ProjectSamplesCreate />}
-                        />
-                        <Route
-                            path="sample/:sample_id/edit"
-                            element={<SampleEdit />}
-                        />
-                        <Route
-                            path="sample-group/create"
-                            element={<SampleGroupCreate />}
-                        />
-                    </Route>
+                <Route path="/project/create" element={<ProjectCreate />} />
+                <Route path="/project/:project_id">
+                    <Route index element={<Project />} />
+                    <Route path="settings" element={<ProjectSettings />} />
+                    <Route path="data/create" element={<ProjectDataCreate />} />
+                    <Route path="data/:data_id/edit" element={<SampleEdit />} />
+                    <Route
+                        path="data-group/create"
+                        element={<SampleGroupCreate />}
+                    />
                 </Route>
                 <Route path="*" element={<NotFound />} />
             </Routes>

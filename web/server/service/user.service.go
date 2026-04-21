@@ -18,21 +18,22 @@ const AppEmailUsernameKey = "app:email:username"
 const AppEmailPasswordKey = "app:email:password"
 const AppEmailFromKey = "app:email:from"
 
-type DbPermissionId string
+type DbPermission string
 
 const (
-	DbPermissionIdOwner                 DbPermissionId = "owner"
-	DbPermissionIdUserCreate            DbPermissionId = "user_create"
-	DbPermissionIdUserModify            DbPermissionId = "user_modify"
-	DbPermissionIdDataSchemaCreate      DbPermissionId = "data_schema_create"
-	DbPermissionIdDataSchemaModify      DbPermissionId = "data_schema_modify"
-	DbPermissionIdDataTypeCreate        DbPermissionId = "data_type_create"
-	DbPermissionIdDataTypeModify        DbPermissionId = "data_type_modify"
-	DbPermissionIdIngestionScriptCreate DbPermissionId = "ingestion_script_create"
-	DbPermissionIdIngestionScriptModify DbPermissionId = "ingestion_script_modify"
-	DbPermissionIdTransformCreate       DbPermissionId = "transform_create"
-	DbPermissionIdTransformModify       DbPermissionId = "transform_modify"
-	DbPermissionIdProjectCreate         DbPermissionId = "project_create"
+	DbPermissionOwner                 DbPermission = "owner"
+	DbPermissionUserCreate            DbPermission = "user_create"
+	DbPermissionUserModify            DbPermission = "user_modify"
+	DbPermissionDataSchemaCreate      DbPermission = "data_schema_create"
+	DbPermissionDataSchemaModify      DbPermission = "data_schema_modify"
+	DbPermissionDataTypeCreate        DbPermission = "data_type_create"
+	DbPermissionDataTypeModify        DbPermission = "data_type_modify"
+	DbPermissionIngestionScriptCreate DbPermission = "ingestion_script_create"
+	DbPermissionIngestionScriptModify DbPermission = "ingestion_script_modify"
+	DbPermissionTransformCreate       DbPermission = "transform_create"
+	DbPermissionTransformModify       DbPermission = "transform_modify"
+	DbPermissionProjectCreate         DbPermission = "project_create"
+	DbPermissionDataCreate            DbPermission = "data_create"
 )
 
 type AccountStatus string
@@ -75,7 +76,7 @@ type User struct {
 	AccountStatus AccountStatus
 	Email         string
 	Name          string
-	DbPermissions []DbPermissionId
+	DbPermissions []DbPermission
 }
 
 func (s *UserService) UserById(user_id uuid.UUID) (User, error) {
@@ -102,11 +103,11 @@ func (s *UserService) UserById(user_id uuid.UUID) (User, error) {
 	return user, nil
 }
 
-func (s *UserService) UserPermissions(user_id uuid.UUID) ([]DbPermissionId, error) {
+func (s *UserService) UserPermissions(user_id uuid.UUID) ([]DbPermission, error) {
 	query := "SELECT _permission FROM db_user_permission_ WHERE _user=$1"
 	rows, _ := s.db.Conn.Query(s.ctx, query, user_id)
-	permissions, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DbPermissionId, error) {
-		var permission DbPermissionId
+	permissions, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DbPermission, error) {
+		var permission DbPermission
 		err := row.Scan(&permission)
 		return permission, err
 	})
@@ -122,10 +123,10 @@ func (s *UserService) UserPermissions(user_id uuid.UUID) ([]DbPermissionId, erro
 }
 
 type UserCreate struct {
-	Email         string           `form:"email"`
-	Name          string           `form:"name"`
-	Password      string           `form:"password"`
-	DbPermissions []DbPermissionId `form:"db_permissions"`
+	Email         string         `form:"email"`
+	Name          string         `form:"name"`
+	Password      string         `form:"password"`
+	DbPermissions []DbPermission `form:"db_permissions"`
 }
 
 func (s *UserService) CreateUser(user UserCreate) (uuid.UUID, error) {
@@ -244,9 +245,9 @@ func (s *UserService) UserUpdate(update User) error {
 	return nil
 }
 
-func (s *UserService) SetUserPermissions(tx pgx.Tx, user uuid.UUID, permissions []DbPermissionId) error {
-	add_permission := []DbPermissionId{}
-	remove_permission := []DbPermissionId{}
+func (s *UserService) SetUserPermissions(tx pgx.Tx, user uuid.UUID, permissions []DbPermission) error {
+	add_permission := []DbPermission{}
+	remove_permission := []DbPermission{}
 	current, err := s.UserPermissions(user)
 	if err != nil {
 		return err
@@ -346,10 +347,10 @@ func (s *UserService) UsersById(user_ids []uuid.UUID) ([]User, error) {
 	return users, nil
 }
 
-func (s *UserService) UserHasPermission(user uuid.UUID, permission DbPermissionId) (bool, error) {
+func (s *UserService) UserHasPermission(user uuid.UUID, permission DbPermission) (bool, error) {
 	query := fmt.Sprintf(
 		"SELECT 1 FROM db_user_permission_ WHERE _user=$1 AND _permission=ANY('{%s, $2}')",
-		DbPermissionIdOwner,
+		DbPermissionOwner,
 	)
 	user_row := s.db.Conn.QueryRow(s.ctx, query, user, permission)
 	err := user_row.Scan()
