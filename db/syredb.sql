@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS data_type_ (
     active boolean DEFAULT true NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS data_type_internal_storage_ (
+CREATE TABLE IF NOT EXISTS data_type_schema_ (
     _data_type UUID REFERENCES data_type_(_id) PRIMARY KEY,
     _schema UUID REFERENCES data_schema_(_id)
 );
@@ -142,7 +142,7 @@ CREATE TYPE source_cardinality AS ENUM (
     'multiple'
 );
 
-CREATE TABLE IF NOT EXISTS data_type_external_source_ (
+CREATE TABLE IF NOT EXISTS data_type_source_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _data_type UUID REFERENCES data_type_(_id) NOT NULL,
     _label VARCHAR(128) NOT NULL,
@@ -287,12 +287,12 @@ CREATE TABLE IF NOT EXISTS data_ingestion_script_source_ (
     _filename VARCHAR(256) NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS data_source_external_ (
+CREATE TABLE IF NOT EXISTS data_source_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _data UUID REFERENCES data_(_id) NOT NULL,
     _source UUID REFERENCES data_type_external_source_(_id) NOT NULL,
     _path VARCHAR(2048) NOT NULL UNIQUE,
-    label VARCHAR(256)
+    label VARCHAR(256) -- filename
 );
 
 CREATE TYPE data_type_transform_job_status AS ENUM (

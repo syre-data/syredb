@@ -213,9 +213,9 @@ const (
 )
 
 type Property struct {
-	Key   string
-	Type  PropertyType
-	Value any // TODO: Match value with type
+	Key   string       `db:"_key"`
+	Type  PropertyType `db:"_type"`
+	Value any          `db:"value"` // TODO: Match value with type
 }
 
 type ProjectSampleNote struct {
@@ -1443,7 +1443,7 @@ func (s *ProjectService) get_project_sample_resources_derived_data(
 	for _, schema_id := range schema_ids {
 		query := fmt.Sprintf(
 			"SELECT _parent, _transform, _sample_data FROM %s WHERE _sample_data=ANY($1)",
-			data_storage_table_name_from_schema_id(schema_id),
+			dataStorageTableNameFromSchemaId(schema_id),
 		)
 		rows, _ = s.db.Conn.Query(s.ctx, query, sample_data_ids)
 		schema_data, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DerivedData, error) {
