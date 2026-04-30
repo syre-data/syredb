@@ -1,39 +1,62 @@
 from typing import Any
 import os
 import sys
+from enum import StrEnum
 import uuid
 import json
-import psycopg
-import psycopg.sql
 import numpy
 import pandas
 
 
-class SampleData:
-    """The active sample data.
+class Storage(StrEnum):
+    Internal = "internal"
+    External = "external"
+
+
+class Args:
+    def __init__(self):
+        self._token = sys.argv[1]
+        self._storage = Storage(sys.argv[2])
+        self._data_path = sys.argv[3]
+
+    @property
+    def token(self) -> str:
+        return self._token
+
+    @property
+    def storage(self) -> Storage:
+        return self._storage
+
+    @property
+    def path(self) -> str:
+        return self._data_path
+
+
+class Data:
+    """Data.
 
     Example:
-        ```python
-        from syredb import transform
+        ```
+        import syredb
 
-        data = transform.get_data()
-        df = pd.from_csv(data.path)
-        results = data.max()
-        transform.insert(results)
+        data = syredb.get_data()
+        df = data.as_pandas()
+        df_avg = df.sum() / data.properties["sample_count"]
+        syredb.insert(df_avg)
         ```
     """
 
     def __init__(
         self,
         token: str,
-        id: uuid.UUID,
+        storage: Storage,
         data_path: str,
         tags: set,
         properties: dict[str, Any],
     ):
         self.__token = token
-        self.__id = id
-        self._data_path = data_path
+        self.__storage = storage
+        self.__data_path = data_path
         self._tags = set()
         self._properties = {}
 
@@ -44,7 +67,7 @@ class SampleData:
         Returns:
             str: Path to the data file.
         """
-        return self._data_path
+        return self.__data_path
 
     @property
     def properties(self) -> dict[str, Any]:
@@ -53,75 +76,46 @@ class SampleData:
         """
         return self._properties
 
+    def as_pandas(self) -> pandas.DataFrame:
+        if self.__storage != Storage.Internal:
+            raise NotImplementedError(
+                "data type can not be represented as a dataframe; use `.path` to load data yourself"
+            )
 
-def get_data() -> SampleData:
+        return pandas.read_feather(self.path)
+
+
+def get_data() -> Data:
     """Get the sample data.
 
     Returns:
         SampleData: Sample data.
     """
-    token = sys.argv[1]
-    sample_data_id = uuid.UUID(sys.argv[2])
-    data_path = sys.argv[3]
-    with open(data_path) as f:
-        sample_data = json.load(f)
+    args = Args()
+    with open(args.path) as f:
+        data = json.load(f)
 
-    return SampleData(
-        token,
-        sample_data_id,
-        sample_data["data_path"],
-        set(),
-        sample_data["properties"],
+    return Data(
+        args.token,
+        args.storage,
+        data["path"],
+        data["tags"],
+        data["properties"],
     )
 
 
 # TODO: Should only be callable once.
 # Raise exception if called more than once.
+# TODO: Accept file input for external storage.
+# TODO: Accept other tabular data sources.
 def insert(data: pandas.DataFrame):
     """Insert new data into the database.
 
     Args:
-        data (pandas.DataFrame): The data to insert.
+        data (pandas.DataFrame): Data to insert.
     """
-    token = sys.argv[1]
-    sample_data_id = uuid.UUID(sys.argv[2])
-    output_schema_id = uuid.UUID(sys.argv[4])
-    transform_id = uuid.UUID(sys.argv[5])
-    with psycopg.connect("dbname=syredb user=postgres password=root") as conn:
-        with conn.cursor() as cur:
-            record = cur.execute(
-                "SELECT _schema, _storage FROM data_schema_ WHERE _id=%s",
-                (str(output_schema_id),),
-            ).fetchone()
-            if record is None:
-                exit(1)
-            (schema, storage) = record
-
-            try:
-                parsed = parse_data_to_schema(data, schema)
-            except:
-                exit(2)
-
-            # TODO: Account for storage
-            table_name = data_storage_table_name_from_id(output_schema_id)
-            query = psycopg.sql.SQL(
-                "INSERT INTO {table} (_input, _transform, _sample_data, {data_columns}) VALUES ({input}, {transform}, {sample_data}, {data_values})"
-            ).format(
-                table=psycopg.sql.Identifier(table_name),
-                data_columns=psycopg.sql.SQL(", ").join(
-                    map(lambda col: psycopg.sql.Identifier(col["label"]), schema)
-                ),
-                input=psycopg.sql.Literal(str(sample_data_id)),
-                transform=psycopg.sql.Literal(str(transform_id)),
-                sample_data=psycopg.sql.Literal(str(sample_data_id)),
-                data_values=psycopg.sql.SQL(", ").join(
-                    psycopg.sql.Placeholder() for _ in schema
-                ),
-            )
-
-            values = [parsed[col["label"]] for col in schema]
-            cur.execute(query, values)
-            conn.commit()
+    args = Args()
+    raise NotImplementedError("TODO")
 
 
 def parse_data_to_schema(
