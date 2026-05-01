@@ -388,7 +388,7 @@ func (s *ProjectService) GetProjectResources(
 
 	data_schema_ids := []uuid.UUID{}
 	// TODO: Get relevent data schemas
-	project_resources.DataSchemas, err = s.data_service.DataSchemasGetById(data_schema_ids)
+	project_resources.DataSchemas, err = s.data_service.DataSchemasById(data_schema_ids)
 	if err != nil {
 		return ProjectResources{}, err
 	}
@@ -1243,7 +1243,7 @@ func (s *ProjectService) GetProjectSampleResources(
 		data_schema_ids = append(data_schema_ids, data.Schema)
 	}
 
-	resources.DataSchemas, err = s.data_service.DataSchemasGetById(data_schema_ids)
+	resources.DataSchemas, err = s.data_service.DataSchemasById(data_schema_ids)
 	if err != nil {
 		s.logger.With(
 			"error", err,

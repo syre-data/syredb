@@ -120,6 +120,10 @@ export interface DataTypeUpdate {
 export const DataSchemaCardinalitySingle = "single";
 export const DataSchemaCardinalityMultiple = "multiple";
 export type DataSchemaCardinality = typeof DataSchemaCardinalitySingle | typeof DataSchemaCardinalityMultiple;
+export type DataSchemaFieldAvailability = string;
+export const DataSchemaFieldComplete: DataSchemaFieldAvailability = "complete";
+export const DataSchemaFieldNullable: DataSchemaFieldAvailability = "nullable";
+export const DataSchemaFieldOptional: DataSchemaFieldAvailability = "optional";
 export interface DataSchemaRx {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
@@ -131,12 +135,14 @@ export interface DataSchemaFieldRx {
   Id: uuid.UUIDTypes;
   Label: string;
   DType: ValueType;
+  Availability: DataSchemaFieldAvailability;
   Index: number /* uint */;
   Description: string;
 }
 export interface DataSchemaField {
   Label: string;
   DType: ValueType;
+  Availability: DataSchemaFieldAvailability;
   Index: number /* uint */;
   Description: string;
 }
@@ -146,7 +152,7 @@ export interface DataSchema {
   Cardinality: DataSchemaCardinality;
   Label: string;
   Description: string;
-  Schema: DataSchemaField[];
+  Fields: DataSchemaField[];
 }
 export interface InvalidSampleDataColumnLabels {
   Labels: string[];
@@ -170,10 +176,15 @@ export interface InvalidFileExtensionError {
 }
 export interface IncompatibleDataSizeError {
 }
-export interface ColumnData {
+/**
+ * Values is `any` if Cardinality is `single`,
+ * `[]any` if Cardinality is `multiple`.
+ */
+export interface SchemaFieldValues {
   Label: string;
   DType: ValueType;
-  Values: any[];
+  Cardinality: DataSchemaCardinality;
+  Values: any;
 }
 export interface ParseCsvError {
   Record: number /* uint */;
@@ -229,55 +240,23 @@ export interface IngestionScriptCreate {
 }
 /**
  * StoredData represents the actual data stored.
- * Data is []SchemaField if Storage is `internal`.
- * Data is a path (`string`) if Storage is `external`.
+ * Values is []SchemaFieldValues if Storage is `internal`.
+ * Values is a []DataSource if Storage is `external`.
  */
-export interface StoredData {
-  SampleData: uuid.UUIDTypes;
+export interface DataValues {
+  Data: uuid.UUIDTypes;
   Storage: DataStorage;
-  Data: any;
+  Values: any;
 }
-export interface SampleDataSchema {
-  SampleData: uuid.UUIDTypes;
-  DataSchema: uuid.UUIDTypes;
-}
-export interface DataSchemaRx {
-  Id: uuid.UUIDTypes;
-  Schema: DataSchemaField[];
-}
-export interface SampleDataInfo {
-  SampleData: uuid.UUIDTypes;
-  Sample: uuid.UUIDTypes;
-  DataSchema: uuid.UUIDTypes;
-  Timestamp: Date;
-}
-export interface SampleInfo {
-  Id: uuid.UUIDTypes;
+/**
+ * DataSource is an externally stored data source.
+ * `Sources` is a single path if `Cardinality` is `single`.
+ * `Sources` is an array of paths if `Cardinality` is `multiple`.
+ */
+export interface DataSource {
   Label: string;
-}
-export interface DataSchemaRx {
-  Id: uuid.UUIDTypes;
-  Label: string;
-}
-export interface SampleRx {
-  Sample: uuid.UUIDTypes;
-  SampleData: uuid.UUIDTypes;
-  Label: string;
-  Timestamp: Date;
-}
-export interface ProjectSampleRx {
-  Sample: uuid.UUIDTypes;
-  Label: string;
-}
-export interface SampleDataRx {
-  Id: uuid.UUIDTypes;
-  Sample: uuid.UUIDTypes;
-  DataSchema: uuid.UUIDTypes;
-  Timestamp: Date;
-}
-export interface DataSchemaRx {
-  Id: uuid.UUIDTypes;
-  Label: string;
+  Cardinality: DataSourceCardinality;
+  Source: any;
 }
 export const SampleDataUserPermissionOwner = "owner";
 export const SampleDataUserPermissionRead = "read";
@@ -334,6 +313,10 @@ export interface Note {
 export type DataIngestionMethod = string;
 export const DataIngestionManual: DataIngestionMethod = "manual";
 export const DataIngestionScript: DataIngestionMethod = "script";
+/**
+ * `Values` is only valid if `IngestionMethod` is `manual`.
+ * `IngestionScript` and `IngestionScriptSources` are only valid if `IngestionMethod` is `script`.
+ */
 export interface DataCreate {
   Type: uuid.UUIDTypes;
   CreatorType: DataCreatorType;
@@ -342,6 +325,7 @@ export interface DataCreate {
   Properties: Property[];
   Notes: Note[];
   IngestionMethod: DataIngestionMethod;
+  Values: { [key: string]: any};
   IngestionScript: uuid.UUIDTypes;
   IngestionScriptSources: { [key: uuid.UUIDTypes]: (any /* multipart.FileHeader */ | undefined)[]};
 }

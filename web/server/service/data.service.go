@@ -606,6 +606,14 @@ const (
 	DataSchemaCardinalityMultiple DataSchemaCardinality = "multiple"
 )
 
+type DataSchemaFieldAvailability string
+
+const (
+	DataSchemaFieldComplete DataSchemaFieldAvailability = "complete"
+	DataSchemaFieldNullable DataSchemaFieldAvailability = "nullable"
+	DataSchemaFieldOptional DataSchemaFieldAvailability = "optional"
+)
+
 type DataSchemaRx struct {
 	Id          uuid.UUID             `db:"_id"`
 	Creator     uuid.UUID             `db:"_creator"`
@@ -615,18 +623,20 @@ type DataSchemaRx struct {
 }
 
 type DataSchemaFieldRx struct {
-	Id          uuid.UUID `db:"_id"`
-	Label       string    `db:"_label"`
-	DType       ValueType `db:"_dtype"`
-	Index       uint      `db:"index"`
-	Description string    `db:"description"`
+	Id           uuid.UUID                   `db:"_id"`
+	Label        string                      `db:"_label"`
+	DType        ValueType                   `db:"_dtype"`
+	Availability DataSchemaFieldAvailability `db:"_availability"`
+	Index        uint                        `db:"index"`
+	Description  string                      `db:"description"`
 }
 
 type DataSchemaField struct {
-	Label       string    `db:"_label"`
-	DType       ValueType `db:"_dtype"`
-	Index       uint      `db:"index"`
-	Description string    `db:"description"`
+	Label        string                      `db:"_label"`
+	DType        ValueType                   `db:"_dtype"`
+	Availability DataSchemaFieldAvailability `db:"_availability"`
+	Index        uint                        `db:"index"`
+	Description  string                      `db:"description"`
 }
 
 type DataSchema struct {
@@ -635,12 +645,12 @@ type DataSchema struct {
 	Cardinality DataSchemaCardinality
 	Label       string
 	Description string
-	Schema      []DataSchemaField
+	Fields      []DataSchemaField
 }
 
 func (s *DataService) DataSchemasGetAll() ([]DataSchema, error) {
 	schemas_query :=
-		`SELECT _id, _creator, _cardinality, label, index, description
+		`SELECT _id, _creator, _cardinality, label, description
 		FROM data_schema_ ORDER BY _id DESC`
 	rows, err := s.db.Conn.Query(s.ctx, schemas_query)
 	if err != nil {
@@ -654,7 +664,9 @@ func (s *DataService) DataSchemasGetAll() ([]DataSchema, error) {
 		return nil, err
 	}
 
-	fields_query := `SELECT _id, _label, _dtype, description FROM data_schema_field_`
+	fields_query :=
+		`SELECT _id, _label, _dtype, _availability, index, description 
+		FROM data_schema_field_`
 	rows, err = s.db.Conn.Query(s.ctx, fields_query)
 	if err != nil {
 		s.logger.With("error", err).Error("could not get data schema fields")
@@ -690,24 +702,27 @@ func (s *DataService) DataSchemasGetAll() ([]DataSchema, error) {
 			Cardinality: schema_rx.Cardinality,
 			Label:       schema_rx.Label,
 			Description: schema_rx.Description,
-			Schema:      fields,
+			Fields:      fields,
 		}
 	}
 
 	return schemas, nil
 }
 
-func (s *DataService) DataSchemasGetById(schema_ids []uuid.UUID) ([]DataSchema, error) {
+func (s *DataService) DataSchemasById(schema_ids []uuid.UUID) ([]DataSchema, error) {
 	if len(schema_ids) == 0 {
 		return nil, nil
 	}
 
-	schemas_query := `
-		SELECT _id, _creator, _cardinality, label, description
+	schemas_query :=
+		`SELECT _id, _creator, _cardinality, label, description
 		FROM data_schema_ WHERE _id=ANY($1) ORDER BY _id DESC`
 	rows, err := s.db.Conn.Query(s.ctx, schemas_query, schema_ids)
 	if err != nil {
-		s.logger.With("error", err).Error("could not get data schemas")
+		s.logger.With(
+			"error", err,
+			"data schemas", schema_ids,
+		).Error("could not get data schemas")
 		return nil, err
 	}
 
@@ -718,11 +733,14 @@ func (s *DataService) DataSchemasGetById(schema_ids []uuid.UUID) ([]DataSchema, 
 	}
 
 	fields_query :=
-		`SELECT _id, _label, _dtype, index, description 
+		`SELECT _id, _label, _dtype, _availability, index, description 
 		FROM data_schema_field_ WHERE _id=ANY($1)`
 	rows, err = s.db.Conn.Query(s.ctx, fields_query, schema_ids)
 	if err != nil {
-		s.logger.With("error", err).Error("could not get data schema fields")
+		s.logger.With(
+			"error", err,
+			"data schemas", schema_ids,
+		).Error("could not get data schema fields")
 		return nil, err
 	}
 
@@ -755,11 +773,68 @@ func (s *DataService) DataSchemasGetById(schema_ids []uuid.UUID) ([]DataSchema, 
 			Cardinality: schema_rx.Cardinality,
 			Label:       schema_rx.Label,
 			Description: schema_rx.Description,
-			Schema:      fields,
+			Fields:      fields,
 		}
 	}
 
 	return schemas, nil
+}
+
+func (s *DataService) DataSchemaById(schema_id uuid.UUID) (DataSchema, error) {
+	schemas_query :=
+		`SELECT _id, _creator, _cardinality, label, description
+		FROM data_schema_ WHERE _id=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, schemas_query, schema_id)
+	schema_rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataSchemaRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"schema", schema_id,
+		).Error("could not get data schema")
+		return DataSchema{}, err
+	}
+
+	fields_query :=
+		`SELECT _id, _label, _dtype, _availability, index, description 
+		FROM data_schema_field_ WHERE _id=$1`
+	rows, err = s.db.Conn.Query(s.ctx, fields_query, schema_id)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"schema", schema_id,
+		).Error("could not get data schema fields")
+		return DataSchema{}, err
+	}
+
+	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRx])
+	if err != nil {
+		s.logger.With("error", err).Error("could not collect data schema fields")
+		return DataSchema{}, err
+	}
+
+	var fields []DataSchemaField
+	for _, field := range fields_rx {
+		if field.Id == schema_rx.Id {
+			fields = append(fields, DataSchemaField{
+				Label:        field.Label,
+				DType:        field.DType,
+				Availability: field.Availability,
+				Index:        field.Index,
+				Description:  field.Description,
+			})
+		}
+	}
+
+	schema := DataSchema{
+		Id:          schema_rx.Id,
+		Creator:     schema_rx.Creator,
+		Cardinality: schema_rx.Cardinality,
+		Label:       schema_rx.Label,
+		Description: schema_rx.Description,
+		Fields:      fields,
+	}
+
+	return schema, nil
 }
 
 type InvalidSampleDataColumnLabels struct {
@@ -1102,7 +1177,7 @@ func (s *DataService) DataSchemaGetResources(schema_id uuid.UUID) (DataSchemaRes
 	}
 
 	fields_query :=
-		`SELECT _id, _label, _dtype, index, description 
+		`SELECT _id, _label, _dtype, _availability, index, description 
 		FROM data_schema_field_ WHERE _id=$1`
 	rows, err = s.db.Conn.Query(s.ctx, fields_query, schema_id)
 	if err != nil {
@@ -1135,7 +1210,7 @@ func (s *DataService) DataSchemaGetResources(schema_id uuid.UUID) (DataSchemaRes
 		Cardinality: schema_rx.Cardinality,
 		Label:       schema_rx.Label,
 		Description: schema_rx.Description,
-		Schema:      fields,
+		Fields:      fields,
 	}
 
 	creator_query := "SELECT _id, account_status, email, name FROM user_ WHERE _id=$1"
@@ -2819,7 +2894,7 @@ type DataCreate struct {
 	Properties             []Property
 	Notes                  []Note
 	IngestionMethod        DataIngestionMethod
-	Values                 map[string][]any
+	Values                 map[string]any
 	IngestionScript        uuid.UUID
 	IngestionScriptSources map[uuid.UUID][]*multipart.FileHeader
 }
@@ -2845,7 +2920,6 @@ func (s *DataService) DataCreate(
 		`INSERT INTO data_ (_type, _creator_type, timestamp, visibility) 
 		VALUES ($1, $2, $3, $4) RETURNING _id`
 	for idx, datum := range data {
-		var id uuid.UUID
 		err = tx.QueryRow(
 			s.ctx,
 			data_query,
@@ -2853,7 +2927,7 @@ func (s *DataService) DataCreate(
 			datum.CreatorType,
 			datum.Timestamp,
 			datum.Visibility,
-		).Scan(&id)
+		).Scan(&data_ids[idx])
 		if err != nil {
 			s.logger.With(
 				"error", err,
@@ -2861,8 +2935,6 @@ func (s *DataService) DataCreate(
 			).Error("could not create data")
 			return nil, err
 		}
-
-		data_ids[idx] = id
 	}
 
 	err = s.dataCreatePermissions(tx, data_ids, owner)
@@ -2883,8 +2955,62 @@ func (s *DataService) DataCreate(
 	for idx, datum := range data {
 		switch datum.IngestionMethod {
 		case DataIngestionManual:
-			panic("TODO: Manual data ingestion")
+			var schema_id uuid.UUID
+			schema_query := "SELECT _schema FROM data_type_schema_ WHERE _data_type=$1"
+			err = s.db.Conn.QueryRow(s.ctx, schema_query, datum.Type).Scan(&schema_id)
+			if err != nil {
+				s.logger.With(
+					"erorr", err,
+					"data type", datum.Type,
+				).Error("could not get data type schema")
+				return nil, err
+			}
+
+			schema, err := s.DataSchemaById(schema_id)
+			if err != nil {
+				s.logger.With(
+					"error", err,
+					"schema", schema_id,
+				).Error("could not get data schema")
+				return nil, err
+			}
+
+			err = s.dataCreateValidateValuesAsSchema(schema, datum.Values)
+			if err != nil {
+				return nil, err
+			}
+
+			field_labels := make([]string, len(schema.Fields))
+			for idx, field := range schema.Fields {
+				field_labels[idx] = field.Label
+			}
+			var values_query strings.Builder
+			fmt.Fprintf(
+				&values_query,
+				`INSERT INTO %s (_data, %s) VALUES ($1`,
+				dataStorageTableNameFromSchemaId(schema_id),
+				strings.Join(field_labels, ", "),
+			)
+			args := make([]any, len(schema.Fields)+1)
+			args[0] = data_ids[idx]
+			for idx, field := range schema.Fields {
+				idx_arg := idx + 1
+				fmt.Fprintf(&values_query, ", $%d", idx_arg+1)
+				args[idx_arg] = datum.Values[field.Label]
+			}
+			values_query.WriteString(")")
+			_, err = tx.Exec(s.ctx, values_query.String(), args...)
+			if err != nil {
+				s.logger.With(
+					"error", err,
+					"data", datum,
+				).Error("could not store data values")
+				return nil, err
+			}
+
 		case DataIngestionScript:
+			// TODO: Validate sources are valid relative to ingestion script
+
 			var save_err error
 			data_id := data_ids[idx]
 			filepaths, err := s.dataCreateDataIngestionScriptSources(tx, data_id, datum.IngestionScriptSources)
@@ -2924,8 +3050,6 @@ func (s *DataService) DataCreate(
 
 				return nil, save_err
 			}
-		default:
-			panic(fmt.Sprintf("unexpected service.DataIngestionMethod: %#v", datum.IngestionMethod))
 		}
 	}
 
@@ -2936,6 +3060,42 @@ func (s *DataService) DataCreate(
 	}
 
 	return data_ids, nil
+}
+
+func (s *DataService) dataCreateValidateValuesAsSchema(schema DataSchema, values map[string]any) error {
+	switch schema.Cardinality {
+	case DataSchemaCardinalitySingle:
+		for _, field := range schema.Fields {
+			_, exists := values[field.Label]
+			if !exists && field.Availability == DataSchemaFieldComplete {
+				return fmt.Errorf("required field %s missing", field.Label)
+			}
+		}
+
+		return nil
+	case DataSchemaCardinalityMultiple:
+		for _, field := range schema.Fields {
+			f_values, exists := values[field.Label]
+			if !exists {
+				if field.Availability != DataSchemaFieldOptional {
+					return fmt.Errorf("required field %s missing", field.Label)
+				} else {
+					continue
+				}
+			}
+
+			f_values_arr := f_values.([]any)
+			if field.Availability == DataSchemaFieldComplete {
+				if slices.Contains(f_values_arr, nil) {
+					return fmt.Errorf("null value found in non-nullable field %s", field.Label)
+				}
+			}
+		}
+
+		return nil
+	}
+
+	panic("should not be reached")
 }
 
 type DataPermissionKey string

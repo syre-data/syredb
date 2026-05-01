@@ -909,6 +909,7 @@ type DataCreate struct {
 	Properties             []service.Property
 	Notes                  []service.Note
 	IngestionMethod        service.DataIngestionMethod
+	Values                 map[string]any
 	IngestionScript        uuid.UUID
 	IngestionScriptSources map[string]string
 }
@@ -987,33 +988,46 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 		data[idx].Properties = datum.Properties
 		data[idx].Notes = datum.Notes
 		data[idx].IngestionMethod = datum.IngestionMethod
-		data[idx].IngestionScript = datum.IngestionScript
-		data[idx].IngestionScriptSources = make(map[uuid.UUID][]*multipart.FileHeader, len(datum.IngestionScriptSources))
-		for source, name := range datum.IngestionScriptSources {
-			file, err := c.FormFile(name)
-			if err != nil {
-				c.Logger().With(
-					"error", err,
-					"source", source,
-					"file", name,
-				).Error("could not get form file")
-				return c.NoContent(http.StatusBadRequest)
-			}
 
-			sid, err := uuid.Parse(source)
-			if err != nil {
-				c.Logger().With(
-					"error", err,
-					"source", source,
-				).Error("could not parse data source id")
-				return c.NoContent(http.StatusBadRequest)
-			}
+		switch datum.IngestionMethod {
+		case service.DataIngestionManual:
+			data[idx].Values = datum.Values
 
-			data[idx].IngestionScriptSources[sid] = []*multipart.FileHeader{file}
+		case service.DataIngestionScript:
+			data[idx].IngestionScript = datum.IngestionScript
+			data[idx].IngestionScriptSources = make(map[uuid.UUID][]*multipart.FileHeader, len(datum.IngestionScriptSources))
+			for source, name := range datum.IngestionScriptSources {
+				file, err := c.FormFile(name)
+				if err != nil {
+					c.Logger().With(
+						"error", err,
+						"source", source,
+						"file", name,
+					).Error("could not get form file")
+					return c.NoContent(http.StatusBadRequest)
+				}
+
+				sid, err := uuid.Parse(source)
+				if err != nil {
+					c.Logger().With(
+						"error", err,
+						"source", source,
+					).Error("could not parse data source id")
+					return c.NoContent(http.StatusBadRequest)
+				}
+
+				data[idx].IngestionScriptSources[sid] = []*multipart.FileHeader{file}
+			}
 		}
 	}
 
-	err = h.dataCreateValidateIngestionScriptSources(data)
+	dataScriptIngestion := make([]service.DataCreate, 0, len(data))
+	for _, datum := range data {
+		if datum.IngestionMethod == service.DataIngestionScript {
+			dataScriptIngestion = append(dataScriptIngestion, datum)
+		}
+	}
+	err = h.dataCreateValidateIngestionScriptSources(dataScriptIngestion)
 	if err != nil {
 		c.Logger().With(
 			"error", err,

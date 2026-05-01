@@ -2,6 +2,7 @@ import {
     MouseButton,
     QUERY_KEY_DATA_SCHEMA,
     QUERY_KEY_DATA_SCHEMA_RESOURCES,
+    QUERY_KEY_DATA_SCHEMAS,
     QUERY_KEY_DATA_TYPES,
     QUERY_KEY_INGESTION_SCRIPTS_FOR_DATA_TYPE,
 } from "@/common";
@@ -33,9 +34,18 @@ import {
     PropertyTypeString,
     PropertyTypeTimestamp,
     PropertyTypeUint,
+    ValueTypeBoolean,
+    ValueTypeFloat,
+    ValueTypeInt,
+    ValueTypeString,
+    ValueTypeTimestamp,
+    ValueTypeUint,
     VisibilityPrivate,
     type DataCreate,
+    type DataSchema,
     type DataSchemaField,
+    type DataSchemaResources,
+    type DataSchemaRx,
     type DataType,
     type DataTypeInternal,
     type IngestionScript,
@@ -52,6 +62,7 @@ import {
     useEffect,
     useState,
     type ChangeEvent,
+    type Dispatch,
     type JSX,
     type MouseEvent,
     type SubmitEvent,
@@ -351,6 +362,7 @@ function parse_form_data(
     data_id: string,
     fields: [string, FormDataEntryValue][],
     datum: Datum,
+    dataTypeSchemas: Record<string, DataSchemaResources>,
 ): DataCreate | undefined {
     const e_label = fields.find(
         ([key, _]) => key === `data[${data_id}][label]`,
@@ -374,12 +386,13 @@ function parse_form_data(
     }
 
     let ingestion_method: string;
-    let ingestion_script = uuidParse(NIL);
+    let ingestion_script;
     switch (datum.ingestion) {
         case undefined:
             throw new Error("ingestion method undefined");
         case IngestionManual:
             ingestion_method = DataIngestionManual;
+            ingestion_script = NIL as string;
             break;
         default:
             ingestion_method = DataIngestionScript;
@@ -396,6 +409,7 @@ function parse_form_data(
         Properties: new Array<Property>(),
         Notes: new Array<Note>(),
         IngestionMethod: ingestion_method,
+        Values: {},
         IngestionScript: ingestion_script,
         IngestionScriptSources: new Map<string, string>(),
     } satisfies DataCreate;
@@ -404,7 +418,100 @@ function parse_form_data(
     datum_info.Notes = parse_form_data_notes(data_id, fields);
 
     if (datum.ingestion === IngestionManual) {
-        console.debug("TODO");
+        const schema = dataTypeSchemas[datum_info.Type];
+        if (!schema) {
+            throw new Error(
+                `data schema for type ${datum_info.Type} not found`,
+            );
+        }
+
+        let rx_idx_max = -1;
+        const data_store = new Map<string, [number, string][]>();
+        const data_pattern = new RegExp(
+            `^data\\[${data_id}\\]\\[value\\]\\[(\\d+)\\]\\[(\\w+)\\]$`,
+        );
+        for (const [key, field] of fields) {
+            const match = data_pattern.exec(key);
+            if (!match) {
+                continue;
+            }
+
+            const rx_idx = parseInt(match[1]!);
+            const rx_col = match[2]!;
+            const value = field.toString();
+            const col_data = data_store.getOrInsert(rx_col, []);
+            col_data.push([rx_idx, value]);
+            if (rx_idx > rx_idx_max) {
+                rx_idx_max = rx_idx;
+            }
+        }
+
+        let remove_last_value = true;
+        for (const values of data_store.values()) {
+            for (const [idx, value] of values) {
+                if (idx === rx_idx_max && value !== "") {
+                    remove_last_value = false;
+                    break;
+                }
+            }
+        }
+        if (remove_last_value) {
+            for (const values of data_store.values()) {
+                values.length -= 1;
+            }
+        }
+
+        for (const [key, values_store] of data_store.entries()) {
+            const field = schema.DataSchema.Fields.find(
+                (field) => field.Label === key,
+            );
+            if (!field) {
+                throw new Error(
+                    `invalid schema field ${key} in ${schema.DataSchema}`,
+                );
+            }
+
+            const values = new Array<any>(values_store.length);
+            switch (field.DType) {
+                case ValueTypeUint:
+                    for (const [idx, value] of values_store) {
+                        const v = parseInt(value);
+                        if (v < 0) {
+                            throw new Error(
+                                `invalid data value ${v} of type ${field.DType}`,
+                            );
+                        }
+
+                        values[idx] = v;
+                    }
+                    break;
+                case ValueTypeInt:
+                    for (const [idx, value] of values_store) {
+                        values[idx] = parseInt(value);
+                    }
+                    break;
+                case ValueTypeFloat:
+                    for (const [idx, value] of values_store) {
+                        values[idx] = parseFloat(value);
+                    }
+                    break;
+                case ValueTypeString:
+                    for (const [idx, value] of values_store) {
+                        values[idx] = value;
+                    }
+                    break;
+
+                case ValueTypeBoolean:
+                case ValueTypeTimestamp:
+                    throw new Error(`TODO: parse data of type ${field?.DType}`);
+                default:
+                    throw new Error(
+                        `invalid data type ${field.DType} from ${schema.DataSchema}`,
+                    );
+            }
+
+            datum_info.Values = { ...datum_info.Values, [key]: values };
+        }
     } else {
         for (const source of datum.ingestion.Sources) {
             const field_key = `data[${data_id}][ingestion_script_source][${source.Id}]`;
@@ -437,6 +544,9 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
     const [data, setData] = useState<Datum[]>([
         { id: 0, ingestion: undefined },
     ]);
+    const [dataTypeSchemas, setDataTypeSchemas] = useState<
+        Record<string, DataSchemaResources>
+    >({});
 
     function create_new_datum(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
@@ -465,6 +575,16 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
         setData([...data]);
     }
 
+    function cache_data_type_schema(
+        data_type: UUIDTypes,
+        schema: DataSchemaResources,
+    ) {
+        setDataTypeSchemas({
+            ...dataTypeSchemas,
+            [data_type.toString()]: schema,
+        });
+    }
+
     async function create_project_data(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault();
 
@@ -475,7 +595,12 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
         for (const [id, fields] of data_fields.entries()) {
             const idx = parseInt(id);
             const datum = data.find((datum) => datum.id === idx)!;
-            const datum_info = parse_form_data(id, fields, datum);
+            const datum_info = parse_form_data(
+                id,
+                fields,
+                datum,
+                dataTypeSchemas,
+            );
             if (datum_info === undefined) {
                 continue;
             }
@@ -490,18 +615,23 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
 
         const files = new Array();
         for (const datum of info) {
-            const source_obj: { [key: string]: string } = {};
-            for (const [key, field] of datum.IngestionScriptSources.entries()) {
-                const file = form.get(field);
-                if (file === null) {
-                    throw new Error(`invalid file ${field}`);
+            if (datum.IngestionMethod !== IngestionManual) {
+                const source_obj: { [key: string]: string } = {};
+                for (const [
+                    key,
+                    field,
+                ] of datum.IngestionScriptSources.entries()) {
+                    const file = form.get(field);
+                    if (file === null) {
+                        throw new Error(`invalid file ${field}`);
+                    }
+                    files.push([field, file]);
+
+                    source_obj[key] = field;
                 }
-                files.push([field, file]);
 
-                source_obj[key] = field;
+                datum.IngestionScriptSources = source_obj;
             }
-
-            datum.IngestionScriptSources = source_obj;
         }
 
         const labels = new Array<string>();
@@ -530,6 +660,7 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
                             canRemove={data.length > 1}
                             onRemove={remove_datum}
                             onChangeIngestion={on_change_ingestion}
+                            cacheDataTypeSchema={cache_data_type_schema}
                         />
                     ))}
                 </ol>
@@ -559,6 +690,10 @@ interface ProjectDataItemProps {
     canRemove: boolean;
     onRemove: (id: number) => void;
     onChangeIngestion: (id: number, e: IngestionMethod) => void;
+    cacheDataTypeSchema: (
+        data_type: UUIDTypes,
+        schema: DataSchemaResources,
+    ) => void;
 }
 function ProjectDataItem({
     datum,
@@ -566,6 +701,7 @@ function ProjectDataItem({
     canRemove,
     onRemove,
     onChangeIngestion,
+    cacheDataTypeSchema,
 }: ProjectDataItemProps) {
     const [dataType, setDataType] = useState<undefined | DataType>(undefined);
     const datum_name = `data[${datum.id}]`;
@@ -659,6 +795,7 @@ function ProjectDataItem({
                             datum={datum}
                             dataType={dataType}
                             onChange={(e) => onChangeIngestion(datum.id, e)}
+                            cacheDataTypeSchema={cacheDataTypeSchema}
                         />
                         <DatumProperties datum={datum} />
                         <DatumNotes datum={datum} />
@@ -673,8 +810,17 @@ interface DatumStorageProps {
     datum: Datum;
     dataType: DataType;
     onChange: (e: IngestionMethod) => void;
+    cacheDataTypeSchema: (
+        data_type: UUIDTypes,
+        schema: DataSchemaResources,
+    ) => void;
 }
-function DatumStorage({ datum, dataType, onChange }: DatumStorageProps) {
+function DatumStorage({
+    datum,
+    dataType,
+    onChange,
+    cacheDataTypeSchema,
+}: DatumStorageProps) {
     switch (dataType.Storage) {
         case DataStorageInternal:
             return (
@@ -684,6 +830,7 @@ function DatumStorage({ datum, dataType, onChange }: DatumStorageProps) {
                             datum={datum}
                             dataType={dataType}
                             onChange={onChange}
+                            cacheDataTypeSchema={cacheDataTypeSchema}
                         />
                     </Suspense>
                 </ErrorBoundary>
@@ -702,11 +849,16 @@ interface DatumStorageInternalProps {
     datum: Datum;
     dataType: DataTypeInternal;
     onChange: (e: IngestionMethod) => void;
+    cacheDataTypeSchema: (
+        data_type: UUIDTypes,
+        schema: DataSchemaResources,
+    ) => void;
 }
 function DatumStorageInternal({
     datum,
     dataType,
     onChange,
+    cacheDataTypeSchema,
 }: DatumStorageInternalProps) {
     const { data: schema } = useSuspenseQuery({
         queryKey: [QUERY_KEY_DATA_SCHEMA_RESOURCES, dataType.Schema],
@@ -718,6 +870,9 @@ function DatumStorageInternal({
         queryFn: async () =>
             await dataService.ingestionScriptsForDataType(dataType.Id),
     });
+    useEffect(() => {
+        cacheDataTypeSchema(dataType.Id, schema);
+    }, []);
 
     const [ingestionComponent, setIngestionComponent] = useState<
         undefined | JSX.Element
@@ -731,7 +886,7 @@ function DatumStorageInternal({
                 case DataSchemaCardinalitySingle:
                     setIngestionComponent(
                         <DatumStorageInternalSingle
-                            schema={schema.DataSchema.Schema}
+                            schema={schema.DataSchema.Fields}
                         />,
                     );
                     break;
@@ -739,7 +894,7 @@ function DatumStorageInternal({
                     setIngestionComponent(
                         <DatumStorageInternalMultipleManual
                             datum={datum}
-                            schema={schema.DataSchema.Schema}
+                            schema={schema.DataSchema.Fields}
                         />,
                     );
                     break;
@@ -860,7 +1015,7 @@ function DatumStorageInternalSingle({
     return <div>single int</div>;
 }
 
-interface Record {
+interface DataField {
     id: number;
     values: any[];
 }
@@ -873,10 +1028,10 @@ function DatumStorageInternalMultipleManual({
     datum,
     schema,
 }: DatumStorageInternalMultipleProps) {
-    const [records, setRecords] = useState<Record[]>([]);
+    const [fields, setFields] = useState<DataField[]>([]);
 
     function insert_row(index: number = -1) {
-        const id = Math.max(-1, ...records.map((rx) => rx.id)) + 1;
+        const id = Math.max(-1, ...fields.map((rx) => rx.id)) + 1;
         const values = new Array(schema.length);
         for (let idx = 0; idx < values.length; idx++) {
             values[idx] = undefined;
@@ -887,15 +1042,15 @@ function DatumStorageInternalMultipleManual({
         };
 
         if (index === -1) {
-            index = records.length;
+            index = fields.length;
         }
-        setRecords(records.toSpliced(index, 0, rx));
+        setFields(fields.toSpliced(index, 0, rx));
     }
 
     function maybe_add_row(e: ChangeEvent<HTMLInputElement>, id: number) {
-        const last = records.at(-1);
+        const last = fields.at(-1);
         if (!last) {
-            throw new Error("invalid records");
+            throw new Error("invalid fields");
         }
         if (id !== last.id) {
             return;
@@ -909,7 +1064,7 @@ function DatumStorageInternalMultipleManual({
             return;
         }
 
-        setRecords(records.toSpliced(idx, 1));
+        setFields(fields.toSpliced(idx, 1));
     }
 
     function insert_row_mouse(e: MouseEvent<HTMLButtonElement>, idx: number) {
@@ -947,15 +1102,15 @@ function DatumStorageInternalMultipleManual({
                     </tr>
                 </thead>
                 <tbody>
-                    {records.map((rx, idx) => (
+                    {fields.map((rx, rx_idx) => (
                         <tr key={rx.id} className="group">
-                            {rx.values.map((value, idx) => {
-                                const field = schema[idx]!;
+                            {rx.values.map((value, c_idx) => {
+                                const field = schema[c_idx]!;
                                 return (
                                     <td key={field.Label}>
-                                        <InputRecordManual
+                                        <InputFieldManual
                                             datum={datum}
-                                            idx={idx}
+                                            idx={rx_idx}
                                             field={field}
                                             onChange={(e) =>
                                                 maybe_add_row(e, rx.id)
@@ -973,7 +1128,7 @@ function DatumStorageInternalMultipleManual({
                                             onMouseDown={(e) =>
                                                 remove_row(e, idx)
                                             }
-                                            disabled={records.length === 1}
+                                            disabled={fields.length === 1}
                                         >
                                             <Icon.Minus />
                                         </button>
@@ -999,18 +1154,18 @@ function DatumStorageInternalMultipleManual({
     );
 }
 
-interface InputRecordManualProps {
+interface InputFieldManualProps {
     datum: Datum;
     idx: number;
     field: DataSchemaField;
     onChange: (e: ChangeEvent<HTMLInputElement>) => void;
 }
-function InputRecordManual({
+function InputFieldManual({
     datum,
     idx,
     field,
     onChange,
-}: InputRecordManualProps) {
+}: InputFieldManualProps) {
     return (
         <input
             type="text"

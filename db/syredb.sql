@@ -108,11 +108,18 @@ CREATE TABLE IF NOT EXISTS data_schema_ (
     description TEXT
 );
 
+CREATE TYPE data_schema_field_availability AS ENUM (
+    'complete', -- all values must be present
+    'nullable', -- field must be present, but values can be null (equivalent to required if schema cardinalaity is `single)
+    'optional' -- field is not requried to be present
+);
+
 CREATE TABLE IF NOT EXISTS data_schema_field_ (
     _id UUID REFERENCES data_schema_(_id) NOT NULL,
     _label VARCHAR(128) NOT NULL,
-    _dtype value_type NOT NULL, 
-    index INT NOT NULL,
+    _dtype value_type NOT NULL,
+    _availability data_schema_field_availability DEFAULT 'complete' NOT NULL,
+    index INT NOT NULL, -- default index for display and export
     description TEXT,
     PRIMARY KEY (_id, _label),
     UNIQUE (_id, index)
