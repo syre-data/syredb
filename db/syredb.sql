@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS data_type_ (
     active boolean DEFAULT true NOT NULL
 );
 
+-- schema for data types with `internal` storage 
 CREATE TABLE IF NOT EXISTS data_type_schema_ (
     _data_type UUID REFERENCES data_type_(_id) PRIMARY KEY,
     _schema UUID REFERENCES data_schema_(_id)
@@ -149,6 +150,7 @@ CREATE TYPE source_cardinality AS ENUM (
     'multiple'
 );
 
+-- sources for data types with `external` storage
 CREATE TABLE IF NOT EXISTS data_type_source_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _data_type UUID REFERENCES data_type_(_id) NOT NULL,

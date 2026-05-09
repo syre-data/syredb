@@ -178,7 +178,7 @@ func (h *DataHandler) DataTypeGet(c *echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	data_type, err := h.data_service.DataTypeGetById(data_type_id)
+	data_type, err := h.data_service.DataTypeById(data_type_id)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -219,7 +219,7 @@ func (h *DataHandler) DataTypeUpdate(c *echo.Context) error {
 
 func (h *DataHandler) DataTypesGetAll(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	schemas, err := h.data_service.DataTypesGetAll()
+	schemas, err := h.data_service.DataTypesAll()
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -1056,9 +1056,9 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 			return c.NoContent(http.StatusBadRequest)
 		}
 
-		memberships := make([]service.ProjectDataMembership, len(data_ids))
+		memberships := make([]service.ProjectDataMembershipRx, len(data_ids))
 		for idx, data_id := range data_ids {
-			memberships[idx] = service.ProjectDataMembership{
+			memberships[idx] = service.ProjectDataMembershipRx{
 				Project: project_id,
 				Data:    data_id,
 				Creator: user_id,

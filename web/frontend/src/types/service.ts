@@ -98,6 +98,13 @@ export interface DataTypeExternal {
   Active: boolean;
   Sources: DataTypeExternalSourceRx[];
 }
+export type DataCreator = any;
+export interface DataCreatorUser {
+  Id: uuid.UUIDTypes;
+}
+export interface DataCreatorTransform {
+  Id: uuid.UUIDTypes;
+}
 export interface ExternalSourceCreate {
   Cardinality: DataSourceCardinality;
   Required: boolean;
@@ -387,7 +394,10 @@ export interface ProjectSampleNote {
 }
 export interface ProjectData {
   Id: uuid.UUIDTypes;
-  Creator: uuid.UUIDTypes;
+  Type: uuid.UUIDTypes;
+  Creator: DataCreator;
+  MembershipCreator: uuid.UUIDTypes;
+  Timestamp: Date;
   Label: string;
   Tags: string[];
   Properties: Property[];
@@ -422,6 +432,7 @@ export interface ProjectResources {
   Project: Project;
   Tags: string[];
   Data: ProjectData[];
+  DataTypes: DataType[];
   DataSchemas: DataSchema[];
   DataGroups: ProjectDataGroup[];
   DataGroupRelations: DataGroupRelation[];
@@ -430,6 +441,9 @@ export interface ProjectResources {
 }
 export interface ProjectDataInfo {
   Id: uuid.UUIDTypes;
+  Type: uuid.UUIDTypes;
+  Creator: DataCreator;
+  Timestamp: Date;
   Tags: string[];
   Properties: Property[];
   NoteCount: number /* uint */;
@@ -528,7 +542,7 @@ export interface ProjectSampleMembership {
   Timestamp: Date;
   Label: string;
 }
-export interface ProjectDataMembership {
+export interface ProjectDataMembershipRx {
   Project: uuid.UUIDTypes;
   Data: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;

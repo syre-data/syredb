@@ -75,7 +75,11 @@ function Project({ projectId }: ProjectProps) {
                     </div>
                 </div>
             </div>
-            <ProjectData projectId={projectId} data={resources.Data} />
+            <ProjectData
+                projectId={projectId}
+                data={resources.Data}
+                types={resources.DataTypes}
+            />
         </div>
     );
 }
@@ -83,8 +87,9 @@ function Project({ projectId }: ProjectProps) {
 interface ProjectDataProps {
     projectId: uuid.UUIDTypes;
     data: ProjectData[];
+    types: DataType[];
 }
-function ProjectData({ projectId, data }: ProjectDataProps) {
+function ProjectData({ projectId, data, types }: ProjectDataProps) {
     return (
         <div>
             <div className="px-4 flex gap-2">
@@ -100,7 +105,7 @@ function ProjectData({ projectId, data }: ProjectDataProps) {
             {data.length === 0 ? (
                 <ProjectDataEmpty />
             ) : (
-                <ProjectDataList data={data} />
+                <ProjectDataList data={data} types={types} />
             )}
         </div>
     );
@@ -119,7 +124,54 @@ function ProjectDataEmpty() {
 
 interface ProjectDataListProps {
     data: ProjectData[];
+    types: DataType[];
 }
-function ProjectDataList({ data }: ProjectDataListProps) {
-    return <ul></ul>;
+function ProjectDataList({ data, types }: ProjectDataListProps) {
+    return (
+        <ul className="grid gap-2 grid-cols-[repeat(3,min-content)]">
+            {data.map((datum, idx) => {
+                const type = types.find((type) => type.Id === datum.Type);
+                if (!type) {
+                    console.error(`could not get data type ${datum.Type}`);
+                }
+
+                return (
+                    <ProjectDataItem
+                        key={datum.Id.toString()}
+                        index={idx}
+                        data={datum}
+                        type={type}
+                    />
+                );
+            })}
+        </ul>
+    );
+}
+
+interface ProjectDataItemProps {
+    index: number;
+    data: ProjectData;
+    type: DataType;
+}
+function ProjectDataItem({ index, data, type }: ProjectDataItemProps) {
+    return (
+        <li className="px-4 grid grid-cols-subgrid col-span-full">
+            <div className="grid grid-cols-subgrid col-span-full">
+                <div className="col-1">{index + 1}.</div>
+                <div className="col-2">{type.Label}</div>
+                <div className="col-3">
+                    {data.Label ? (
+                        <>
+                            data.Label
+                            <span className="text-gray-500">
+                                ({data.Timestamp.toString()})
+                            </span>
+                        </>
+                    ) : (
+                        data.Timestamp.toString()
+                    )}
+                </div>
+            </div>
+        </li>
+    );
 }

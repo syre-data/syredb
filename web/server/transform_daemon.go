@@ -139,6 +139,8 @@ type transformInfoRx struct {
 	Cmd         uuid.UUID `db:"cmd"`
 }
 
+// transformInfo
+// `.Source` and `.Destination` are `dataTypeInfoInternal` or `dataTypeInfoExternal`.
 type transformInfo struct {
 	Id          uuid.UUID
 	Cmd         dataTypeTransformCmdRx
@@ -250,8 +252,9 @@ type dataTypeInfoBasic struct {
 }
 
 type dataTypeInfoInternal struct {
-	Id     uuid.UUID
-	Schema []service.DataSchemaField
+	Id          uuid.UUID
+	Cardinality service.DataSchemaCardinality
+	Schema      []service.DataSchemaField
 }
 
 func (d *dataTypeInfoInternal) DataStorage() service.DataStorage {
@@ -267,6 +270,7 @@ func (d *dataTypeInfoExternal) DataStorage() service.DataStorage {
 	return service.DataStorageExternal
 }
 
+// dataTypesById returns `dataTypeInfoInternal` and `dataTypeInfoExternal`.
 func (d *TransformDaemon) dataTypesById(type_ids []uuid.UUID) ([]service.DataType, error) {
 	query := "SELECT _id, _storage FROM data_type_ WHERE _id=ANY($1)"
 	rows, _ := d.db.Conn.Query(d.ctx, query, type_ids)
@@ -325,8 +329,9 @@ func (d *TransformDaemon) dataTypesById(type_ids []uuid.UUID) ([]service.DataTyp
 			}
 
 			types[idx] = &dataTypeInfoInternal{
-				Id:     id,
-				Schema: schemas[sidx].Schema,
+				Id:          id,
+				Cardinality: schemas[sidx].Cardinality,
+				Schema:      schemas[sidx].Schema,
 			}
 		} else if slices.Contains(external_storage_ids, id) {
 			sidx := slices.IndexFunc(sources, func(source dataSourceInfo) bool {
@@ -435,12 +440,18 @@ func (d *TransformDaemon) dataSchemasByTypeId(types []uuid.UUID) ([]schemaInfo, 
 }
 
 type dataSourceInfo struct {
-	Id       uuid.UUID `db:"_id"`
-	DataType uuid.UUID `db:"_data_type"`
+	Id          uuid.UUID                     `db:"_id"`
+	DataType    uuid.UUID                     `db:"_data_type"`
+	Label       string                        `db:"_label"`
+	Required    bool                          `db:"_required"`
+	Cardinality service.DataSourceCardinality `db:"_cardinality"`
+	ExtFilter   []string                      `db:"ext_filter"`
 }
 
 func (d *TransformDaemon) dataSourcesByTypeId(types []uuid.UUID) ([]dataSourceInfo, error) {
-	query := "SELECT _id, _data_type FROM data_type_source_ WHERE _data_type=ANY($1)"
+	query :=
+		`SELECT _id, _data_type, _label, _required, _cardinality, ext_filter 
+		FROM data_type_source_ WHERE _data_type=ANY($1)`
 	rows, _ := d.db.Conn.Query(d.ctx, query, types)
 	sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[dataSourceInfo])
 	if err != nil {
@@ -503,7 +514,7 @@ func (d *TransformDaemon) runTransform(
 		return
 	}
 
-	data_path, err := d.createTransformDataFile(payload)
+	data_path, err := d.createTransformDataFile(payload, transform)
 	if err != nil {
 		d.logger.With(
 			"error", err,
@@ -536,7 +547,6 @@ func (d *TransformDaemon) runTransform(
 		transform.Cmd.Cmd,
 		transform.Cmd.Path,
 		job.String(),
-		string(transform.Source.DataStorage()),
 		data_path,
 	)
 	var cmd_out strings.Builder
@@ -570,7 +580,7 @@ func (d *TransformDaemon) runTransform(
 	} else {
 		ok_query := fmt.Sprintf(
 			`UPDATE _data_type_transform_queue_ 
-			SET status='%s', finished=$2
+			SET status='%s', finished=$2, error=''
 			WHERE _id=$1`,
 			transformJobStatusCompleted,
 		)
@@ -584,20 +594,51 @@ func (d *TransformDaemon) runTransform(
 	}
 }
 
-type dataInfo struct {
-	Tags       []string
-	Properties map[string]service.Property
+type transformInfoFile struct {
+	Input         any                 `json:"input"` // `transformScriptInputDataInternal` or `transformScriptInputDataExternal`
+	Output        any                 `json:"output"`
+	InputStorage  service.DataStorage `json:"input_storage"`
+	OutputStorage service.DataStorage `json:"output_storage"`
 }
 
-type transformScriptData struct {
-	DataPaths  []string       `json:"data_paths"`
+type transformScriptInputDataInternal struct {
+	DataPath   string         `json:"data_path"`
 	Tags       []string       `json:"tags"`
 	Properties map[string]any `json:"properties"`
+}
+
+type transformScriptInputDataExternal struct {
+	DataPaths  map[string]any `json:"sources"`
+	Tags       []string       `json:"tags"`
+	Properties map[string]any `json:"properties"`
+}
+
+type outputDataSchemaField struct {
+	Label        string                              `json:"label"`
+	DType        service.ValueType                   `json:"dtype"`
+	Availability service.DataSchemaFieldAvailability `json:"availability"`
+}
+
+type transformScriptOutputDataInternal struct {
+	Cardinality service.DataSchemaCardinality `json:"cardinality"`
+	Fields      []outputDataSchemaField       `json:"fields"`
+}
+
+type outputDataSource struct {
+	Label       string                        `json:"label"`
+	Required    bool                          `json:"required"`
+	Cardinality service.DataSourceCardinality `json:"cardinality"`
+	ExtFilter   []string                      `json:"ext_filter"`
+}
+
+type transformScriptOutputDataExternal struct {
+	Sources []outputDataSource `json:"sources"`
 }
 
 // TODO: Include project specific properties?
 func (d *TransformDaemon) createTransformDataFile(
 	payload uuid.UUID,
+	transform transformInfo,
 ) (string, error) {
 	properties_query :=
 		`SELECT _key, _type, value FROM data_property_
@@ -626,10 +667,59 @@ func (d *TransformDaemon) createTransformDataFile(
 		return "", err
 	}
 
-	transform_data := transformScriptData{
-		DataPaths:  data_paths,
-		Properties: properties,
+	transform_info := transformInfoFile{
+		InputStorage:  transform.Source.DataStorage(),
+		OutputStorage: transform.Destination.DataStorage(),
 	}
+
+	switch transform.Source.DataStorage() {
+	case service.DataStorageExternal:
+		transform_info.Input = transformScriptInputDataExternal{
+			DataPaths:  data_paths.(map[string]any),
+			Properties: properties,
+		}
+
+	case service.DataStorageInternal:
+		transform_info.Input = transformScriptInputDataInternal{
+			DataPath:   data_paths.(string),
+			Properties: properties,
+		}
+	}
+
+	switch transform.Destination.DataStorage() {
+	case service.DataStorageExternal:
+		output := transform.Destination.(*dataTypeInfoExternal)
+		sources := make([]outputDataSource, len(output.Sources))
+		for idx, src := range output.Sources {
+			sources[idx] = outputDataSource{
+				Label:       src.Label,
+				Cardinality: src.Cardinality,
+				Required:    src.Required,
+				ExtFilter:   src.ExtFilter,
+			}
+		}
+		transform_info.Output = transformScriptOutputDataExternal{
+			Sources: sources,
+		}
+
+	case service.DataStorageInternal:
+		output := transform.Destination.(*dataTypeInfoInternal)
+		fields := make([]outputDataSchemaField, len(output.Schema))
+		for idx, field := range output.Schema {
+			fields[idx] = outputDataSchemaField{
+				Label:        field.Label,
+				DType:        field.DType,
+				Availability: field.Availability,
+			}
+		}
+		transform_info.Output = transformScriptOutputDataInternal{
+			Cardinality: output.Cardinality,
+			Fields:      fields,
+		}
+	default:
+		panic("unexpected service.DataStorage")
+	}
+
 	transform_file, err := os.CreateTemp("", "*.json")
 	if err != nil {
 		d.logger.With(
@@ -639,14 +729,19 @@ func (d *TransformDaemon) createTransformDataFile(
 	}
 	defer transform_file.Close()
 	encoder := json.NewEncoder(transform_file)
-	encoder.Encode(transform_data)
+	encoder.Encode(transform_info)
 
 	return transform_file.Name(), nil
 }
 
-// createTransformDataFileData creates temporary files holding the data's values, and returns
-// the paths of these files.
-func (d *TransformDaemon) createTransformDataFileData(data uuid.UUID) ([]string, error) {
+// createTransformDataFileData creates temporary files holding the data's values.
+// If the data is internally stored it returns a single data path (`string`).
+// If the data is externally stored it returns a map from the source labels to the data path(s)
+// (`map[string]any` where values are `string` if the source has `single` cardinality
+// or `[]string` if it has `multiple` cardinality).
+func (d *TransformDaemon) createTransformDataFileData(
+	data uuid.UUID,
+) (any, error) {
 	values_arr, err := d.data_service.DataValuesById([]uuid.UUID{data})
 	if err != nil {
 		d.logger.With(
@@ -680,35 +775,39 @@ func (d *TransformDaemon) createTransformDataFileData(data uuid.UUID) ([]string,
 			).Error("could not create data values file")
 			return nil, err
 		}
-		return []string{data_path}, nil
-
-	default:
-		panic(fmt.Sprintf("unexpected app.DataStorage: %#v", values.Storage))
+		return data_path, nil
 	}
+
+	panic("unreachable")
 }
 
-func createTransformDataFileDataExternal(sources []service.DataSource) ([]string, error) {
-	data_paths := []string{}
+// createTransformDataFileDataExternal creates temporary files for each source.
+// Values of the map are a string if the source's cardinality is `single`
+// and a []string if `multiple`.
+func createTransformDataFileDataExternal(sources []service.DataSource) (map[string]any, error) {
+	data_paths := make(map[string]any, len(sources))
 	for _, src := range sources {
 		switch src.Cardinality {
 		case service.DataSourceCardinalityMultiple:
-			for _, path := range src.Source.([]string) {
+			sources := src.Source.([]string)
+			paths := make([]string, len(sources))
+			for idx, path := range sources {
 				tmp_path, err := copyToTmpfile(path)
 				if err != nil {
 					return nil, err
 				}
 
-				data_paths = append(data_paths, tmp_path)
+				paths[idx] = tmp_path
 			}
+			data_paths[src.Label] = paths
+
 		case service.DataSourceCardinalitySingle:
 			tmp_path, err := copyToTmpfile(src.Source.(string))
 			if err != nil {
 				return nil, err
 			}
 
-			data_paths = append(data_paths, tmp_path)
-		default:
-			panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", src.Cardinality))
+			data_paths[src.Label] = tmp_path
 		}
 	}
 
@@ -719,10 +818,10 @@ func createTransformDataFileDataExternal(sources []service.DataSource) ([]string
 // to the temporary file.
 func copyToTmpfile(path string) (string, error) {
 	src, err := os.Open(path)
-	defer src.Close()
 	if err != nil {
 		return "", err
 	}
+	defer src.Close()
 
 	ext := filepath.Ext(path)
 	tmpfile, err := os.CreateTemp("", fmt.Sprintf("*%s", ext))
@@ -744,6 +843,8 @@ func createTransformDataFileDataInternal(fields []service.SchemaFieldValues) (st
 	cols := make([]arrow.Array, len(fields))
 	for idx, field := range fields {
 		arrow_field, arrow_col := fieldToArrow(field, pool)
+		defer arrow_col.Release()
+
 		arrow_fields[idx] = arrow_field
 		cols[idx] = arrow_col
 	}
@@ -751,11 +852,11 @@ func createTransformDataFileDataInternal(fields []service.SchemaFieldValues) (st
 	schema := arrow.NewSchema(arrow_fields, nil)
 	data := array.NewRecordBatch(schema, cols, height)
 
-	tmpfile, err := os.CreateTemp("", "")
-	defer tmpfile.Close()
+	tmpfile, err := os.CreateTemp("", "*.arrow")
 	if err != nil {
 		return "", err
 	}
+	defer tmpfile.Close()
 
 	writer, err := ipc.NewFileWriter(tmpfile, ipc.WithSchema(schema))
 	if err != nil {
@@ -771,6 +872,8 @@ func createTransformDataFileDataInternal(fields []service.SchemaFieldValues) (st
 	return tmpfile.Name(), nil
 }
 
+// fieldToArrow creates arrow resources for the give data schema field.
+// The `arrow.Array` must be `Release`d after use.
 func fieldToArrow(field service.SchemaFieldValues, pool memory.Allocator) (arrow.Field, arrow.Array) {
 	arrow_type := valueTypeToArrow(field.DType)
 	arrow_field := arrow.Field{
@@ -785,16 +888,18 @@ func fieldToArrow(field service.SchemaFieldValues, pool memory.Allocator) (arrow
 
 		switch field.Cardinality {
 		case service.DataSchemaCardinalityMultiple:
-			values := field.Values.([]bool)
+			vals_arr := field.Values.([]any)
+			values := make([]bool, len(vals_arr))
+			for idx, val := range vals_arr {
+				values[idx] = val.(bool)
+			}
+
 			builder.AppendValues(values, nil)
 		case service.DataSchemaCardinalitySingle:
 			value := field.Values.(bool)
 			builder.Append(value)
-		default:
-			panic(fmt.Sprintf("unexpected service.DataSchemaCardinality: %#v", field.Cardinality))
 		}
 		values := builder.NewArray()
-		defer values.Release()
 
 		return arrow_field, values
 
@@ -804,16 +909,18 @@ func fieldToArrow(field service.SchemaFieldValues, pool memory.Allocator) (arrow
 
 		switch field.Cardinality {
 		case service.DataSchemaCardinalityMultiple:
-			values := field.Values.([]float64)
+			vals_arr := field.Values.([]any)
+			values := make([]float64, len(vals_arr))
+			for idx, val := range vals_arr {
+				values[idx] = val.(float64)
+			}
+
 			builder.AppendValues(values, nil)
 		case service.DataSchemaCardinalitySingle:
 			value := field.Values.(float64)
 			builder.Append(value)
-		default:
-			panic(fmt.Sprintf("unexpected service.DataSchemaCardinality: %#v", field.Cardinality))
 		}
 		values := builder.NewArray()
-		defer values.Release()
 
 		return arrow_field, values
 
@@ -823,16 +930,18 @@ func fieldToArrow(field service.SchemaFieldValues, pool memory.Allocator) (arrow
 
 		switch field.Cardinality {
 		case service.DataSchemaCardinalityMultiple:
-			values := field.Values.([]int32)
+			vals_arr := field.Values.([]any)
+			values := make([]int32, len(vals_arr))
+			for idx, val := range vals_arr {
+				values[idx] = val.(int32)
+			}
+
 			builder.AppendValues(values, nil)
 		case service.DataSchemaCardinalitySingle:
 			value := field.Values.(int32)
 			builder.Append(value)
-		default:
-			panic(fmt.Sprintf("unexpected service.DataSchemaCardinality: %#v", field.Cardinality))
 		}
 		values := builder.NewArray()
-		defer values.Release()
 
 		return arrow_field, values
 
@@ -842,21 +951,20 @@ func fieldToArrow(field service.SchemaFieldValues, pool memory.Allocator) (arrow
 
 		switch field.Cardinality {
 		case service.DataSchemaCardinalityMultiple:
-			values := field.Values.([]string)
+			vals_arr := field.Values.([]any)
+			values := make([]string, len(vals_arr))
+			for idx, val := range vals_arr {
+				values[idx] = val.(string)
+			}
+
 			builder.AppendValues(values, nil)
 		case service.DataSchemaCardinalitySingle:
 			value := field.Values.(string)
 			builder.Append(value)
-		default:
-			panic(fmt.Sprintf("unexpected service.DataSchemaCardinality: %#v", field.Cardinality))
 		}
 		values := builder.NewArray()
-		defer values.Release()
 
 		return arrow_field, values
-
-	case service.ValueTypeTimestamp:
-		panic("TODO: timestamp data")
 
 	case service.ValueTypeUint:
 		builder := array.NewUint32Builder(pool)
@@ -864,22 +972,26 @@ func fieldToArrow(field service.SchemaFieldValues, pool memory.Allocator) (arrow
 
 		switch field.Cardinality {
 		case service.DataSchemaCardinalityMultiple:
-			values := field.Values.([]uint32)
+			vals_arr := field.Values.([]any)
+			values := make([]uint32, len(vals_arr))
+			for idx, val := range vals_arr {
+				values[idx] = uint32(val.(float64))
+			}
+
 			builder.AppendValues(values, nil)
 		case service.DataSchemaCardinalitySingle:
 			value := field.Values.(uint32)
 			builder.Append(value)
-		default:
-			panic(fmt.Sprintf("unexpected service.DataSchemaCardinality: %#v", field.Cardinality))
 		}
 		values := builder.NewArray()
-		defer values.Release()
 
 		return arrow_field, values
 
-	default:
-		panic(fmt.Sprintf("unexpected service.ValueType: %#v", field.DType))
+	case service.ValueTypeTimestamp:
+		panic("TODO: timestamp data")
 	}
+
+	panic("unreachable")
 }
 
 func valueTypeToArrow(kind service.ValueType) arrow.DataType {
