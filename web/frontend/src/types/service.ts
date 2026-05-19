@@ -127,10 +127,6 @@ export interface DataTypeUpdate {
 export const DataSchemaCardinalitySingle = "single";
 export const DataSchemaCardinalityMultiple = "multiple";
 export type DataSchemaCardinality = typeof DataSchemaCardinalitySingle | typeof DataSchemaCardinalityMultiple;
-export type DataSchemaFieldAvailability = string;
-export const DataSchemaFieldComplete: DataSchemaFieldAvailability = "complete";
-export const DataSchemaFieldNullable: DataSchemaFieldAvailability = "nullable";
-export const DataSchemaFieldOptional: DataSchemaFieldAvailability = "optional";
 export interface DataSchemaRx {
   Id: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
@@ -142,14 +138,16 @@ export interface DataSchemaFieldRx {
   Id: uuid.UUIDTypes;
   Label: string;
   DType: ValueType;
-  Availability: DataSchemaFieldAvailability;
+  Required: boolean;
+  Nullable: boolean;
   Index: number /* uint */;
   Description: string;
 }
 export interface DataSchemaField {
   Label: string;
   DType: ValueType;
-  Availability: DataSchemaFieldAvailability;
+  Required: boolean;
+  Nullable: boolean;
   Index: number /* uint */;
   Description: string;
 }

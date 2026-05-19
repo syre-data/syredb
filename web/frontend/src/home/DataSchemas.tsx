@@ -7,7 +7,7 @@ import dataService from "@/service/data.service";
 import classNames from "classnames";
 import { Link, useNavigate } from "react-router";
 import Icon from "@/icon";
-import type { DataSchemaRecord } from "@/types";
+import type { DataSchema } from "@/types";
 
 export default function () {
     return (
@@ -101,7 +101,7 @@ function DataSchemasEmpty() {
 }
 
 interface DataSchemasContentProps {
-    data_schemas: DataSchemaRecord[];
+    data_schemas: DataSchema[];
 }
 function DataSchemasContent({ data_schemas }: DataSchemasContentProps) {
     return (
@@ -119,7 +119,7 @@ function DataSchemasContent({ data_schemas }: DataSchemasContentProps) {
 
 interface DataSchemaListItemProps {
     index: number;
-    schema: DataSchemaRecord;
+    schema: DataSchema;
 }
 function DataSchemaListItem({ index, schema }: DataSchemaListItemProps) {
     const ROW_SPAN = 2;
@@ -179,10 +179,10 @@ function DataSchemaListItem({ index, schema }: DataSchemaListItemProps) {
                     "h-0": !expanded,
                 })}
             >
-                {schema.Schema.map((col, idx) => (
+                {schema.Fields.map((col, idx) => (
                     <div key={col.Label} title={col.Description}>
                         <span>{col.Label}</span> <span>({col.DType})</span>
-                        {idx === schema.Schema.length - 1 ? "" : " | "}
+                        {idx === schema.Fields.length - 1 ? "" : " | "}
                     </div>
                 ))}
             </div>

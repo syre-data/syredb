@@ -60,7 +60,7 @@ func main() {
 	project_handler := handler.NewProjectHandler(db, project_service, user_service, sample_service)
 	data_handler := handler.NewDataHandler(db, data_service, app_service, user_service, project_service)
 
-	transform_daemon_logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	transform_daemon_logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	transform_daemon := NewTransformDaemon(ctx, transform_daemon_logger, db, app_service, data_service)
 	go transform_daemon.Start(ctx)
 

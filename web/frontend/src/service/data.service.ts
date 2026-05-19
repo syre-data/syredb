@@ -75,10 +75,10 @@ function dataTypeUpdate(update: types.DataTypeUpdate): Promise<Response> {
     });
 }
 
-function dataSchemasGetAll(): Promise<types.DataSchemaRx[]> {
+function dataSchemasGetAll(): Promise<types.DataSchema[]> {
     return fetch("/api/data-schemas", {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataSchemaRx[]);
+    }).then(async (resp) => (await resp.json()) as types.DataSchema[]);
 }
 
 function saveProjectDataAll(

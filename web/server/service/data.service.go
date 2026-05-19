@@ -730,14 +730,6 @@ const (
 	DataSchemaCardinalityMultiple DataSchemaCardinality = "multiple"
 )
 
-type DataSchemaFieldAvailability string
-
-const (
-	DataSchemaFieldComplete DataSchemaFieldAvailability = "complete"
-	DataSchemaFieldNullable DataSchemaFieldAvailability = "nullable"
-	DataSchemaFieldOptional DataSchemaFieldAvailability = "optional"
-)
-
 type DataSchemaRx struct {
 	Id          uuid.UUID             `db:"_id"`
 	Creator     uuid.UUID             `db:"_creator"`
@@ -747,20 +739,22 @@ type DataSchemaRx struct {
 }
 
 type DataSchemaFieldRx struct {
-	Id           uuid.UUID                   `db:"_id"`
-	Label        string                      `db:"_label"`
-	DType        ValueType                   `db:"_dtype"`
-	Availability DataSchemaFieldAvailability `db:"_availability"`
-	Index        uint                        `db:"index"`
-	Description  string                      `db:"description"`
+	Id          uuid.UUID `db:"_id"`
+	Label       string    `db:"_label"`
+	DType       ValueType `db:"_dtype"`
+	Required    bool      `db:"_required"`
+	Nullable    bool      `db:"_nullable"`
+	Index       uint      `db:"index"`
+	Description string    `db:"description"`
 }
 
 type DataSchemaField struct {
-	Label        string                      `db:"_label"`
-	DType        ValueType                   `db:"_dtype"`
-	Availability DataSchemaFieldAvailability `db:"_availability"`
-	Index        uint                        `db:"index"`
-	Description  string                      `db:"description"`
+	Label       string    `db:"_label"`
+	DType       ValueType `db:"_dtype"`
+	Required    bool      `db:"_required"`
+	Nullable    bool      `db:"_nullable"`
+	Index       uint      `db:"index"`
+	Description string    `db:"description"`
 }
 
 type DataSchema struct {
@@ -789,7 +783,7 @@ func (s *DataService) DataSchemasGetAll() ([]DataSchema, error) {
 	}
 
 	fields_query :=
-		`SELECT _id, _label, _dtype, _availability, index, description 
+		`SELECT _id, _label, _dtype, _required, _nullable, index, description 
 		FROM data_schema_field_`
 	rows, err = s.db.Conn.Query(s.ctx, fields_query)
 	if err != nil {
@@ -857,7 +851,7 @@ func (s *DataService) DataSchemasById(schema_ids []uuid.UUID) ([]DataSchema, err
 	}
 
 	fields_query :=
-		`SELECT _id, _label, _dtype, _availability, index, description 
+		`SELECT _id, _label, _dtype, _required, _nullable, index, description 
 		FROM data_schema_field_ WHERE _id=ANY($1)`
 	rows, err = s.db.Conn.Query(s.ctx, fields_query, schema_ids)
 	if err != nil {
@@ -919,7 +913,7 @@ func (s *DataService) DataSchemaById(schema_id uuid.UUID) (DataSchema, error) {
 	}
 
 	fields_query :=
-		`SELECT _id, _label, _dtype, _availability, index, description 
+		`SELECT _id, _label, _dtype, _required, _nullable, index, description 
 		FROM data_schema_field_ WHERE _id=$1`
 	rows, err = s.db.Conn.Query(s.ctx, fields_query, schema_id)
 	if err != nil {
@@ -940,11 +934,12 @@ func (s *DataService) DataSchemaById(schema_id uuid.UUID) (DataSchema, error) {
 	for _, field := range fields_rx {
 		if field.Id == schema_rx.Id {
 			fields = append(fields, DataSchemaField{
-				Label:        field.Label,
-				DType:        field.DType,
-				Availability: field.Availability,
-				Index:        field.Index,
-				Description:  field.Description,
+				Label:       field.Label,
+				DType:       field.DType,
+				Required:    field.Required,
+				Nullable:    field.Nullable,
+				Index:       field.Index,
+				Description: field.Description,
 			})
 		}
 	}
@@ -1179,7 +1174,7 @@ func dataStorageTableColumnsFromSchema(cardinality DataSchemaCardinality, schema
 	return table_cols
 }
 
-func dataStorageTableNameFromSchemaId(schema_id uuid.UUID) string {
+func DataStorageTableNameFromSchemaId(schema_id uuid.UUID) string {
 	const tableNamePrefix = "data_schema"
 	schema_name := strings.ReplaceAll(schema_id.String(), "-", "_")
 	return fmt.Sprintf(
@@ -1220,7 +1215,7 @@ func (s *DataService) data_schema_storage_table_create(
 ) error {
 	// TODO: Ensure no schema field has label `_data`
 	table_cols := dataStorageTableColumnsFromSchema(cardinality, schema)
-	table_name := dataStorageTableNameFromSchemaId(schema_id)
+	table_name := DataStorageTableNameFromSchemaId(schema_id)
 	create_table_query := fmt.Sprintf(
 		`CREATE TABLE %s (
 			_data UUID REFERENCES data_(_id) PRIMARY KEY,
@@ -1301,7 +1296,7 @@ func (s *DataService) DataSchemaGetResources(schema_id uuid.UUID) (DataSchemaRes
 	}
 
 	fields_query :=
-		`SELECT _id, _label, _dtype, _availability, index, description 
+		`SELECT _id, _label, _dtype, _required, _nullable, index, description 
 		FROM data_schema_field_ WHERE _id=$1`
 	rows, err = s.db.Conn.Query(s.ctx, fields_query, schema_id)
 	if err != nil {
@@ -2057,7 +2052,7 @@ func (s *DataService) dataValuesByIdInternal(
 	data_query := fmt.Sprintf(
 		"SELECT %s FROM %s WHERE _data=$1",
 		strings.Join(field_labels, ", "),
-		dataStorageTableNameFromSchemaId(schema_id),
+		DataStorageTableNameFromSchemaId(schema_id),
 	)
 	rows, err = s.db.Conn.Query(s.ctx, data_query, data)
 	if err != nil {
@@ -3120,7 +3115,7 @@ func (s *DataService) DataCreate(
 			fmt.Fprintf(
 				&values_query,
 				`INSERT INTO %s (_data, %s) VALUES ($1`,
-				dataStorageTableNameFromSchemaId(schema_id),
+				DataStorageTableNameFromSchemaId(schema_id),
 				strings.Join(field_labels, ", "),
 			)
 			args := make([]any, len(schema.Fields)+1)
@@ -3199,7 +3194,7 @@ func (s *DataService) dataCreateValidateValuesAsSchema(schema DataSchema, values
 	case DataSchemaCardinalitySingle:
 		for _, field := range schema.Fields {
 			_, exists := values[field.Label]
-			if !exists && field.Availability == DataSchemaFieldComplete {
+			if !exists && field.Required {
 				return fmt.Errorf("required field %s missing", field.Label)
 			}
 		}
@@ -3209,7 +3204,7 @@ func (s *DataService) dataCreateValidateValuesAsSchema(schema DataSchema, values
 		for _, field := range schema.Fields {
 			f_values, exists := values[field.Label]
 			if !exists {
-				if field.Availability != DataSchemaFieldOptional {
+				if field.Required {
 					return fmt.Errorf("required field %s missing", field.Label)
 				} else {
 					continue
@@ -3217,7 +3212,7 @@ func (s *DataService) dataCreateValidateValuesAsSchema(schema DataSchema, values
 			}
 
 			f_values_arr := f_values.([]any)
-			if field.Availability == DataSchemaFieldComplete {
+			if !field.Nullable {
 				if slices.Contains(f_values_arr, nil) {
 					return fmt.Errorf("null value found in non-nullable field %s", field.Label)
 				}

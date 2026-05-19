@@ -1553,7 +1553,7 @@ func (s *ProjectService) get_project_sample_resources_derived_data(
 	for _, schema_id := range schema_ids {
 		query := fmt.Sprintf(
 			"SELECT _parent, _transform, _sample_data FROM %s WHERE _sample_data=ANY($1)",
-			dataStorageTableNameFromSchemaId(schema_id),
+			DataStorageTableNameFromSchemaId(schema_id),
 		)
 		rows, _ = s.db.Conn.Query(s.ctx, query, sample_data_ids)
 		schema_data, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DerivedData, error) {
