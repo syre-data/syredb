@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/binary"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1193,7 +1192,7 @@ func (d *TransformDaemon) createTransformData(
 func (d *TransformDaemon) createTransformDataSources(
 	data uuid.UUID,
 ) (map[string]dataSourceFileValue, error) {
-	values_arr, err := d.data_service.DataValuesById([]uuid.UUID{data})
+	values_arr, err := d.data_service.DataValuesByIds([]uuid.UUID{data})
 	if err != nil {
 		d.logger.With(
 			"error", err,
@@ -1263,7 +1262,7 @@ func (d *TransformDaemon) createTransformDataValues(
 	data uuid.UUID,
 	format ValuesFileFormat,
 ) (*os.File, error) {
-	values_arr, err := d.data_service.DataValuesById([]uuid.UUID{data})
+	values_arr, err := d.data_service.DataValuesByIds([]uuid.UUID{data})
 	if err != nil {
 		d.logger.With(
 			"error", err,
@@ -1281,7 +1280,7 @@ func (d *TransformDaemon) createTransformDataValues(
 	fields := values.Values.([]service.SchemaFieldValues)
 	switch format {
 	case ValuesFileFormatCsv:
-		file, err := createTransformDataFileCsv(fields)
+		file, err := d.createTransformDataFileCsv(fields)
 		if err != nil {
 			d.logger.With(
 				"error", err,
@@ -1315,100 +1314,24 @@ func (d *TransformDaemon) createTransformDataValues(
 	}
 }
 
-func createTransformDataFileCsv(fields []service.SchemaFieldValues) (*os.File, error) {
+func (d *TransformDaemon) createTransformDataFileCsv(fields []service.SchemaFieldValues) (*os.File, error) {
+	out, err := d.data_service.StoredDataToCsv(fields)
+	if err != nil {
+		return nil, err
+	}
+
 	tmpfile, err := os.CreateTemp("", "*.csv")
 	if err != nil {
 		return nil, err
 	}
 
-	writer := csv.NewWriter(tmpfile)
-	header := make([]string, len(fields))
-	for idx, field := range fields {
-		header[idx] = field.Label
-	}
-	err = writer.Write(header)
+	_, err = tmpfile.WriteString(out)
 	if err != nil {
 		tmpfile.Close()
 		return nil, err
 	}
-	writer.Flush()
-	if writer.Error() != nil {
-		tmpfile.Close()
-		return nil, err
-	}
-
-	switch fields[0].Cardinality {
-	case service.DataSchemaCardinalityMultiple:
-		value_strs := make([][]string, len(fields))
-		for idx, field := range fields {
-			value_strs[idx] = valuesToStrings(field.DType, field.Values.([]any))
-		}
-		height := len(value_strs[0])
-		record := make([]string, len(fields))
-		for ridx := range height {
-			for fidx, values := range value_strs {
-				record[fidx] = values[ridx]
-			}
-			err = writer.Write(record)
-			if err != nil {
-				tmpfile.Close()
-				return nil, err
-			}
-		}
-		writer.Flush()
-		if writer.Error() != nil {
-			tmpfile.Close()
-			return nil, err
-		}
-	case service.DataSchemaCardinalitySingle:
-		record := make([]string, len(fields))
-		for idx, field := range fields {
-			record[idx] = valueToString(field.DType, field.Values)
-		}
-		err = writer.WriteAll([][]string{record})
-		if err != nil {
-			tmpfile.Close()
-			return nil, err
-		}
-	default:
-		panic("unexpected service.DataSchemaCardinality")
-	}
 
 	return tmpfile, nil
-}
-
-func valueToString(dtype service.ValueType, value any) string {
-	fmtstr := dataTypeFormatString(dtype)
-	return fmt.Sprintf(fmtstr, value)
-}
-
-func valuesToStrings(dtype service.ValueType, values []any) []string {
-	strs := make([]string, len(values))
-	fmtstr := dataTypeFormatString(dtype)
-	for idx, val := range values {
-		strs[idx] = fmt.Sprintf(fmtstr, val)
-	}
-
-	return strs
-}
-
-func dataTypeFormatString(dtype service.ValueType) string {
-	switch dtype {
-	case service.ValueTypeBoolean:
-		return "%t"
-	case service.ValueTypeFloat:
-		return "%f"
-	case service.ValueTypeInt:
-		return "%d"
-	case service.ValueTypeUint:
-		return "%d"
-	case service.ValueTypeString:
-		return "\"%s\""
-	case service.ValueTypeTimestamp:
-		return "%v"
-	default:
-		panic(fmt.Sprintf("unexpected service.ValueType: %#v", dtype))
-	}
 }
 
 func createTransformDataFileJson(fields []service.SchemaFieldValues) (*os.File, error) {

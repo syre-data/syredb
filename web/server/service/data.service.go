@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -1030,12 +1031,12 @@ func (s *DataService) DataSchemaCreate(user_id uuid.UUID, data_schema DataSchema
 		return err
 	}
 
-	err = s.data_schema_create_schema(tx, schema_id, data_schema.Schema)
+	err = s.dataSchemaCreateSchema(tx, schema_id, data_schema.Schema)
 	if err != nil {
 		return err
 	}
 
-	err = s.data_schema_storage_table_create(
+	err = s.dataSchemaStorageTableCreate(
 		tx,
 		schema_id,
 		data_schema.Cardinality,
@@ -1080,7 +1081,7 @@ func (s *DataService) data_schema_create(
 	return schema_id, nil
 }
 
-func (s *DataService) data_schema_create_schema(
+func (s *DataService) dataSchemaCreateSchema(
 	tx pgx.Tx,
 	schema_id uuid.UUID,
 	schema []DataSchemaField,
@@ -1139,35 +1140,46 @@ func (s *DataService) data_schema_create_schema(
 	return nil
 }
 
-func dataStorageTableColumnsFromSchema(cardinality DataSchemaCardinality, schema []DataSchemaField) []string {
+func dataStorageTableColumnsFromSchema(
+	schema []DataSchemaField,
+	cardinality DataSchemaCardinality,
+) []string {
 	table_cols := make([]string, len(schema))
 	for idx, col := range schema {
-		var col_def string
+		var dtype string
 		switch col.DType {
 		case ValueTypeBoolean:
-			col_def = "BOOLEAN"
+			dtype = "BOOLEAN"
 		case ValueTypeFloat:
-			col_def = "DOUBLE PRECISION"
+			dtype = "DOUBLE PRECISION"
 		case ValueTypeInt:
-			col_def = "INTEGER"
+			dtype = "BIGINT"
 		case ValueTypeUint:
-			col_def = "INTEGER"
+			dtype = "BIGINT"
 		case ValueTypeString:
-			col_def = "TEXT"
+			dtype = "TEXT"
 		case ValueTypeTimestamp:
-			col_def = "TIMESTAMP WITH TIME ZONE"
+			dtype = "TIMESTAMP WITH TIME ZONE"
 		default:
 			panic(fmt.Sprintf("unexpected value type %s for column %s", col.DType, col.Label))
 		}
 
 		if cardinality == DataSchemaCardinalityMultiple {
-			col_def += "[]"
+			dtype += "[]"
+		}
+
+		var nullable string
+		if col.Nullable {
+			nullable = ""
+		} else {
+			nullable = "NOT NULL"
 		}
 
 		table_cols[idx] = fmt.Sprintf(
-			"%s %s NOT NULL",
+			"%s %s %s",
 			col.Label,
-			col_def,
+			dtype,
+			nullable,
 		)
 	}
 
@@ -1207,14 +1219,14 @@ func data_schema_table_equal_column_length_constraint_query(
 	return query
 }
 
-func (s *DataService) data_schema_storage_table_create(
+func (s *DataService) dataSchemaStorageTableCreate(
 	tx pgx.Tx,
 	schema_id uuid.UUID,
 	cardinality DataSchemaCardinality,
 	schema []DataSchemaField,
 ) error {
 	// TODO: Ensure no schema field has label `_data`
-	table_cols := dataStorageTableColumnsFromSchema(cardinality, schema)
+	table_cols := dataStorageTableColumnsFromSchema(schema, cardinality)
 	table_name := DataStorageTableNameFromSchemaId(schema_id)
 	create_table_query := fmt.Sprintf(
 		`CREATE TABLE %s (
@@ -1410,8 +1422,8 @@ func (e *IncompatibleDataSizeError) Error() string {
 	return "INCOMPATIBLE_DATA_SIZE"
 }
 
-// Values is `any` if Cardinality is `single`,
-// `[]any` if Cardinality is `multiple`.
+// Values a single `DType` if Cardinality is `single`,
+// a slice of `DType` if Cardinality is `multiple`.
 type SchemaFieldValues struct {
 	Label       string
 	DType       ValueType
@@ -1868,7 +1880,7 @@ func (s *DataService) IngestionScriptCreate(script IngestionScriptCreate, file *
 	return nil
 }
 
-// StoredData represents the actual data stored.
+// DataValues represents the actual data stored.
 // Values is []SchemaFieldValues if Storage is `internal`.
 // Values is a []DataSource if Storage is `external`.
 type DataValues struct {
@@ -1877,8 +1889,64 @@ type DataValues struct {
 	Values  any
 }
 
-// StoredDataById gets the values associated with data.
-func (s *DataService) DataValuesById(data_ids []uuid.UUID) ([]DataValues, error) {
+// DataValuesById gets the values associated with a data.
+func (s *DataService) DataValuesById(data uuid.UUID) (DataValues, error) {
+
+	type dataStorageInfo struct {
+		Data     uuid.UUID   `db:"data"`
+		DataType uuid.UUID   `db:"type"`
+		Storage  DataStorage `db:"storage"`
+	}
+	storage_query :=
+		`SELECT d._id as data, t._id as type, t._storage as storage
+		FROM data_ as d JOIN data_type_ as t ON d._type=t._id
+		WHERE d._id=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, storage_query, data)
+	info, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[dataStorageInfo])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get data storage info")
+
+		return DataValues{}, err
+	}
+
+	var vals any
+	switch info.Storage {
+	case DataStorageExternal:
+		vals, err = s.dataValuesByIdExternalSource(info.Data)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", info.Data,
+				"storage", DataStorageExternal,
+			).Error("could not get data values")
+			return DataValues{}, err
+		}
+	case DataStorageInternal:
+		vals, err = s.dataValuesByIdInternal(info.Data)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", info.Data,
+				"storage", DataStorageInternal,
+			).Error("could not get data values")
+			return DataValues{}, err
+		}
+	}
+
+	values := DataValues{
+		Data:    info.Data,
+		Storage: info.Storage,
+		Values:  vals,
+	}
+
+	return values, nil
+}
+
+// DataValuesByIds gets the values associated with data.
+func (s *DataService) DataValuesByIds(data_ids []uuid.UUID) ([]DataValues, error) {
 	if len(data_ids) == 0 {
 		return []DataValues{}, nil
 	}
@@ -2139,27 +2207,92 @@ func (s *DataService) SaveSampleDataSingle(sample_data_id uuid.UUID) (string, er
 	// return s.fs_service.SaveFileSingle(data, "Save data", []FileFilter{})
 }
 
-func (s *DataService) StoredDataToCsv(data []SchemaFieldValues) ([]byte, error) {
-	panic("TODO: StoredDataToCsv")
-	// records := make([][]string, len(data[0].Values))
-	// for row_idx := range records {
-	// 	row := make([]string, len(data))
-	// 	for col_idx := range row {
-	// 		entry := data[col_idx].Values[row_idx]
-	// 		row[col_idx] = fmt.Sprintf("%v", entry)
-	// 	}
-	// 	records[row_idx] = row
-	// }
+func (s *DataService) StoredDataToCsv(fields []SchemaFieldValues) (string, error) {
+	var records strings.Builder
+	writer := csv.NewWriter(&records)
 
-	// var data_bytes strings.Builder
-	// csv_builder := csv.NewWriter(&data_bytes)
-	// err := csv_builder.WriteAll(records)
-	// if err != nil {
-	// 	s.logger.With("error", err).Error("could not write data to csv")
-	// 	return nil, err
-	// }
+	header := make([]string, len(fields))
+	for idx, field := range fields {
+		header[idx] = field.Label
+	}
+	err := writer.Write(header)
+	if err != nil {
+		return "", err
+	}
+	writer.Flush()
+	if writer.Error() != nil {
+		return "", err
+	}
 
-	// return []byte(data_bytes.String()), nil
+	switch fields[0].Cardinality {
+	case DataSchemaCardinalityMultiple:
+		value_strs := make([][]string, len(fields))
+		for idx, field := range fields {
+			value_strs[idx] = valuesToStrings(field.DType, field.Values.([]any))
+		}
+		height := len(value_strs[0])
+		record := make([]string, len(fields))
+		for ridx := range height {
+			for fidx, values := range value_strs {
+				record[fidx] = values[ridx]
+			}
+			err = writer.Write(record)
+			if err != nil {
+				return "", err
+			}
+		}
+		writer.Flush()
+		if writer.Error() != nil {
+			return "", err
+		}
+	case DataSchemaCardinalitySingle:
+		record := make([]string, len(fields))
+		for idx, field := range fields {
+			record[idx] = valueToString(field.DType, field.Values)
+		}
+		err = writer.WriteAll([][]string{record})
+		if err != nil {
+			return "", err
+		}
+	default:
+		panic("unexpected DataSchemaCardinality")
+	}
+
+	return records.String(), nil
+}
+
+func valueToString(dtype ValueType, value any) string {
+	fmtstr := dataTypeFormatString(dtype)
+	return fmt.Sprintf(fmtstr, value)
+}
+
+func valuesToStrings(dtype ValueType, values []any) []string {
+	strs := make([]string, len(values))
+	fmtstr := dataTypeFormatString(dtype)
+	for idx, val := range values {
+		strs[idx] = fmt.Sprintf(fmtstr, val)
+	}
+
+	return strs
+}
+
+func dataTypeFormatString(dtype ValueType) string {
+	switch dtype {
+	case ValueTypeBoolean:
+		return "%t"
+	case ValueTypeFloat:
+		return "%f"
+	case ValueTypeInt:
+		return "%d"
+	case ValueTypeUint:
+		return "%d"
+	case ValueTypeString:
+		return "\"%s\""
+	case ValueTypeTimestamp:
+		return "%v"
+	default:
+		panic(fmt.Sprintf("unexpected ValueType: %#v", dtype))
+	}
 }
 
 func (s *DataService) data_storage_external_get_data(file_path string) ([]byte, error) {
@@ -2727,82 +2860,79 @@ func (s *DataService) save_data_file_path(
 	return file_path.String(), nil
 }
 
-func (s *DataService) RawDataById(id uuid.UUID) (DataRecord, error) {
-	query := `SELECT _id, _sample, _creator, _path, _type, _filename, label, timestamp, visibility 
-		FROM raw_data_ WHERE _id=$1`
+func (s *DataService) DataById(id uuid.UUID) (DataRx, error) {
+	query :=
+		`SELECT _id, _type, _creator_type, timestamp, visibility
+		FROM data_ WHERE _id=$1`
 	rows, err := s.db.Conn.Query(s.ctx, query, id)
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"id", id,
-		).Error("could not get sample data")
-		return DataRecord{}, err
+		).Error("could not get data")
+		return DataRx{}, err
 	}
-	raw_data, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataRecord])
+	data, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataRx])
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"id", id,
-		).Error("could not get sample data")
-		return DataRecord{}, err
+		).Error("could not get data")
+		return DataRx{}, err
 	}
 
-	return raw_data, nil
+	return data, nil
 }
 
-type SampleDataUserPermission string
+type DataUserPermission string
 
 const (
-	SampleDataUserPermissionOwner            SampleDataUserPermission = "owner"
-	SampleDataUserPermissionRead             SampleDataUserPermission = "read"
-	SampleDataUserPermissionCreateNote       SampleDataUserPermission = "create_note"
-	SampleDataUserPermissionModifyProperties SampleDataUserPermission = "modify_properties"
+	DataUserPermissionOwner            DataUserPermission = "owner"
+	DataUserPermissionRead             DataUserPermission = "read"
+	DataUserPermissionNoteCreate       DataUserPermission = "note_create"
+	DataUserPermissionPropertiesModify DataUserPermission = "properties_modify"
 )
 
-type SampleDataUserPermissions struct {
-	SampleData  uuid.UUID
-	Permissions []SampleDataUserPermission
+type DataUserPermissions struct {
+	Data        uuid.UUID
+	Permissions []DataUserPermission
 }
 
-func (s *DataService) GetSampleDataUserPermission(sample_data []uuid.UUID, user uuid.UUID) ([]SampleDataUserPermissions, error) {
+func (s *DataService) GetDataUserPermission(data_ids []uuid.UUID, user uuid.UUID) ([]DataUserPermissions, error) {
 	type permissionRx struct {
-		SampleData uuid.UUID
-		Permission SampleDataUserPermission
+		Data       uuid.UUID          `db:"_data"`
+		Permission DataUserPermission `db:"_permission"`
 	}
 
 	query :=
-		`SELECT _sample_data, _permission FROM sample_data_user_permission_ 
-		WHERE _sample_data=ANY($1) AND _user=$2`
-	rows, _ := s.db.Conn.Query(s.ctx, query, sample_data, user)
-	records, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (permissionRx, error) {
-		var permission permissionRx
-		err := row.Scan(&permission.SampleData, &permission.Permission)
-		return permission, err
-	})
+		`SELECT _data, _permission FROM data_user_permission_ 
+		WHERE _data=ANY($1) AND _user=$2`
+	rows, _ := s.db.Conn.Query(s.ctx, query, data_ids, user)
+	records, err := pgx.CollectRows(rows, pgx.RowToStructByName[permissionRx])
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"sample data", sample_data,
+			"data", data_ids,
 			"user", user,
-		).Error("could not get sample data user permissions")
+		).Error("could not get data user permissions")
 		return nil, err
 	}
 
-	permissions := make([]SampleDataUserPermissions, len(sample_data))
-	for idx, sample_data_id := range sample_data {
-		permissions[idx].SampleData = sample_data_id
+	permissions := make([]DataUserPermissions, len(data_ids))
+	for idx, data_id := range data_ids {
+		permissions[idx].Data = data_id
 	}
 
 	for _, record := range records {
-		permissions_idx := slices.IndexFunc(permissions, func(entry SampleDataUserPermissions) bool {
-			return entry.SampleData == record.SampleData
+		permissions_idx := slices.IndexFunc(permissions, func(entry DataUserPermissions) bool {
+			return entry.Data == record.Data
 		})
 		if permissions_idx < 0 {
 			s.logger.With(
-				"sample data", record.SampleData,
+				"data", record.Data,
 				"records", permissions,
-			).Error("could not find record for sample data")
-			panic("could not find record for sample data")
+			).Error("could not find record for data")
+			panic("could not find record for data")
 		}
 
 		permissions[permissions_idx].Permissions = append(permissions[permissions_idx].Permissions, record.Permission)
@@ -2811,7 +2941,7 @@ func (s *DataService) GetSampleDataUserPermission(sample_data []uuid.UUID, user 
 	return permissions, nil
 }
 
-func (s *DataService) ProjectRawDataAll(project uuid.UUID) ([]DataRecord, error) {
+func (s *DataService) ProjectRawDataAll(project uuid.UUID) ([]DataRx, error) {
 	panic("TODO")
 	// query := `SELECT s._id, s._sample, s._schema, s._creator, s.timestamp, s.visibility, s.label
 	// 	FROM sample_data_ AS s JOIN project_sample_membership_ as p ON s._sample=p._sample

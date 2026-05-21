@@ -182,8 +182,8 @@ export interface InvalidFileExtensionError {
 export interface IncompatibleDataSizeError {
 }
 /**
- * Values is `any` if Cardinality is `single`,
- * `[]any` if Cardinality is `multiple`.
+ * Values a single `DType` if Cardinality is `single`,
+ * a slice of `DType` if Cardinality is `multiple`.
  */
 export interface SchemaFieldValues {
   Label: string;
@@ -244,7 +244,7 @@ export interface IngestionScriptCreate {
   Sources: ExternalSourceCreate[];
 }
 /**
- * StoredData represents the actual data stored.
+ * DataValues represents the actual data stored.
  * Values is []SchemaFieldValues if Storage is `internal`.
  * Values is a []DataSource if Storage is `external`.
  */
@@ -263,14 +263,14 @@ export interface DataSource {
   Cardinality: DataSourceCardinality;
   Source: any;
 }
-export const SampleDataUserPermissionOwner = "owner";
-export const SampleDataUserPermissionRead = "read";
-export const SampleDataUserPermissionCreateNote = "create_note";
-export const SampleDataUserPermissionModifyProperties = "modify_properties";
-export type SampleDataUserPermission = typeof SampleDataUserPermissionOwner | typeof SampleDataUserPermissionRead | typeof SampleDataUserPermissionCreateNote | typeof SampleDataUserPermissionModifyProperties;
-export interface SampleDataUserPermissions {
-  SampleData: uuid.UUIDTypes;
-  Permissions: SampleDataUserPermission[];
+export const DataUserPermissionOwner = "owner";
+export const DataUserPermissionRead = "read";
+export const DataUserPermissionNoteCreate = "note_create";
+export const DataUserPermissionPropertiesModify = "properties_modify";
+export type DataUserPermission = typeof DataUserPermissionOwner | typeof DataUserPermissionRead | typeof DataUserPermissionNoteCreate | typeof DataUserPermissionPropertiesModify;
+export interface DataUserPermissions {
+  Data: uuid.UUIDTypes;
+  Permissions: DataUserPermission[];
 }
 export interface DataTypeTransformRx {
   Id: uuid.UUIDTypes;
@@ -396,15 +396,15 @@ export interface ProjectData {
   Creator: DataCreator;
   MembershipCreator: uuid.UUIDTypes;
   Timestamp: Date;
-  Label: string;
+  Label?: string;
   Tags: string[];
   Properties: Property[];
   NoteCount: number /* uint */;
 }
-export interface DataRecord {
+export interface DataRx {
   Id: uuid.UUIDTypes;
-  Creator: uuid.UUIDTypes;
   Type: uuid.UUIDTypes;
+  CreatorType: DataCreatorType;
   Timestamp: Date;
   Visibility: Visibility;
 }
@@ -511,7 +511,7 @@ export interface ProjectSampleResources {
   ProjectMembership: ProjectSampleMembershipAsResource;
   ProjectTags: string[];
   ProjectNotes: ProjectSampleNote[];
-  RawData: DataRecord[];
+  Data: DataRx[];
   DerivedData: DerivedData[];
   DataSchemas: DataSchema[];
   Users: User[];
@@ -544,7 +544,7 @@ export interface ProjectDataMembershipRx {
   Project: uuid.UUIDTypes;
   Data: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
-  Label: string;
+  Label?: string;
 }
 
 //////////

@@ -447,18 +447,18 @@ func ingestion_script_command_from_file_ext(ext string) (string, error) {
 	}
 }
 
-func (h *DataHandler) DownloadRawDataSingle(c *echo.Context) error {
+func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	raw_data_id, err := uuid.Parse(c.QueryParam("id"))
+	data_id, err := uuid.Parse(c.QueryParam("id"))
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"id", c.QueryParam("id"),
-		).Error("could not parse id")
+		).Warn("could not parse id")
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	raw_data, err := h.data_service.RawDataById(raw_data_id)
+	data_rx, err := h.data_service.DataById(data_id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return c.NoContent(http.StatusNotFound)
@@ -466,116 +466,99 @@ func (h *DataHandler) DownloadRawDataSingle(c *echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	if raw_data.Visibility != service.VisibilityPublic {
-		permissions, err := h.data_service.GetSampleDataUserPermission(
-			[]uuid.UUID{raw_data_id},
+	if data_rx.Visibility != service.VisibilityPublic {
+		permissions, err := h.data_service.GetDataUserPermission(
+			[]uuid.UUID{data_id},
 			user_id,
 		)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
-				"sample data", raw_data_id,
+				"data", data_id,
 				"user", user_id,
-			).Error("could not get sample data user permissions")
+			).Error("could not get data user permissions")
 			return c.NoContent(http.StatusInternalServerError)
 		}
-		if permissions[0].SampleData != raw_data_id {
+		if permissions[0].Data != data_id {
 			c.Logger().With(
 				"user", user_id,
-				"sample data", raw_data_id,
+				"data", data_id,
 				"permissions", permissions,
-			).Error("invalid sample data user permissions")
-			panic("invalid sample data user permissions")
+			).Error("invalid data user permissions")
+			panic("invalid data user permissions")
 		}
 		user_permissions := permissions[0].Permissions
 		if len(user_permissions) == 0 {
 			c.Logger().With(
-				"sample data", raw_data_id,
+				"data", data_id,
 				"user", user_id,
-			).Error("insufficient permissions")
+			).Warn("insufficient permissions")
 			return c.NoContent(http.StatusUnauthorized)
 		}
 	}
-	panic("todo")
 
-	// datas, err := h.data_service.GetSampleDataStoredById([]uuid.UUID{raw_data_id})
-	// if err != nil {
-	// 	c.Logger().With(
-	// 		"error", err,
-	// 		"sample data", raw_data_id,
-	// 	).Error("could not get sample data stored data")
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
-	// if len(datas) != 1 {
-	// 	c.Logger().With(
-	// 		"sample data", raw_data_id,
-	// 	).Error("invalid sample data storage")
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
-	// stored := datas[0]
+	values, err := h.data_service.DataValuesById(data_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+		).Error("could not get data values")
+		return c.NoContent(http.StatusInternalServerError)
+	}
 
-	// var path string
-	// var filename string
-	// switch stored.Storage {
-	// case service.DataStorageExternal:
-	// 	info := stored.Data.(service.SampleDataPayloadExternal)
-	// 	path = info.Path
-	// 	filename = info.Filename
-	// case service.DataStorageInternal:
-	// 	cols := stored.Data.([]service.ColumnData)
-	// 	name := fmt.Sprintf("%s.*.csv", raw_data_id)
-	// 	tmpfile, err := os.CreateTemp("", name)
-	// 	if err != nil {
-	// 		c.Logger().With(
-	// 			"error", err,
-	// 		).Error("could not create temporary data file")
-	// 		return c.NoContent(http.StatusInternalServerError)
-	// 	}
-	// 	defer tmpfile.Close()
-	// 	path = tmpfile.Name()
+	switch values.Storage {
+	case service.DataStorageExternal:
+		ext_values := values.Values.([]service.DataSource)
+		return h.downloadDataValuesSingleExternal(c, data_id, ext_values)
+	case service.DataStorageInternal:
+		// TODO: Get data label
+		filename := fmt.Sprintf("%s.csv", data_id)
+		int_values := values.Values.([]service.SchemaFieldValues)
+		return h.downloadDataValuesSingleInternal(c, data_id, filename, int_values)
+	default:
+		panic(fmt.Sprintf("unexpected service.DataStorage: %#v", values.Storage))
+	}
+}
 
-	// 	writer := csv.NewWriter(tmpfile)
-	// 	record := make([]string, len(cols))
-	// 	for idx := range len(cols[0].Values) {
-	// 		for cidx := range len(cols) {
-	// 			col := cols[cidx]
-	// 			value := col.Values[idx]
-	// 			var value_str string
-	// 			switch col.DType {
-	// 			case service.DataTypeBoolean:
-	// 				if value.(bool) {
-	// 					value_str = "true"
-	// 				} else {
-	// 					value_str = "false"
-	// 				}
-	// 			case service.DataTypeFloat:
-	// 				value_str = fmt.Sprint(value.(float64))
-	// 			case service.DataTypeInt:
-	// 				value_str = fmt.Sprint(value.(int64))
-	// 			case service.DataTypeString:
-	// 				value_str = value.(string)
-	// 			case service.DataTypeTimestamp:
-	// 				value_str = value.(time.Time).String()
-	// 			case service.DataTypeUint:
-	// 				value_str = fmt.Sprint(value.(uint64))
-	// 			default:
-	// 				panic(fmt.Sprintf("unexpected service.DataType: %#v", col.DType))
-	// 			}
-	// 			record[cidx] = value_str
-	// 		}
-	// 		err = writer.Write(record)
-	// 		if err != nil {
-	// 			c.Logger().With(
-	// 				"error", err,
-	// 			).Error("could not write sample data to file")
-	// 		}
-	// 	}
-	// 	writer.Flush()
+func (h *DataHandler) downloadDataValuesSingleExternal(
+	c *echo.Context,
+	data_id uuid.UUID,
+	values []service.DataSource,
+) error {
+	panic("TODO: download externally stored data")
+}
 
-	// 		filename = fmt.Sprintf("%s.%s.csv", raw raw_data_id)
-	// }
+func (h *DataHandler) downloadDataValuesSingleInternal(
+	c *echo.Context,
+	data_id uuid.UUID,
+	filename string,
+	fields []service.SchemaFieldValues,
+) error {
+	if len(fields) == 0 {
+		c.Logger().With(
+			"data", data_id,
+		).Error("invalid data schema")
+		panic("invalid data schema")
+	}
 
-	// return c.Attachment(path, filename)
+	data, err := h.data_service.StoredDataToCsv(fields)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not transform values to csv")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	c.Response().Header().Set(
+		echo.HeaderContentDisposition,
+		fmt.Sprintf(`attachment; filename="%s"`, filename),
+	)
+
+	return c.Blob(
+		http.StatusOK,
+		"text/csv; charset=utf-8",
+		[]byte(data),
+	)
 }
 
 func (h *DataHandler) DownloadRawDataProject(c *echo.Context) error {
@@ -1062,7 +1045,7 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 				Project: project_id,
 				Data:    data_id,
 				Creator: user_id,
-				Label:   "",
+				Label:   nil,
 			}
 		}
 		err = h.project_service.DataMembershipCreate(memberships)

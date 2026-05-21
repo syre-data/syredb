@@ -203,6 +203,8 @@ func (m *ApiMiddleware) UserIdFromSessionToken(next echo.HandlerFunc) echo.Handl
 	}
 }
 
+// Note: When registering new base routes,
+// you may need to update the vite proxy for dev in `../frontend/vite.config.ts`.
 func register_routes(
 	e *echo.Echo,
 	api_middleware *ApiMiddleware,
@@ -243,8 +245,14 @@ func register_routes(
 	api.GET("/projects", project.GetUserProjects)
 	api.GET("/project/resources", project.ProjectResources)
 	api.POST("/data", data.DataCreate)
-	api.GET("/data/download", data.DownloadRawDataSingle)
-	api.GET("/data/project", data.DownloadRawDataProject)
+
+	resource := e.Group("/resource")
+	resource.Use(api_middleware.SessionTokenFromJWT)
+	resource.Use(api_middleware.UserIdFromSessionToken)
+
+	resource.GET("/data", data.DownloadDataValuesSingle)
+	resource.GET("/project", data.DownloadRawDataProject)
+
 }
 
 func proxy_to_vite(e *echo.Echo) {

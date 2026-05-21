@@ -8,12 +8,14 @@ import { Loading, SuspenseError } from "@/components";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
-import type {
-    DataType,
-    DataTypeTransform,
-    DataTypeTransformRx,
-    ProjectData,
-    ProjectDataInfo,
+import {
+    DataStorageExternal,
+    DataStorageInternal,
+    type DataType,
+    type DataTypeTransform,
+    type DataTypeTransformRx,
+    type ProjectData,
+    type ProjectDataInfo,
 } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Suspense, type MouseEvent } from "react";
@@ -59,8 +61,6 @@ function Project({ projectId }: ProjectProps) {
             await projectService.getProjectResources(projectId),
     });
 
-    const navigate = useNavigate();
-
     return (
         <div>
             <div className="px-4 pt-2 flex justify-between">
@@ -105,7 +105,11 @@ function ProjectData({ projectId, data, types }: ProjectDataProps) {
             {data.length === 0 ? (
                 <ProjectDataEmpty />
             ) : (
-                <ProjectDataList data={data} types={types} />
+                <ProjectDataList
+                    projectId={projectId}
+                    data={data}
+                    types={types}
+                />
             )}
         </div>
     );
@@ -123,12 +127,13 @@ function ProjectDataEmpty() {
 }
 
 interface ProjectDataListProps {
+    projectId: uuid.UUIDTypes;
     data: ProjectData[];
     types: DataType[];
 }
-function ProjectDataList({ data, types }: ProjectDataListProps) {
+function ProjectDataList({ projectId, data, types }: ProjectDataListProps) {
     return (
-        <ul className="grid gap-2 grid-cols-[repeat(3,min-content)]">
+        <ul className="grid gap-2 grid-cols-[repeat(4,min-content)]">
             {data.map((datum, idx) => {
                 const type = types.find((type) => type.Id === datum.Type);
                 if (!type) {
@@ -139,6 +144,7 @@ function ProjectDataList({ data, types }: ProjectDataListProps) {
                     <ProjectDataItem
                         key={datum.Id.toString()}
                         index={idx}
+                        projectId={projectId}
                         data={datum}
                         type={type}
                     />
@@ -150,19 +156,57 @@ function ProjectDataList({ data, types }: ProjectDataListProps) {
 
 interface ProjectDataItemProps {
     index: number;
+    projectId: uuid.UUIDTypes;
     data: ProjectData;
     type: DataType;
 }
-function ProjectDataItem({ index, data, type }: ProjectDataItemProps) {
+function ProjectDataItem({
+    index,
+    projectId,
+    data,
+    type,
+}: ProjectDataItemProps) {
+    function open_preview(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== MouseButton.Primary) {
+            return;
+        }
+
+        console.error("TODO");
+    }
+
+    const date = new Date(data.Timestamp);
+    const y = date.getUTCFullYear();
+    const mo = date.getMonth();
+    const d = date.getDate();
+    const h = date.getHours();
+    const m = date.getMinutes();
+    const s = date.getSeconds();
+    const timestamp = `${y}-${mo}-${d}T${h}-${m}-${s}`;
+    let filename = data.Label ?? `data-${timestamp}`;
+    switch (type.Storage) {
+        case DataStorageExternal:
+            // TODO: If source is a single file, use that extension.
+            filename += ".zip";
+            break;
+        case DataStorageInternal:
+            filename += ".csv";
+            break;
+        default:
+            console.error("invalid data storage");
+    }
+
+    const params = new URLSearchParams();
+    params.append("id", data.Id.toString());
+    const download = `/resource/data?${params}`;
     return (
-        <li className="px-4 grid grid-cols-subgrid col-span-full">
+        <li className="px-4 grid grid-cols-subgrid col-span-full group">
             <div className="grid grid-cols-subgrid col-span-full">
                 <div className="col-1">{index + 1}.</div>
-                <div className="col-2">{type.Label}</div>
+                <div className="col-2 text-nowrap">{type.Label}</div>
                 <div className="col-3">
                     {data.Label ? (
                         <>
-                            data.Label
+                            <span className="text-nowrap">data.Label</span>
                             <span className="text-gray-500">
                                 ({data.Timestamp.toString()})
                             </span>
@@ -170,6 +214,41 @@ function ProjectDataItem({ index, data, type }: ProjectDataItemProps) {
                     ) : (
                         data.Timestamp.toString()
                     )}
+                </div>
+                <div className="flex gap-1 invisible group-hover:visible">
+                    <div>
+                        {/* TODO: Check permissions */}
+                        <Link to={`/data/${data.Id}?project=${projectId}`}>
+                            <button
+                                type="button"
+                                className="btn-cmd"
+                                title="Edit"
+                            >
+                                <Icon.Pen />
+                            </button>
+                        </Link>
+                    </div>
+                    <div>
+                        <button
+                            type="button"
+                            className="btn-cmd"
+                            title="Preview"
+                            onMouseDown={open_preview}
+                        >
+                            <Icon.Eye />
+                        </button>
+                    </div>
+                    <div>
+                        <a href={download}>
+                            <button
+                                type="button"
+                                className="btn-cmd"
+                                title="Download"
+                            >
+                                <Icon.Download />
+                            </button>
+                        </a>
+                    </div>
                 </div>
             </div>
         </li>

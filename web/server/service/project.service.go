@@ -233,18 +233,18 @@ type ProjectData struct {
 	Creator           DataCreator
 	MembershipCreator uuid.UUID
 	Timestamp         time.Time
-	Label             string
+	Label             *string
 	Tags              []string
 	Properties        []Property
 	NoteCount         uint
 }
 
-type DataRecord struct {
-	Id         uuid.UUID  `db:"_id"`
-	Creator    uuid.UUID  `db:"_creator"`
-	Type       uuid.UUID  `db:"_type"`
-	Timestamp  time.Time  `db:"timestamp"`
-	Visibility Visibility `db:"visibility"`
+type DataRx struct {
+	Id          uuid.UUID       `db:"_id"`
+	Type        uuid.UUID       `db:"_type"`
+	CreatorType DataCreatorType `db:"_creator_type"`
+	Timestamp   time.Time       `db:"timestamp"`
+	Visibility  Visibility      `db:"visibility"`
 }
 
 type DerivedData struct {
@@ -994,7 +994,7 @@ func (s *ProjectService) create_project_samples_raw_data_user_permisson_as_owner
 
 	args := make([]any, len(raw_data_ids)+2)
 	args[0] = user
-	args[1] = SampleDataUserPermissionOwner
+	args[1] = DataUserPermissionOwner
 	arg_idx := 2
 	var query strings.Builder
 	query.WriteString("INSERT INTO raw_data_user_permission_ (_sample_data, _user, _permission) VALUES ")
@@ -1282,7 +1282,7 @@ type ProjectSampleResources struct {
 	ProjectMembership            ProjectSampleMembershipAsResource
 	ProjectTags                  []string
 	ProjectNotes                 []ProjectSampleNote
-	RawData                      []DataRecord
+	Data                         []DataRx
 	DerivedData                  []DerivedData
 	DataSchemas                  []DataSchema
 	Users                        []User
@@ -1334,16 +1334,16 @@ func (s *ProjectService) GetProjectSampleResources(
 		return ProjectSampleResources{}, nil
 	}
 
-	resources.RawData, err = s.get_project_sample_resources_sample_data(resources.Id)
+	resources.Data, err = s.get_project_sample_resources_sample_data(resources.Id)
 	if err != nil {
 		return ProjectSampleResources{}, nil
 	}
 
-	sample_data_ids := []uuid.UUID{}
-	for _, data := range resources.RawData {
-		sample_data_ids = append(sample_data_ids, data.Id)
+	data_ids := []uuid.UUID{}
+	for _, data := range resources.Data {
+		data_ids = append(data_ids, data.Id)
 	}
-	resources.DerivedData, err = s.get_project_sample_resources_derived_data(sample_data_ids)
+	resources.DerivedData, err = s.get_project_sample_resources_derived_data(data_ids)
 	if err != nil {
 		return ProjectSampleResources{}, nil
 	}
@@ -1366,9 +1366,7 @@ func (s *ProjectService) GetProjectSampleResources(
 	for _, note := range resources.ProjectNotes {
 		user_ids = append(user_ids, note.Creator)
 	}
-	for _, data := range resources.RawData {
-		user_ids = append(user_ids, data.Creator)
-	}
+	// TODO: Get user's associated with data
 	resources.Users, err = s.user_service.UsersById(user_ids)
 	if err != nil {
 		return ProjectSampleResources{}, err
@@ -1519,10 +1517,10 @@ func (s *ProjectService) get_project_sample_resources_sample_notes(
 
 func (s *ProjectService) get_project_sample_resources_sample_data(
 	sample_id uuid.UUID,
-) ([]DataRecord, error) {
+) ([]DataRx, error) {
 	data_query := "SELECT _id, _sample, _schema, _creator, timestamp FROM sample_data_ WHERE _sample=$1"
 	rows, _ := s.db.Conn.Query(s.ctx, data_query, sample_id)
-	data, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataRecord])
+	data, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataRx])
 	if err != nil {
 		s.logger.With("error", err, "query", data_query).Error("could not get sample data")
 		return nil, err
@@ -2038,7 +2036,7 @@ type ProjectDataMembershipRx struct {
 	Project uuid.UUID `db:"_project"`
 	Data    uuid.UUID `db:"_data"`
 	Creator uuid.UUID `db:"_creator"`
-	Label   string    `db:"label"`
+	Label   *string   `db:"label"`
 }
 
 func (s *ProjectService) DataMembershipCreate(memberships []ProjectDataMembershipRx) error {

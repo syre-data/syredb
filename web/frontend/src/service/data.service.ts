@@ -81,7 +81,7 @@ function dataSchemasGetAll(): Promise<types.DataSchema[]> {
     }).then(async (resp) => (await resp.json()) as types.DataSchema[]);
 }
 
-function saveProjectDataAll(
+function downloadProjectDataAll(
     project: uuid.UUIDTypes,
     hierarchy: types.SaveDataHierarchy,
 ): Promise<Response> {
@@ -93,38 +93,36 @@ function saveProjectDataAll(
     });
 }
 
-function saveSampleDataSingle(sample_data: uuid.UUIDTypes): Promise<Response> {
+function downloadDataSingle(data: uuid.UUIDTypes): Promise<Response> {
     const params = new URLSearchParams();
-    params.append("id", sample_data.toString());
-    return fetch(`/api/sample-data/single?${params}`, {
+    params.append("id", data.toString());
+    return fetch(`/resource/data?${params}`, {
         credentials: "same-origin",
     });
 }
 
-function saveSampleDataMultiple(
-    sample_data: uuid.UUIDTypes[],
+function downloadDataMultiple(
+    data: uuid.UUIDTypes[],
     project: uuid.UUIDTypes,
     hierarchy: types.SaveDataHierarchy[],
 ) {
     throw new Error("not yet implemented");
 }
 
-function saveDataSchemaSampleDataAll(
-    data_schema: uuid.UUIDTypes,
+function downloadDataSchemaSampleDataAll(
+    schema: uuid.UUIDTypes,
     project: uuid.UUIDTypes,
     hierarchy: types.SaveDataHierarchy[],
 ): Promise<Response> {
     throw new Error("not yet implemented");
 }
 
-function dataSchemaCreate(
-    data_schema: types.DataSchemaCreate,
-): Promise<Response> {
+function dataSchemaCreate(schema: types.DataSchemaCreate): Promise<Response> {
     return fetch("/api/data-schema", {
         credentials: "same-origin",
         method: "post",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data_schema),
+        body: JSON.stringify(schema),
     });
 }
 
@@ -341,10 +339,10 @@ export default {
     dataSchemaUpdate,
     dataSchemasGetAll,
     dataSchemaResourcesGet,
-    saveProjectDataAll,
-    saveSampleDataSingle,
-    saveSampleDataMultiple,
-    saveDataSchemaSampleDataAll,
+    downloadProjectDataAll,
+    downloadDataSingle,
+    downloadDataMultiple,
+    downloadDataSchemaSampleDataAll,
     parseDataFileToSchema,
     dataTypeTransformCreate,
     dataTypeTransformsGetAll,
