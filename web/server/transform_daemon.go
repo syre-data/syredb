@@ -1724,11 +1724,17 @@ func (d *TransformDaemon) dataCreate(
 		WHERE _data=$1`
 	err = tx.QueryRow(d.ctx, project_query, payload).Scan(&project_id, &membership_creator_id)
 	if err != nil {
-		d.logger.With(
-			"error", err,
-			"data", payload,
-		).Error("could not get project data membership")
-		return err
+		if errors.Is(pgx.ErrNoRows, err) {
+			d.logger.With(
+				"data", payload,
+			).Warn("could not get project data membership")
+		} else {
+			d.logger.With(
+				"error", err,
+				"data", payload,
+			).Error("could not get project data membership")
+			return err
+		}
 	}
 
 	var data_type uuid.UUID
@@ -1806,16 +1812,18 @@ func (d *TransformDaemon) dataCreate(
 		return err
 	}
 
-	membership_query :=
-		`INSERT INTO project_data_membership_ (_project, _data, _creator)
+	if project_id != uuid.Nil {
+		membership_query :=
+			`INSERT INTO project_data_membership_ (_project, _data, _creator)
 		VALUES ($1, $2 ,$3)`
-	_, err = tx.Exec(d.ctx, membership_query, project_id, data_id, membership_creator_id)
-	if err != nil {
-		d.logger.With(
-			"error", err,
-			"data", payload,
-		).Error("could not create project data membership")
-		return err
+		_, err = tx.Exec(d.ctx, membership_query, project_id, data_id, membership_creator_id)
+		if err != nil {
+			d.logger.With(
+				"error", err,
+				"data", payload,
+			).Error("could not create project data membership")
+			return err
+		}
 	}
 
 	if len(data.Properties) > 0 {

@@ -17,6 +17,7 @@ import (
 const EnvSessionSecretKey string = "SYREDB_SESSION_SECRET"
 const SessionTokenKey string = "session_token"
 const SessionDuration = time.Hour * 24
+const ApiClientTokenKey string = "token"
 
 type JWTCustomClaims struct {
 	SessionId uuid.UUID `json:"session_id"`
@@ -159,5 +160,26 @@ func (h *AuthHandler) Logout(c *echo.Context) error {
 		MaxAge:   -1,
 	}
 	c.SetCookie(cookie)
+	return c.NoContent(http.StatusOK)
+}
+
+func (h *AuthHandler) Deactivate(c *echo.Context) error {
+	token, err := uuid.Parse(c.FormValue("token"))
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Info("could not parse request token")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	err = h.auth_service.DeactivateSession(token)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"token", token,
+		).Error("could not deactivate session token")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
 	return c.NoContent(http.StatusOK)
 }

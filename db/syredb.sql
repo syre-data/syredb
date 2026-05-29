@@ -200,9 +200,9 @@ CREATE TABLE IF NOT EXISTS data_type_transform_ (
     _source UUID REFERENCES data_type_(_id) NOT NULL,
     _destination UUID REFERENCES data_type_(_id) NOT NULL,
     cmd UUID REFERENCES data_type_transform_cmd_(_id) NOT NULL,
-    active boolean DEFAULT true NOT NULL
+    active boolean DEFAULT true NOT NULL,
     label VARCHAR(128) NOT NULL,
-    description TEXT,
+    description TEXT
 );
 
 -- CREATE TABLE IF NOT EXISTS _transform_script_history_ (
@@ -216,7 +216,7 @@ CREATE TABLE IF NOT EXISTS data_type_transform_ (
 
 CREATE TYPE data_creator_type AS ENUM (
     'user',
-    'transform'
+    'transform',
 );
 
 CREATE TABLE IF NOT EXISTS data_ (
@@ -358,9 +358,20 @@ AFTER INSERT ON _data_type_transform_queue_
 FOR EACH ROW
 EXECUTE FUNCTION notify_data_type_transform_job();
 
+CREATE TABLE IF NOT EXISTS data_origin_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    label VARCHAR(128) UNIQUE NOT NULL,
+    description TEXT,
+    active boolean DEFAULT true NOT NULL
+);
+
+INSERT INTO data_origin_ (label, description, active) VALUES
+    ('__web_client__', 'SyreDB web client', true);
+
 CREATE TABLE IF NOT EXISTS data_creator_user_ (
     _data UUID REFERENCES data_(_id) PRIMARY KEY,
-    _creator UUID REFERENCES user_(_id) NOT NULL
+    _creator UUID REFERENCES user_(_id) NOT NULL,
+    _origin UUID REFERENCES data_origin_(_id) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS data_creator_transform_ (

@@ -390,6 +390,24 @@ func (s *DataService) DataTypeById(id uuid.UUID) (DataType, error) {
 		return nil, err
 	}
 
+	return s.dataTypeRxInfo(data_type)
+}
+
+func (s *DataService) DataTypeByLabel(label string) (DataType, error) {
+	data_type_query :=
+		`SELECT _id, _creator, _storage, label, description, active
+		FROM data_type_ WHERE label=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, data_type_query, label)
+	data_type, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataTypeRx])
+	if err != nil {
+		s.logger.With("error", err).Error("could not get data types")
+		return nil, err
+	}
+
+	return s.dataTypeRxInfo(data_type)
+}
+
+func (s *DataService) dataTypeRxInfo(data_type DataTypeRx) (DataType, error) {
 	switch data_type.Storage {
 	case DataStorageInternal:
 		data_type_internal := DataTypeInternal{
@@ -403,11 +421,11 @@ func (s *DataService) DataTypeById(id uuid.UUID) (DataType, error) {
 		internal_query :=
 			`SELECT _schema FROM data_type_schema_
 			WHERE _data_type=$1`
-		err = s.db.Conn.QueryRow(s.ctx, internal_query, id).Scan(&data_type_internal.Schema)
+		err := s.db.Conn.QueryRow(s.ctx, internal_query, data_type.Id).Scan(&data_type_internal.Schema)
 		if err != nil {
 			s.logger.With(
 				"error", err,
-				"data type", id,
+				"data type", data_type.Id,
 			).Error("could not get data type internal storage")
 			return nil, err
 		}
@@ -426,12 +444,12 @@ func (s *DataService) DataTypeById(id uuid.UUID) (DataType, error) {
 		external_query :=
 			`SELECT _id, _data_type, _label, _required, _cardinality, description, ext_filter
 			FROM data_type_source_ WHERE _data_type=$1`
-		rows, _ = s.db.Conn.Query(s.ctx, external_query, id)
+		rows, _ := s.db.Conn.Query(s.ctx, external_query, data_type.Id)
 		external_sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeExternalSourceRx])
 		if err != nil {
 			s.logger.With(
 				"error", err,
-				"data type", id,
+				"data type", data_type.Id,
 			).Error("could not get data type sources")
 			return nil, err
 		}
@@ -439,9 +457,11 @@ func (s *DataService) DataTypeById(id uuid.UUID) (DataType, error) {
 		data_type_external.Sources = external_sources
 
 		return data_type_external, nil
+
+	default:
+		panic("invalid data_type.Storage")
 	}
 
-	panic("should not reach")
 }
 
 type ExternalSourceCreate struct {
@@ -1880,6 +1900,29 @@ func (s *DataService) IngestionScriptCreate(script IngestionScriptCreate, file *
 	return nil
 }
 
+type DataOriginRx struct {
+	Id          uuid.UUID `db:"_id"`
+	Label       string    `db:"label"`
+	Description string    `db:"description"`
+	Active      bool      `db:"active"`
+}
+
+func (s *DataService) DataOriginByLabel(label string) (DataOriginRx, error) {
+	query :=
+		`SELECT _id, label, description, active FROM data_origin_
+		WHERE label=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, query, label)
+	origin, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataOriginRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"label", label,
+		).Error("could not get data origin")
+		return DataOriginRx{}, err
+	}
+	return origin, nil
+}
+
 // DataValues represents the actual data stored.
 // Values is []SchemaFieldValues if Storage is `internal`.
 // Values is a []DataSource if Storage is `external`.
@@ -3146,6 +3189,7 @@ const (
 type DataCreate struct {
 	Type                   uuid.UUID
 	CreatorType            DataCreatorType
+	Origin                 uuid.UUID
 	Timestamp              time.Time
 	Visibility             Visibility
 	Properties             []Property
@@ -3172,26 +3216,9 @@ func (s *DataService) DataCreate(
 	}
 	defer tx.Rollback(s.ctx)
 
-	data_ids := make([]uuid.UUID, len(data))
-	data_query :=
-		`INSERT INTO data_ (_type, _creator_type, timestamp, visibility) 
-		VALUES ($1, $2, $3, $4) RETURNING _id`
-	for idx, datum := range data {
-		err = tx.QueryRow(
-			s.ctx,
-			data_query,
-			datum.Type,
-			datum.CreatorType,
-			datum.Timestamp,
-			datum.Visibility,
-		).Scan(&data_ids[idx])
-		if err != nil {
-			s.logger.With(
-				"error", err,
-				"data", datum,
-			).Error("could not create data")
-			return nil, err
-		}
+	data_ids, err := s.dataInsert(tx, data)
+	if err != nil {
+		return nil, err
 	}
 
 	err = s.dataCreatePermissions(tx, data_ids, owner)
@@ -3267,7 +3294,6 @@ func (s *DataService) DataCreate(
 
 		case DataIngestionScript:
 			// TODO: Validate sources are valid relative to ingestion script
-
 			var save_err error
 			data_id := data_ids[idx]
 			filepaths, err := s.dataCreateDataIngestionScriptSources(tx, data_id, datum.IngestionScriptSources)
@@ -3363,6 +3389,32 @@ const (
 	DataPermissionKeyNoteCreate       DataPermissionKey = "note_create"
 	DataPermissionKeyPropertiesModify DataPermissionKey = "properties_modify"
 )
+
+func (s *DataService) dataInsert(tx pgx.Tx, data []DataCreate) ([]uuid.UUID, error) {
+	data_ids := make([]uuid.UUID, len(data))
+	data_query :=
+		`INSERT INTO data_ (_type, _creator_type, timestamp, visibility) 
+		VALUES ($1, $2, $3, $4) RETURNING _id`
+	for idx, datum := range data {
+		err := tx.QueryRow(
+			s.ctx,
+			data_query,
+			datum.Type,
+			datum.CreatorType,
+			datum.Timestamp,
+			datum.Visibility,
+		).Scan(&data_ids[idx])
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", datum,
+			).Error("could not create data")
+			return nil, err
+		}
+	}
+
+	return data_ids, nil
+}
 
 func (s *DataService) dataCreatePermissions(tx pgx.Tx, data_ids []uuid.UUID, owner uuid.UUID) error {
 	const argsOffset = 2

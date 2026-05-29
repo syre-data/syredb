@@ -46,6 +46,7 @@ func main() {
 
 	e := echo.New()
 	api_middleware := NewApiMiddleware(ctx, db)
+	api_client_middleware := NewApiClientMiddleware(ctx, db)
 
 	app_service := service.NewAppService(ctx, e.Logger, db)
 	auth_service := service.NewAuthService(ctx, e.Logger, db)
@@ -59,6 +60,7 @@ func main() {
 	user_handler := handler.NewUserHandler(db, user_service, app_service)
 	project_handler := handler.NewProjectHandler(db, project_service, user_service, sample_service)
 	data_handler := handler.NewDataHandler(db, data_service, app_service, user_service, project_service)
+	api_client_handler := handler.NewApiClientHandler(db, auth_service, data_service)
 
 	transform_daemon_logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	transform_daemon := NewTransformDaemon(ctx, transform_daemon_logger, db, app_service, data_service)
@@ -87,12 +89,11 @@ func main() {
 			return new(handler.JWTCustomClaims)
 		},
 		ErrorHandler: func(c *echo.Context, err error) error {
-			c.Logger().With(
-				"error", err,
-				"cookies", c.Request().Cookies(),
-			).Error("could not get jwt from cookie")
-
 			if errors.Is(err, echojwt.ErrJWTInvalid) {
+				c.Logger().With(
+					"error", err,
+					"cookies", c.Request().Cookies(),
+				).Debug("could not get jwt from cookie")
 				return c.NoContent(http.StatusUnauthorized)
 			}
 
@@ -131,11 +132,13 @@ func main() {
 	register_routes(
 		e,
 		api_middleware,
+		api_client_middleware,
 		app_handler,
 		auth_handler,
 		user_handler,
 		project_handler,
 		data_handler,
+		api_client_handler,
 	)
 	if os.Getenv("ENV") != "production" {
 		proxy_to_vite(e)
@@ -203,21 +206,70 @@ func (m *ApiMiddleware) UserIdFromSessionToken(next echo.HandlerFunc) echo.Handl
 	}
 }
 
+type ApiClientMiddleware struct {
+	ctx context.Context
+	db  *database.DBConnection
+}
+
+func NewApiClientMiddleware(ctx context.Context, db *database.DBConnection) *ApiClientMiddleware {
+	return &ApiClientMiddleware{ctx: ctx, db: db}
+}
+
+func (m *ApiClientMiddleware) TokenFromRequest(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		token := c.FormValue(handler.ApiClientTokenKey)
+		if token == "" {
+			c.Logger().Warn("no token provided")
+			return errors.New("no token provided")
+		}
+		c.Set(handler.ApiClientTokenKey, token)
+
+		return next(c)
+	}
+}
+
+func (m *ApiClientMiddleware) UserIdFromToken(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		token := c.Get(handler.ApiClientTokenKey)
+		if token == nil {
+			panic("token not set on context")
+		}
+		token = token.(string)
+
+		var user uuid.UUID
+		query := "SELECT _user FROM _user_session_ WHERE _token=$1 AND _expires>$2 AND active=true"
+		err := m.db.Conn.QueryRow(m.ctx, query, token, time.Now()).Scan(&user)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"token", token,
+			).Error("could not get session user")
+			return err
+		}
+
+		c.Set(handler.UserIdKey, user)
+		return next(c)
+	}
+}
+
 // Note: When registering new base routes,
 // you may need to update the vite proxy for dev in `../frontend/vite.config.ts`.
 func register_routes(
 	e *echo.Echo,
 	api_middleware *ApiMiddleware,
+	client_middleware *ApiClientMiddleware,
 	app *handler.AppHandler,
 	auth *handler.AuthHandler,
 	user *handler.UserHandler,
 	project *handler.ProjectHandler,
 	data *handler.DataHandler,
+	api_client *handler.ApiClientHandler,
 ) {
 	e.GET("/", app.Index)
-	e.POST("/api/login", auth.Login)
+	e.POST("/login", auth.Login)
 	e.GET("/logout", auth.Logout)
 
+	// internal
 	api := e.Group("/api")
 	api.Use(api_middleware.SessionTokenFromJWT)
 	api.Use(api_middleware.UserIdFromSessionToken)
@@ -252,6 +304,17 @@ func register_routes(
 
 	resource.GET("/data", data.DownloadDataValuesSingle)
 	resource.GET("/project", data.DownloadRawDataProject)
+
+	// client libraries
+	e.POST("/api/client/authenticate", api_client.Authenticate)
+
+	client := e.Group("/api/client")
+	client.Use(client_middleware.TokenFromRequest)
+	client.Use(client_middleware.UserIdFromToken)
+
+	client.POST("/deactivate", api_client.Deactivate)
+	client.GET("/data-type", api_client.DataType)
+	client.POST("/data/create", api_client.DataCreate)
 
 }
 

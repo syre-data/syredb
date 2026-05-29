@@ -478,7 +478,8 @@ func (s *ProjectService) getProjectResourcesDataInfo(
 	}
 
 	creator_user_query :=
-		`SELECT _data, _creator FROM data_creator_user_ WHERE _data=ANY($1)`
+		`SELECT _data, _creator FROM data_creator_user_ 
+		WHERE _data=ANY($1)`
 	rows, _ = s.db.Conn.Query(s.ctx, creator_user_query, creator_user_ids)
 	for rows.Next() {
 		var data_id uuid.UUID

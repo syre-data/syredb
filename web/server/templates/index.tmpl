@@ -91,7 +91,7 @@
         const data = new FormData(e.target);
         let response;
         try {
-          response = await fetch("/api/login", {
+          response = await fetch("/login", {
             method: "POST",
             body: data,
           });

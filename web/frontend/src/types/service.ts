@@ -243,6 +243,12 @@ export interface IngestionScriptCreate {
   Args: string[];
   Sources: ExternalSourceCreate[];
 }
+export interface DataOriginRx {
+  Id: uuid.UUIDTypes;
+  Label: string;
+  Description: string;
+  Active: boolean;
+}
 /**
  * DataValues represents the actual data stored.
  * Values is []SchemaFieldValues if Storage is `internal`.
@@ -325,6 +331,7 @@ export const DataIngestionScript: DataIngestionMethod = "script";
 export interface DataCreate {
   Type: uuid.UUIDTypes;
   CreatorType: DataCreatorType;
+  Origin: uuid.UUIDTypes;
   Timestamp: Date;
   Visibility: Visibility;
   Properties: Property[];
