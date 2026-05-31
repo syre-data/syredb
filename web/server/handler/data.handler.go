@@ -886,7 +886,8 @@ func data_type_transform_command_from_file_ext(ext string) (string, error) {
 
 type DataCreate struct {
 	Type                   uuid.UUID
-	CreatorType            service.DataCreatorType
+	Creator                uuid.UUID
+	Origin                 uuid.UUID
 	Timestamp              time.Time
 	Visibility             service.Visibility
 	Properties             []service.Property
@@ -965,7 +966,10 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 	data := make([]service.DataCreate, len(info))
 	for idx, datum := range info {
 		data[idx].Type = datum.Type
-		data[idx].CreatorType = datum.CreatorType
+		data[idx].Creator = service.DataCreatorUser{
+			Id:     datum.Creator,
+			Origin: datum.Origin,
+		}
 		data[idx].Timestamp = datum.Timestamp
 		data[idx].Visibility = datum.Visibility
 		data[idx].Properties = datum.Properties
@@ -1018,7 +1022,7 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	data_ids, err := h.data_service.DataCreate(data, user_id, user_id)
+	data_ids, err := h.data_service.DataCreate(data, user_id)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -1102,4 +1106,19 @@ func (h *DataHandler) dataCreateValidateIngestionScriptSources(data []service.Da
 	}
 
 	return nil
+}
+
+func (h *DataHandler) OrphanedData(c *echo.Context) error {
+	user := c.Get(UserIdKey).(uuid.UUID)
+
+	data, err := h.data_service.OrphanedData(user)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user,
+		).Error("could not get orphaned data")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.JSON(http.StatusOK, data)
 }

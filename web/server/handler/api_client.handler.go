@@ -316,6 +316,11 @@ func (h *ApiClientHandler) dataCreateInternal(
 	origin uuid.UUID,
 	data dataCreate,
 ) error {
+	creator := service.DataCreatorUser{
+		Id:     user,
+		Origin: origin,
+	}
+
 	properties := make([]service.Property, len(data.Properties))
 	for idx, prop := range data.Properties {
 		properties[idx] = service.Property{
@@ -341,8 +346,7 @@ func (h *ApiClientHandler) dataCreateInternal(
 
 	create := service.DataCreate{
 		Type:                   data.Id,
-		Origin:                 origin,
-		CreatorType:            service.DataCreatorTypeUser,
+		Creator:                creator,
 		Timestamp:              data.Timestamp,
 		Visibility:             data.Visibility,
 		Properties:             properties,
@@ -352,7 +356,7 @@ func (h *ApiClientHandler) dataCreateInternal(
 		IngestionScript:        uuid.Nil,
 		IngestionScriptSources: nil,
 	}
-	_, err := h.data_service.DataCreate([]service.DataCreate{create}, user, user)
+	_, err := h.data_service.DataCreate([]service.DataCreate{create}, user)
 	if err != nil {
 		c.Logger().With(
 			"error", err,

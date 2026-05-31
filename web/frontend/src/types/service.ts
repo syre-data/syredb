@@ -101,6 +101,7 @@ export interface DataTypeExternal {
 export type DataCreator = any;
 export interface DataCreatorUser {
   Id: uuid.UUIDTypes;
+  Origin: uuid.UUIDTypes;
 }
 export interface DataCreatorTransform {
   Id: uuid.UUIDTypes;
@@ -330,8 +331,7 @@ export const DataIngestionScript: DataIngestionMethod = "script";
  */
 export interface DataCreate {
   Type: uuid.UUIDTypes;
-  CreatorType: DataCreatorType;
-  Origin: uuid.UUIDTypes;
+  Creator: DataCreatorUser;
   Timestamp: Date;
   Visibility: Visibility;
   Properties: Property[];
@@ -346,6 +346,16 @@ export const DataPermissionKeyRead = "read";
 export const DataPermissionKeyNoteCreate = "note_create";
 export const DataPermissionKeyPropertiesModify = "properties_modify";
 export type DataPermissionKey = typeof DataPermissionKeyOwner | typeof DataPermissionKeyRead | typeof DataPermissionKeyNoteCreate | typeof DataPermissionKeyPropertiesModify;
+export const FIELDS = 3;
+export interface DataWithOrigin {
+  Data: DataRx;
+  Origin: uuid.UUIDTypes;
+}
+export interface OrphanedDataResources {
+  Data: DataWithOrigin[];
+  Origins: DataOriginRx[];
+  DataTypes: DataType[];
+}
 
 //////////
 // source: project.service.go

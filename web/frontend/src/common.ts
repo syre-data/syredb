@@ -16,6 +16,7 @@ export const QUERY_KEY_USER_PROJECTS = "user_projects";
 export const QUERY_KEY_PROJECT_RESOURCES = "project_resources";
 export const QUERY_KEY_PROJECT_SAMPLE_RESOURCES = "project_sample_resources";
 export const QUERY_KEY_PROJECT = "project";
+export const QUERY_KEY_ORPHANED_DATA = "orphaned_data";
 
 export interface BackendError {
     message: string;
@@ -28,55 +29,30 @@ export enum MouseButton {
     Secondary = 2,
 }
 
-export function project_user_permission_string_to_variant(
-    value: string,
-): types.ProjectPermission | undefined {
-    switch (value) {
-        case "owner":
-            return types.ProjectPermissionOwner;
-        case "create_sample":
-            return types.ProjectPermissionCreateSample;
-        case "read":
-            return types.ProjectPermissionRead;
-        default:
-            return undefined;
-    }
-}
-
-export function has_db_permission(
-    needle: types.DbPermissionId,
-    haystack: types.DbPermissionId[],
-): boolean {
-    return (
-        haystack.includes(types.DbPermissionIdOwner) ||
-        haystack.includes(needle)
-    );
-}
-
 export function db_permission_id_string_to_variant(
     value: string,
-): types.DbPermissionId | undefined {
+): types.DbPermission | undefined {
     switch (value) {
         case "owner":
-            return types.DbPermissionIdOwner;
+            return types.DbPermissionOwner;
         case "user_create":
-            return types.DbPermissionIdUserCreate;
+            return types.DbPermissionUserCreate;
         case "user_modify":
-            return types.DbPermissionIdUserModify;
+            return types.DbPermissionUserModify;
         case "data_schema_create":
-            return types.DbPermissionIdDataSchemaCreate;
+            return types.DbPermissionDataSchemaCreate;
         case "data_schema_modify":
-            return types.DbPermissionIdDataSchemaModify;
+            return types.DbPermissionDataSchemaModify;
         case "data_type_create":
-            return types.DbPermissionIdDataTypeCreate;
+            return types.DbPermissionDataTypeCreate;
         case "data_type_modify":
-            return types.DbPermissionIdDataTypeModify;
+            return types.DbPermissionDataTypeModify;
         case "transform_create":
-            return types.DbPermissionIdTransformCreate;
+            return types.DbPermissionTransformCreate;
         case "transform_modify":
-            return types.DbPermissionIdTransformModify;
+            return types.DbPermissionTransformModify;
         case "project_create":
-            return types.DbPermissionIdProjectCreate;
+            return types.DbPermissionProjectCreate;
         default:
             return undefined;
     }

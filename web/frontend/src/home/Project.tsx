@@ -1,26 +1,17 @@
-import {
-    MouseButton,
-    QUERY_KEY_DATA_TYPE_TRANSFORMS,
-    QUERY_KEY_DATA_TYPES,
-    QUERY_KEY_PROJECT_RESOURCES,
-} from "@/common";
+import { MouseButton, QUERY_KEY_PROJECT_RESOURCES } from "@/common";
 import { Loading, SuspenseError } from "@/components";
 import Icon from "@/icon";
-import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
 import {
     DataStorageExternal,
     DataStorageInternal,
     type DataType,
-    type DataTypeTransform,
-    type DataTypeTransformRx,
     type ProjectData,
-    type ProjectDataInfo,
 } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Suspense, type MouseEvent } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import { Link, redirect, useNavigate, useParams } from "react-router";
+import { Link, redirect, useParams } from "react-router";
 import * as uuid from "uuid";
 
 export default function () {

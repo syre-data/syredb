@@ -137,7 +137,7 @@ function dataSchemaUpdate(update: types.DataSchemaUpdate): Promise<Response> {
 
 function parseDataFileToSchema(
     file: File,
-    schema: types.DataSchemaRx,
+    schema: types.DataSchemaField[],
 ): Promise<any> {
     switch (file.type) {
         case "text/csv":
@@ -149,7 +149,7 @@ function parseDataFileToSchema(
 
 async function parseDataFileToSchemaCsv(
     file: File,
-    schema: types.DataSchemaRx,
+    schema: types.DataSchemaField[],
 ) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -183,14 +183,14 @@ async function parseDataFileToSchemaCsv(
 
 function parse_data_file_to_schema_csv(
     content: string,
-    schema: types.DataSchemaRx,
+    schema: types.DataSchemaField[],
 ) {
     if (content.length === 0) {
         throw new Error("NO_DATA");
     }
 
     const cols: string[][] = [];
-    for (let idx = 0; idx < schema.Schema.length; idx++) {
+    for (let idx = 0; idx < schema.length; idx++) {
         cols.push([]);
     }
 
@@ -198,9 +198,9 @@ function parse_data_file_to_schema_csv(
     for (let lidx = 0; lidx < lines.length; lidx++) {
         const line = lines[lidx]!;
         let values = line.split(",");
-        if (values.length != schema.Schema.length) {
+        if (values.length != schema.length) {
             throw new Error(
-                `INVALID_DATA: line ${lidx}, expected ${schema.Schema.length} values, found ${values.length}`,
+                `INVALID_DATA: line ${lidx}, expected ${schema.length} values, found ${values.length}`,
             );
         }
 
@@ -211,12 +211,9 @@ function parse_data_file_to_schema_csv(
     }
 
     const parsed: any[][] = [];
-    for (let idx = 0; idx < schema.Schema.length; idx++) {
+    for (let idx = 0; idx < schema.length; idx++) {
         const values = cols[idx]!.map((value) =>
-            parse_data_file_parse_string_to_value(
-                value,
-                schema.Schema[idx]!.DType,
-            ),
+            parse_data_file_parse_string_to_value(value, schema[idx]!.DType),
         );
 
         parsed.push(values);
@@ -329,6 +326,12 @@ function projectDataCreate(
     });
 }
 
+function orphanedData(): Promise<types.OrphanedDataResources> {
+    return fetch(`/api/data/orphaned`, {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.OrphanedDataResources);
+}
+
 export default {
     dataTypesGetAll,
     dataTypeCreateInternal,
@@ -350,4 +353,5 @@ export default {
     ingestionScriptCreate,
     ingestionScriptsForDataType,
     projectDataCreate,
+    orphanedData,
 };

@@ -199,7 +199,7 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
             <div className="pt-2 px-4">
                 <h2 className="text-lg">Schema</h2>
                 <div className="flex gap-2">
-                    {data_schema.Schema.map((col, idx) => (
+                    {data_schema.Fields.map((col, idx) => (
                         <>
                             {idx !== 0 ? <div>|</div> : null}
                             <div

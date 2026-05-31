@@ -158,7 +158,8 @@ type DataCreator interface {
 }
 
 type DataCreatorUser struct {
-	Id uuid.UUID
+	Id     uuid.UUID
+	Origin uuid.UUID
 }
 
 func (t DataCreatorUser) Type() DataCreatorType {
@@ -1923,6 +1924,22 @@ func (s *DataService) DataOriginByLabel(label string) (DataOriginRx, error) {
 	return origin, nil
 }
 
+func (s *DataService) DataOriginsByIds(ids []uuid.UUID) ([]DataOriginRx, error) {
+	query :=
+		`SELECT _id, label, description, active FROM data_origin_
+		WHERE _id=ANY($1)`
+	rows, _ := s.db.Conn.Query(s.ctx, query, ids)
+	origins, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataOriginRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"ids", ids,
+		).Error("could not get data origins")
+		return nil, err
+	}
+	return origins, nil
+}
+
 // DataValues represents the actual data stored.
 // Values is []SchemaFieldValues if Storage is `internal`.
 // Values is a []DataSource if Storage is `external`.
@@ -3188,8 +3205,7 @@ const (
 // `IngestionScript` and `IngestionScriptSources` are only valid if `IngestionMethod` is `script`.
 type DataCreate struct {
 	Type                   uuid.UUID
-	CreatorType            DataCreatorType
-	Origin                 uuid.UUID
+	Creator                DataCreatorUser
 	Timestamp              time.Time
 	Visibility             Visibility
 	Properties             []Property
@@ -3202,7 +3218,6 @@ type DataCreate struct {
 
 func (s *DataService) DataCreate(
 	data []DataCreate,
-	creator uuid.UUID,
 	owner uuid.UUID,
 ) ([]uuid.UUID, error) {
 	if len(data) == 0 {
@@ -3226,12 +3241,17 @@ func (s *DataService) DataCreate(
 		return nil, err
 	}
 
+	err = s.dataCreateCreatorUser(tx, data, data_ids)
+	if err != nil {
+		return nil, err
+	}
+
 	err = s.dataCreateProperties(tx, data, data_ids)
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.dataCreateNotes(tx, data, data_ids, creator)
+	err = s.dataCreateNotes(tx, data, data_ids)
 	if err != nil {
 		return nil, err
 	}
@@ -3400,7 +3420,7 @@ func (s *DataService) dataInsert(tx pgx.Tx, data []DataCreate) ([]uuid.UUID, err
 			s.ctx,
 			data_query,
 			datum.Type,
-			datum.CreatorType,
+			datum.Creator.Type(),
 			datum.Timestamp,
 			datum.Visibility,
 		).Scan(&data_ids[idx])
@@ -3416,7 +3436,11 @@ func (s *DataService) dataInsert(tx pgx.Tx, data []DataCreate) ([]uuid.UUID, err
 	return data_ids, nil
 }
 
-func (s *DataService) dataCreatePermissions(tx pgx.Tx, data_ids []uuid.UUID, owner uuid.UUID) error {
+func (s *DataService) dataCreatePermissions(
+	tx pgx.Tx,
+	data_ids []uuid.UUID,
+	owner uuid.UUID,
+) error {
 	const argsOffset = 2
 
 	args := make([]any, len(data_ids)+argsOffset)
@@ -3440,6 +3464,54 @@ func (s *DataService) dataCreatePermissions(tx pgx.Tx, data_ids []uuid.UUID, own
 			"query", query.String(),
 			"args", args,
 		).Error("could not create data user permissions")
+		return err
+	}
+
+	return nil
+}
+
+func (s *DataService) dataCreateCreatorUser(
+	tx pgx.Tx,
+	data []DataCreate,
+	data_ids []uuid.UUID,
+) error {
+	const FIELDS = 3
+
+	var query strings.Builder
+	args := make([]any, len(data_ids)*FIELDS)
+	query.WriteString(
+		`INSERT INTO data_creator_user_ (_data, _creator, _origin) VALUES `,
+	)
+	for idx, datum := range data {
+		if idx > 0 {
+			query.WriteString(", ")
+		}
+
+		idx_data := idx * FIELDS
+		idx_creator := idx_data + 1
+		idx_origin := idx_creator + 1
+		fmt.Fprintf(
+			&query,
+			"($%d, $%d, $%d)",
+			idx_data+1,
+			idx_creator+1,
+			idx_origin+1,
+		)
+
+		args[idx_data] = data_ids[idx]
+		args[idx_creator] = datum.Creator.Id
+		args[idx_origin] = datum.Creator.Origin
+	}
+	_, err := tx.Exec(
+		s.ctx,
+		query.String(),
+		args...,
+	)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not create data creator user")
 		return err
 	}
 
@@ -3503,7 +3575,11 @@ func (s *DataService) dataCreateProperties(tx pgx.Tx, data []DataCreate, data_id
 	return nil
 }
 
-func (s *DataService) dataCreateNotes(tx pgx.Tx, data []DataCreate, data_ids []uuid.UUID, creator uuid.UUID) error {
+func (s *DataService) dataCreateNotes(
+	tx pgx.Tx,
+	data []DataCreate,
+	data_ids []uuid.UUID,
+) error {
 	num_notes := 0
 	for _, datum := range data {
 		num_notes += len(datum.Notes)
@@ -3512,10 +3588,8 @@ func (s *DataService) dataCreateNotes(tx pgx.Tx, data []DataCreate, data_ids []u
 		return nil
 	}
 
-	const numFields = 4
-	const argOffset = 1
+	const numFields = 5
 	args := make([]any, num_notes*numFields)
-	args[0] = creator
 	var query strings.Builder
 	query.WriteString(
 		`INSERT INTO data_properties_ (_data, _creator, timestamp, visibility, content) VALUES `,
@@ -3523,12 +3597,14 @@ func (s *DataService) dataCreateNotes(tx pgx.Tx, data []DataCreate, data_ids []u
 	idx := 0
 	for ddx, datum := range data {
 		for _, note := range datum.Notes {
-			data_idx := idx*numFields + argOffset
-			timestamp_idx := data_idx + 1
+			data_idx := idx * numFields
+			creator_idx := data_idx + 1
+			timestamp_idx := creator_idx + 1
 			visibility_idx := timestamp_idx + 1
 			content_idx := visibility_idx + 1
 
 			args[data_idx] = data_ids[ddx]
+			args[creator_idx] = datum.Creator.Id
 			args[timestamp_idx] = note.Timestamp
 			args[visibility_idx] = note.Visibility
 			args[content_idx] = note.Content
@@ -3538,8 +3614,9 @@ func (s *DataService) dataCreateNotes(tx pgx.Tx, data []DataCreate, data_ids []u
 			}
 			fmt.Fprintf(
 				&query,
-				"($%d, $1, $%d, $%d, $%d)",
+				"($%d, $%d, $%d, $%d, $%d)",
 				data_idx+1,
+				creator_idx+1,
 				timestamp_idx+1,
 				visibility_idx+1,
 				content_idx+1,
@@ -3626,4 +3703,101 @@ func (s *DataService) dataCreateDataIngestionScriptSources(
 	}
 
 	return paths, nil
+}
+
+type DataWithOrigin struct {
+	Data   DataRx
+	Origin uuid.UUID
+}
+
+type OrphanedDataResources struct {
+	Data      []DataWithOrigin
+	Origins   []DataOriginRx
+	DataTypes []DataType
+}
+
+func (s *DataService) OrphanedData(user uuid.UUID) (OrphanedDataResources, error) {
+	type rx struct {
+		Id          uuid.UUID       `db:"id"`
+		Type        uuid.UUID       `db:"type"`
+		CreatorType DataCreatorType `db:"creator_type"`
+		Timestamp   time.Time       `db:"timestamp"`
+		Visibility  Visibility      `db:"visibility"`
+		Origin      uuid.UUID       `db:"origin"`
+	}
+
+	query := fmt.Sprintf(
+		`SELECT 
+			d._id as id, 
+			d._type as type, 
+			d._creator_type as creator_type, 
+			d.timestamp as timestamp, 
+			d.visibility as visibility, 
+			c._origin as origin
+		FROM data_ d JOIN data_creator_user_ c ON d._id=c._data
+		LEFT JOIN project_data_membership_ p ON d._id=p._data
+		WHERE d._creator_type='%s' 
+		AND c._creator=$1 
+		AND p._data IS NULL`,
+		DataCreatorTypeUser,
+	)
+	rows, _ := s.db.Conn.Query(s.ctx, query, user)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[rx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"user", user,
+		).Error("could not get orphaned data")
+		return OrphanedDataResources{}, err
+	}
+
+	origin_ids := make([]uuid.UUID, 0, 32)
+	type_ids := make([]uuid.UUID, 0, 32)
+	for _, r := range rxs {
+		if !slices.Contains(origin_ids, r.Origin) {
+			origin_ids = append(origin_ids, r.Origin)
+		}
+
+		if !slices.Contains(type_ids, r.Type) {
+			type_ids = append(type_ids, r.Type)
+		}
+	}
+
+	origins, err := s.DataOriginsByIds(origin_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"origins", origin_ids,
+		).Error("could not get data origins")
+		return OrphanedDataResources{}, err
+	}
+
+	data_types, err := s.DataTypesById(type_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data types", type_ids,
+		).Error("could not get data types")
+		return OrphanedDataResources{}, err
+	}
+
+	data := make([]DataWithOrigin, len(rxs))
+	for idx, r := range rxs {
+		data[idx] = DataWithOrigin{
+			Data: DataRx{
+				Id:          r.Id,
+				Type:        r.Type,
+				CreatorType: r.CreatorType,
+				Timestamp:   r.Timestamp,
+				Visibility:  r.Visibility,
+			},
+			Origin: r.Origin,
+		}
+	}
+
+	return OrphanedDataResources{
+		Data:      data,
+		Origins:   origins,
+		DataTypes: data_types,
+	}, nil
 }

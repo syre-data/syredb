@@ -297,6 +297,7 @@ func register_routes(
 	api.GET("/projects", project.GetUserProjects)
 	api.GET("/project/resources", project.ProjectResources)
 	api.POST("/data", data.DataCreate)
+	api.GET("/data/orphaned", data.OrphanedData)
 
 	resource := e.Group("/resource")
 	resource.Use(api_middleware.SessionTokenFromJWT)

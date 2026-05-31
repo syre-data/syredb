@@ -13,17 +13,19 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
 import project_service from "@/service/project.service";
 import data_service from "@/service/data.service";
-import { SuspenseError } from "@/components";
+import { Loading, SuspenseError } from "@/components";
+import type { UUID } from "crypto";
 
 export default function Dashboard() {
     return (
         <div>
-            <div className="flex gap-2 text-xl">
-                <h2 className="px-4 text-lg font-bold grow">Dashboard</h2>
+            <div className="px-4 pt-2 flex gap-2 text-xl">
+                <h2 className="text-lg font-bold grow">Dashboard</h2>
                 <Nav />
             </div>
             <main>
                 <UserProjects />
+                <OrphanedData />
             </main>
         </div>
     );
@@ -62,7 +64,7 @@ function UserProjects() {
             </div>
             <div>
                 <ErrorBoundary FallbackComponent={UserProjectsError}>
-                    <Suspense fallback={<LoadingUserProjects />}>
+                    <Suspense fallback={<UserProjectsLoading />}>
                         <UserProjectsInner />
                     </Suspense>
                 </ErrorBoundary>
@@ -86,7 +88,7 @@ function UserProjectsError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
     );
 }
 
-function LoadingUserProjects() {
+function UserProjectsLoading() {
     return <div className="text-center">Loading projects</div>;
 }
 
@@ -253,5 +255,97 @@ function DataTypesContent({ data_types }: DataTypesContentProps) {
                 </li>
             ))}
         </ul>
+    );
+}
+
+function OrphanedData() {
+    return (
+        <ErrorBoundary FallbackComponent={OrphanedDataError}>
+            <Suspense fallback={<Loading />}>
+                <OrphanedDataContent />
+            </Suspense>
+        </ErrorBoundary>
+    );
+}
+
+function OrphanedDataError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
+    const err = error as common.BackendError;
+    console.error(err);
+
+    return (
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="text-center"
+        >
+            <div>Could not get orphaned data</div>
+            <div>{err.message}</div>
+        </SuspenseError>
+    );
+}
+
+function OrphanedDataContent() {
+    const { data } = useSuspenseQuery({
+        queryKey: [common.QUERY_KEY_ORPHANED_DATA],
+        queryFn: data_service.orphanedData,
+    });
+
+    return data.Data.length > 0 ? (
+        <div className="px-4 pt-2">
+            <h3 className="pb-2 text-lg font-bold">Orphaned data</h3>
+            <OrphanedDataList
+                data={data.Data}
+                origins={data.Origins}
+                dataTypes={data.DataTypes}
+            />
+        </div>
+    ) : null;
+}
+
+interface OrphanedDataListProps {
+    data: types.DataWithOrigin[];
+    origins: types.DataOriginRx[];
+    dataTypes: types.DataType[];
+}
+function OrphanedDataList({ data, origins, dataTypes }: OrphanedDataListProps) {
+    return (
+        <table className="text-left [&_td]:px-2 [&_td]:py-0.5">
+            <thead className="[&_th]:px-2 [&_th]:py-0.5">
+                <tr>
+                    <th>Type</th>
+                    <th>Origin</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                {data.map((data) => {
+                    const origin = origins.find((o) => o.Id === data.Origin)!;
+                    const type = dataTypes.find((t) => data.Data.Type == t.Id)!;
+                    return (
+                        <OrphanedDataItem
+                            key={data.Data.Id.toString()}
+                            data={data.Data}
+                            origin={origin}
+                            dataType={type}
+                        />
+                    );
+                })}
+            </tbody>
+        </table>
+    );
+}
+
+interface OrphanedDataItemProps {
+    data: types.DataRx;
+    origin: types.DataOriginRx;
+    dataType: types.DataType;
+}
+function OrphanedDataItem({ data, origin, dataType }: OrphanedDataItemProps) {
+    console.debug(data.Timestamp);
+    return (
+        <tr>
+            <td>{dataType.Label}</td>
+            <td>{origin.Label}</td>
+            <td>{data.Timestamp}</td>
+        </tr>
     );
 }
