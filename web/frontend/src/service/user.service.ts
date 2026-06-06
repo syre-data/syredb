@@ -1,5 +1,7 @@
 import * as types from "@/types";
-import type { UUIDTypes } from "uuid";
+import type { UUID } from "crypto";
+import { parse, stringify, type UUIDTypes } from "uuid";
+import { isUUID } from "validator";
 function get_user_by_jwt_token(): Promise<types.User> {
     return fetch("/api/user", {
         credentials: "same-origin",
@@ -33,6 +35,7 @@ function userCreate(user: types.UserCreate): Promise<Response> {
     return fetch("/api/user/create", {
         credentials: "same-origin",
         method: "post",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(user),
     });
 }
@@ -46,8 +49,15 @@ function userCreate(user: types.UserCreate): Promise<Response> {
 // }
 
 function user(user: UUIDTypes): Promise<types.User> {
+    let id_str: string;
+    if (typeof user === "string") {
+        id_str = user;
+    } else {
+        id_str = stringify(user);
+    }
+
     const params = new URLSearchParams();
-    params.append("id", user.toString());
+    params.append("id", id_str);
     return fetch(`/api/user?${params}`).then(
         async (resp) => (await resp.json()) as types.User,
     );
@@ -57,7 +67,26 @@ function userUpdate(user: types.User): Promise<Response> {
     return fetch("/api/user", {
         credentials: "same-origin",
         method: "put",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(user),
+    });
+}
+
+function passwordReset(user: UUIDTypes): Promise<Response> {
+    return fetch("/api/user/password/reset", {
+        credentials: "same-origin",
+        method: "put",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user }),
+    });
+}
+
+function passwordUpdate(current: string, update: string): Promise<Response> {
+    return fetch("/api/user/password/update", {
+        credentials: "same-origin",
+        method: "put",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current, update }),
     });
 }
 
@@ -69,5 +98,7 @@ export default {
     userCreate,
     user,
     userUpdate,
+    passwordReset,
+    passwordUpdate,
     //  userResources,
 };

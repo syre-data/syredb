@@ -14,23 +14,42 @@ import {
     DataSourceCardinalitySingle,
     DataStorageExternal,
     DataStorageInternal,
+    DbPermissionDataTypeCreate,
     DbPermissionDataTypeModify,
     type DataType,
     type DataTypeExternal,
     type DataTypeInternal,
+    type DataTypeSourceUpdate,
+    type DataTypeUpdate,
 } from "@/types";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, useContext, type MouseEvent } from "react";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { StatusCodes } from "http-status-codes";
+import {
+    Suspense,
+    useContext,
+    type ChangeEvent,
+    type MouseEvent,
+    type SubmitEvent,
+} from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
+import * as uuid from "uuid";
 
 export default function () {
-    const navigate = useNavigate();
     const { data_type_id } = useParams();
-    if (data_type_id === undefined) {
-        console.log("data type id not present");
-        navigate(-1);
-        return;
+    if (!data_type_id) {
+        return <Navigate to="/" replace />;
+    }
+
+    const ctx = useContext(Context);
+    const user = ctx.user;
+    const canEditType = hasDbPermission(
+        DbPermissionDataTypeModify,
+        user.DbPermissions,
+    );
+    if (!canEditType) {
+        console.debug("insufficient permissions to modify data type");
+        return <Navigate to="/" replace />;
     }
 
     return (
@@ -78,73 +97,31 @@ function DataType({ data_type_id }: DataTypeProps) {
     let content;
     switch (data_type.Storage) {
         case DataStorageInternal:
-            return (
+            content = (
                 <DataTypeInternal
                     dataType={data_type as DataTypeInternal}
                     dataTypes={data_types}
                 />
             );
+            break;
         case DataStorageExternal:
-            return (
+            content = (
                 <DataTypeExternal
                     dataType={data_type as DataTypeExternal}
                     dataTypes={data_types}
                 />
             );
+            break;
         default:
             console.error(`invalid data type storage: ${data_type}`);
             throw new Error("invalid data type storage");
     }
-}
 
-interface DataTypeInternalProps {
-    dataType: DataTypeInternal;
-    dataTypes: DataType[];
-}
-function DataTypeInternal({ dataType, dataTypes }: DataTypeInternalProps) {
-    const { data: data_schema } = useSuspenseQuery({
-        queryKey: [QUERY_KEY_DATA_SCHEMA, dataType.Schema],
-        queryFn: async () =>
-            await dataService.dataSchemaResourcesGet(dataType.Schema),
-    });
-    const navigate = useNavigate();
-
-    const ctx = useContext(Context);
-    const user = ctx.user;
-
-    function close(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button !== MouseButton.Primary) {
-            return;
-        }
-
-        navigate(-1);
-    }
-
-    const canModifyType = hasDbPermission(
-        DbPermissionDataTypeModify,
-        user.DbPermissions,
-    );
     return (
         <div>
-            <div className="px-4 py-2 flex justify-between">
-                <div className="flex gap-2">
-                    <h1>{dataType.Label}</h1>
-                    <div>
-                        {dataType.Active ? (
-                            <Icon.CircleCheck />
-                        ) : (
-                            <Icon.CircleX />
-                        )}
-                    </div>
-                    <div>
-                        {canModifyType ? (
-                            <Link to={`/data-type/${dataType.Id}/edit`}>
-                                <button type="button" className="btn-cmd">
-                                    <Icon.Pen />
-                                </button>
-                            </Link>
-                        ) : null}
-                    </div>
+            <div className="flex justify-between px-4 pt-2">
+                <div>
+                    <h2 className="text-lg">Edit data type</h2>
                 </div>
                 <div>
                     <button
@@ -157,20 +134,142 @@ function DataTypeInternal({ dataType, dataTypes }: DataTypeInternalProps) {
                     </button>
                 </div>
             </div>
-            <div className="px-4 pt-2">{dataType.Description}</div>
-            <div className="px-4 pt-2">
-                <Link
-                    to={`/data-schema/${dataType.Schema}`}
-                    title="To data schema"
-                >
-                    <button
-                        type="button"
-                        className="btn-cmd flex gap-1 items-center"
-                    >
-                        <Icon.DataSchema />
-                        {data_schema?.DataSchema.Label}
-                    </button>
-                </Link>
+            {content}
+        </div>
+    );
+}
+
+interface DataTypeInternalProps {
+    dataType: DataTypeInternal;
+    dataTypes: DataType[];
+}
+function DataTypeInternal({ dataType, dataTypes }: DataTypeInternalProps) {
+    const { data: data_schema } = useSuspenseQuery({
+        queryKey: [QUERY_KEY_DATA_SCHEMA, dataType.Schema],
+        queryFn: async () =>
+            await dataService.dataSchemaResourcesGet(dataType.Schema),
+    });
+    const queryClient = useQueryClient();
+    const navigate = useNavigate();
+
+    function validate_label(e: ChangeEvent<HTMLInputElement>) {
+        e.target.setCustomValidity("");
+        if (
+            dataTypes
+                .filter((type) => type.Id !== dataType.Id)
+                .map((type) => type.Label)
+                .includes(e.target.value.trim())
+        ) {
+            e.target.setCustomValidity("Label already exists");
+        }
+    }
+
+    async function update(e: SubmitEvent<HTMLFormElement>) {
+        e.preventDefault();
+
+        const data = new FormData(e.target);
+        const label = data.get("label")!.toString().trim();
+        const active = !!data.get("active");
+        const description = data.get("description")!.toString().trim();
+
+        if (!label) {
+            console.error("label can not be empty");
+            return;
+        }
+
+        const update = {
+            Id: dataType.Id,
+            Label: label,
+            Active: active,
+            Description: description,
+        } satisfies DataTypeUpdate;
+        await dataService.dataTypeUpdate(update).then((resp) => {
+            if (resp.status === StatusCodes.OK) {
+                queryClient.invalidateQueries({
+                    queryKey: [QUERY_KEY_DATA_TYPES],
+                });
+
+                queryClient.invalidateQueries({
+                    queryKey: [QUERY_KEY_DATA_TYPE, dataType.Id],
+                });
+                navigate(-1);
+            }
+
+            console.error(resp);
+        });
+    }
+
+    return (
+        <div>
+            <div className="pt-4 px-4 flex gap-2">
+                <div>
+                    <form className="flex flex-col gap-2" onSubmit={update}>
+                        <div className="flex flex-col gap-2">
+                            <div>
+                                <label>
+                                    <span className="sr-only">Label</span>
+                                    <input
+                                        type="text"
+                                        id="label"
+                                        name="label"
+                                        placeholder="Label"
+                                        className="input-basic"
+                                        defaultValue={dataType.Label}
+                                        onChange={validate_label}
+                                        required
+                                    />
+                                </label>
+                            </div>
+                            <div>
+                                <label title="Allow users to assign this data type to new data">
+                                    <input
+                                        type="checkbox"
+                                        id="active"
+                                        name="active"
+                                        placeholder="Active"
+                                        className="input-basic"
+                                        defaultChecked={dataType.Active}
+                                    />
+                                    <span className="pl-2">Active</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label>
+                                    <textarea
+                                        id="description"
+                                        name="description"
+                                        placeholder="Description"
+                                        className="input-basic"
+                                        defaultValue={
+                                            dataType.Description ?? ""
+                                        }
+                                    ></textarea>
+                                </label>
+                            </div>
+                        </div>
+                        <div>
+                            <button type="submit" className="btn-submit">
+                                Save
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div className="flex gap-2">
+                    <div>
+                        <Link
+                            to={`/data-schema/${dataType.Schema}`}
+                            title="To data schema"
+                        >
+                            <button
+                                type="button"
+                                className="btn-cmd flex gap-1 items-center"
+                            >
+                                <Icon.DataSchema />
+                                {data_schema?.DataSchema.Label}
+                            </button>
+                        </Link>
+                    </div>
+                </div>
             </div>
         </div>
     );

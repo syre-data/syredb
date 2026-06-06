@@ -29,6 +29,15 @@ export enum MouseButton {
     Secondary = 2,
 }
 
+export function hasDbPermission(
+    needle: types.DbPermission,
+    haystack: types.DbPermission[],
+): boolean {
+    return (
+        haystack.includes(types.DbPermissionOwner) || haystack.includes(needle)
+    );
+}
+
 export function db_permission_id_string_to_variant(
     value: string,
 ): types.DbPermission | undefined {
@@ -47,12 +56,18 @@ export function db_permission_id_string_to_variant(
             return types.DbPermissionDataTypeCreate;
         case "data_type_modify":
             return types.DbPermissionDataTypeModify;
+        case "ingestion_script_create":
+            return types.DbPermissionIngestionScriptCreate;
+        case "ingestion_script_modify":
+            return types.DbPermissionIngestionScriptModify;
         case "transform_create":
             return types.DbPermissionTransformCreate;
         case "transform_modify":
             return types.DbPermissionTransformModify;
         case "project_create":
             return types.DbPermissionProjectCreate;
+        case "data_create":
+            return types.DbPermissionDataCreate;
         default:
             return undefined;
     }

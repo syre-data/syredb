@@ -1,10 +1,18 @@
-import { MouseButton, QUERY_KEY_INGESTION_SCRIPTS } from "@/common";
+import { Context } from "@/AppStateContext";
+import {
+    hasDbPermission,
+    MouseButton,
+    QUERY_KEY_INGESTION_SCRIPTS,
+} from "@/common";
 import { Loading, SuspenseError } from "@/components";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
-import type { IngestionScript } from "@/types";
+import {
+    DbPermissionIngestionScriptCreate,
+    type IngestionScript,
+} from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, type MouseEvent } from "react";
+import { Suspense, useContext, type MouseEvent } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { Link, useNavigate } from "react-router";
 
@@ -36,6 +44,9 @@ function IngestionScripts() {
     });
     const navigate = useNavigate();
 
+    const ctx = useContext(Context);
+    const user = ctx.user;
+
     function close(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
             return;
@@ -43,17 +54,24 @@ function IngestionScripts() {
 
         navigate(-1);
     }
+
+    const canCreateScript = hasDbPermission(
+        DbPermissionIngestionScriptCreate,
+        user.DbPermissions,
+    );
     return (
         <div>
             <div className="flex justify-between px-4 pt-2">
                 <div className="flex gap-2">
                     <h2 className="text-xl">Ingestion scripts</h2>
                     <div>
-                        <Link to="/ingestion-script/create">
-                            <button className="btn-cmd align-middle">
-                                <Icon.Plus />
-                            </button>
-                        </Link>
+                        {canCreateScript ? (
+                            <Link to="/ingestion-script/create">
+                                <button className="btn-cmd align-middle">
+                                    <Icon.Plus />
+                                </button>
+                            </Link>
+                        ) : null}
                     </div>
                 </div>
                 <div>

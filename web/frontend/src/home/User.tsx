@@ -1,12 +1,14 @@
 import { Loading, SuspenseError } from "@/components";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, type MouseEvent } from "react";
+import { Suspense, useContext, type MouseEvent } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { Link, redirect, useNavigate, useParams } from "react-router";
 import * as uuid from "uuid";
 import icon from "@/icon";
 import * as common from "@/common";
 import user_service from "@/service/user.service";
+import { DbPermissionUserModify } from "@/types";
+import { Context } from "@/AppStateContext";
 
 export default function () {
     const { user_id: user_id_value } = useParams();
@@ -42,6 +44,9 @@ function User({ user_id }: UserProps) {
         queryKey: [common.QUERY_KEY_USER, user_id],
         queryFn: async () => user_service.user(user_id),
     });
+
+    const ctx = useContext(Context);
+    const authUser = ctx.user;
     const navigate = useNavigate();
 
     function close(e: MouseEvent<HTMLButtonElement>) {
@@ -53,17 +58,26 @@ function User({ user_id }: UserProps) {
         navigate(-1);
     }
 
+    const canModifyUsers = common.hasDbPermission(
+        DbPermissionUserModify,
+        authUser.DbPermissions,
+    );
     return (
         <div>
             <div className="px-4 pt-2 flex justify-between">
                 <div className="flex gap-2">
                     <h2 className="text-xl">User profile</h2>
                     <div>
-                        <Link to={`/user/${user.Id.toString()}/edit`}>
-                            <button type="button" className="btn-cmd">
-                                <icon.Pen />
-                            </button>
-                        </Link>
+                        {canModifyUsers ? (
+                            <Link
+                                to={`/user/${user.Id.toString()}/edit`}
+                                className="align-middle"
+                            >
+                                <button type="button" className="btn-cmd">
+                                    <icon.Pen />
+                                </button>
+                            </Link>
+                        ) : null}
                     </div>
                 </div>
                 <div>

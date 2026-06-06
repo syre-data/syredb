@@ -279,6 +279,8 @@ func register_routes(
 	api.PUT("/user", user.UserUpdate)
 	api.POST("/user/create", user.UserCreate)
 	api.PUT("/user/deactivate", user.DeactivateUser)
+	api.PUT("/user/password/reset", user.PasswordReset)
+	api.PUT("/user/password/update", user.PasswordUpdate)
 	api.GET("/users", user.UsersAll)
 	api.GET("/data-schemas", data.DataSchemasGetAll)
 	api.POST("/data-schema", data.DataSchemaCreate)

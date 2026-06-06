@@ -1,13 +1,18 @@
 import { Loading, SuspenseError } from "@/components";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, useState, type MouseEvent } from "react";
+import { Suspense, useContext, useState, type MouseEvent } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import * as common from "@/common";
 import dataService from "@/service/data.service";
 import classNames from "classnames";
 import { Link, useNavigate } from "react-router";
 import Icon from "@/icon";
-import type { DataSchema } from "@/types";
+import {
+    DbPermissionDataSchemaCreate,
+    DbPermissionDataSchemaModify,
+    type DataSchema,
+} from "@/types";
+import { Context } from "@/AppStateContext";
 
 export default function () {
     return (
@@ -37,6 +42,8 @@ function DataSchemas() {
     });
 
     const navigate = useNavigate();
+    const ctx = useContext(Context);
+    const user = ctx.user;
 
     function close(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
@@ -47,21 +54,31 @@ function DataSchemas() {
         navigate(-1);
     }
 
+    const canCreateSchema = common.hasDbPermission(
+        DbPermissionDataSchemaCreate,
+        user.DbPermissions,
+    );
+    const canModifySchema = common.hasDbPermission(
+        DbPermissionDataSchemaModify,
+        user.DbPermissions,
+    );
     return (
         <div>
             <div className="flex justify-between">
                 <div className="flex gap-2 items-center px-4">
                     <h3 className="text-lg font-bold">Data schemas</h3>
                     <div>
-                        <Link to="/data-schema/create">
-                            <button
-                                type="button"
-                                className="btn-cmd"
-                                title="Create data schema"
-                            >
-                                <Icon.Plus />
-                            </button>
-                        </Link>
+                        {canCreateSchema ? (
+                            <Link to="/data-schema/create">
+                                <button
+                                    type="button"
+                                    className="btn-cmd"
+                                    title="Create data schema"
+                                >
+                                    <Icon.Plus />
+                                </button>
+                            </Link>
+                        ) : null}
                     </div>
                 </div>
                 <div>
@@ -169,7 +186,7 @@ function DataSchemaListItem({ index, schema }: DataSchemaListItemProps) {
                         className="btn-cmd"
                         title="Edit data schema"
                     >
-                        <Icon.Pen />
+                        <Icon.Eye />
                     </button>
                 </Link>
             </div>

@@ -1,12 +1,15 @@
-import { useContext } from "react";
+import { Suspense, useContext } from "react";
 import type { MouseEvent } from "react";
 import icon from "../icon";
-import { MouseButton } from "../common";
+import { MouseButton, QUERY_KEY_USER } from "../common";
 import * as appStateCtx from "../AppStateContext";
 import { useNavigate, Link } from "react-router";
 import auth_service from "@/service/auth.service";
+import { ErrorBoundary } from "react-error-boundary";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import type { DbPermission } from "@/types";
 
-export default function Settings() {
+export default function () {
     return (
         <div className="flex">
             <Nav />
@@ -29,9 +32,16 @@ function Nav() {
             </div>
             <div>
                 <div>
-                    <Link to="/users" title="Users">
+                    <Link to="/profile" title="Profile">
                         <button type="button" className="btn-cmd">
                             <icon.User />
+                        </button>
+                    </Link>
+                </div>
+                <div>
+                    <Link to="/users" title="Users">
+                        <button type="button" className="btn-cmd">
+                            <icon.Users />
                         </button>
                     </Link>
                 </div>

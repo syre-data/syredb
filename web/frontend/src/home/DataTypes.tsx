@@ -6,13 +6,20 @@ import {
     type FallbackProps as ErrorBoundaryProps,
 } from "react-error-boundary";
 import { Loading, SuspenseError } from "@/components";
-import { Suspense, useState, type MouseEvent, type SubmitEvent } from "react";
+import {
+    Suspense,
+    useContext,
+    useState,
+    type MouseEvent,
+    type SubmitEvent,
+} from "react";
 import * as types from "@/types";
 import icon from "@/icon";
 import { StatusCodes } from "http-status-codes";
 import classNames from "classnames";
 import { Link, useNavigate } from "react-router";
 import * as uuid from "uuid";
+import { Context } from "@/AppStateContext";
 
 export default function () {
     return (
@@ -48,6 +55,9 @@ function DataTypes() {
     });
     const navigate = useNavigate();
 
+    const ctx = useContext(Context);
+    const user = ctx.user;
+
     function close(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
             return;
@@ -56,17 +66,23 @@ function DataTypes() {
         navigate(-1);
     }
 
+    const canCreateType = common.hasDbPermission(
+        types.DbPermissionDataTypeCreate,
+        user.DbPermissions,
+    );
     return (
         <div>
             <div className="px-4 pt-2 flex justify-between">
                 <div className="flex gap-2">
                     <h2 className="text-lg">Data types</h2>
                     <div>
-                        <Link to="/data-type/create">
-                            <button type="button" className="btn-cmd">
-                                <icon.Plus />
-                            </button>
-                        </Link>
+                        {canCreateType ? (
+                            <Link to="/data-type/create">
+                                <button type="button" className="btn-cmd">
+                                    <icon.Plus />
+                                </button>
+                            </Link>
+                        ) : null}
                     </div>
                 </div>
                 <div>
@@ -142,7 +158,7 @@ function DataTypeListItem({ data_type }: DataTypeListItemProps) {
                     className="invisible group-hover:visible"
                 >
                     <button type="button" className="btn-cmd">
-                        <icon.Pen />
+                        <icon.Eye />
                     </button>
                 </Link>
             </div>

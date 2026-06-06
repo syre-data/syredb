@@ -2,6 +2,7 @@ import { Loading, SuspenseError } from "@/components";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import {
     Suspense,
+    useContext,
     useEffect,
     useState,
     type ChangeEvent,
@@ -9,7 +10,7 @@ import {
     type SubmitEvent,
 } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import { Link, redirect, useNavigate, useParams } from "react-router";
+import { Navigate, useNavigate, useParams } from "react-router";
 import * as uuid from "uuid";
 import icon from "@/icon";
 import * as common from "@/common";
@@ -18,13 +19,27 @@ import user_service from "@/service/user.service";
 import isEmail from "validator/lib/isEmail";
 import { StatusCodes } from "http-status-codes";
 import * as types from "@/types";
+import Icon from "@/icon";
+import { Context } from "@/AppStateContext";
 
 export default function () {
     const { user_id: user_id_value } = useParams();
     if (!user_id_value) {
-        throw redirect("/");
+        return <Navigate to="/" replace />;
     }
     const user_id = uuid.parse(user_id_value);
+
+    const ctx = useContext(Context);
+    const user = ctx.user;
+    const canModifyUsers = common.hasDbPermission(
+        types.DbPermissionUserModify,
+        user.DbPermissions,
+    );
+    if (!canModifyUsers) {
+        console.debug("insufficient permissions to edit user");
+        return <Navigate to="/" replace />;
+    }
+
     return (
         <ErrorBoundary FallbackComponent={UserEditError}>
             <Suspense fallback={<Loading />}>
@@ -64,7 +79,7 @@ function UserEdit({ user_id }: UserEditProps) {
     const [pending, setPending] = useState(false);
 
     const owner_permission = db_permissions.find(
-        (permission) => permission.Id === types.DbPermissionIdOwner,
+        (permission) => permission.Id === types.DbPermissionOwner,
     )!;
 
     function cancel(e: MouseEvent<HTMLButtonElement>) {
@@ -183,8 +198,17 @@ function UserEdit({ user_id }: UserEditProps) {
 
     return (
         <div>
-            <div className="px-4 pt-2 flex gap-2">
+            <div className="px-4 py-2 flex justify-between">
                 <h2 className="text-xl">Edit user</h2>
+                <div>
+                    <button
+                        type="button"
+                        className="btn-cmd"
+                        onMouseDown={cancel}
+                    >
+                        <Icon.Close />
+                    </button>
+                </div>
             </div>
             <form onSubmit={update_user}>
                 <div className="flex flex-col gap-2">
@@ -242,7 +266,7 @@ function UserEdit({ user_id }: UserEditProps) {
                                 .filter(
                                     (permission) =>
                                         permission.Id !==
-                                        types.DbPermissionIdOwner,
+                                        types.DbPermissionOwner,
                                 )
                                 .map((permission) => (
                                     <label
@@ -302,6 +326,65 @@ function UserEdit({ user_id }: UserEditProps) {
                     </div>
                 </div>
             </form>
+            <div className="pt-4">
+                <PasswordReset user={user} />
+            </div>
+        </div>
+    );
+}
+
+interface PasswordResetProps {
+    user: types.User;
+}
+function PasswordReset({ user }: PasswordResetProps) {
+    const [pending, setPending] = useState(false);
+    const [message, setMessage] = useState("");
+
+    async function confirm_reset(e: MouseEvent) {
+        if (e.button !== common.MouseButton.Primary) {
+            return;
+        }
+        setPending(true);
+
+        const confirm = window.confirm(
+            `Reset ${user.Name}'s <${user.Email}> password?`,
+        );
+        if (!confirm) {
+            return;
+        }
+
+        await user_service
+            .passwordReset(user.Id)
+            .then(async (resp: Response) => {
+                setPending(false);
+                if (resp.ok) {
+                    return;
+                }
+
+                const err = (await resp.json()) as types.AppError;
+                if (err.Code == types.AppErrCodeEmailNotSent) {
+                    setMessage(
+                        `Could not send user email. Alert them their new password is ${err.Payload}`,
+                    );
+                } else {
+                    console.debug(err);
+                    setMessage("Could not reset password");
+                }
+            });
+    }
+
+    return (
+        <div className="px-4">
+            <button
+                id="password-reset"
+                type="button"
+                className="btn-submit"
+                onMouseDown={confirm_reset}
+                disabled={pending}
+            >
+                Reset password
+            </button>
+            <div>{message}</div>
         </div>
     );
 }

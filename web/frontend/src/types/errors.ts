@@ -10,8 +10,9 @@ export interface AppError {
   Payload: any;
 }
 export type AppErrorCode = string;
-export const AppErrCodeUserWelcomeEmailNotSent: AppErrorCode = "USER_WELCOME_EMAIL_NOT_SENT";
+export const AppErrCodeEmailNotSent: AppErrorCode = "USER_EMAIL_NOT_SENT";
 export const AppErrorCodeUserNotAuthenticated: AppErrorCode = "USER_NOT_AUTHENTICATED";
 export const AppErrorCodeRecordNotFound: AppErrorCode = "RECORD_NOT_FOUND";
+export const AppErrorCodeInvalidPassword: AppErrorCode = "INVALID_PASSWORD";
 export type DBErrorCode = string;
 export const DBErrCodeDuplicateRecord: DBErrorCode = "23505";

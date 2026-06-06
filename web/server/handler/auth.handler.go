@@ -56,9 +56,7 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
-	var hash string
-	auth_query := "SELECT auth FROM user_auth_ WHERE _id=$1"
-	err = h.db.Conn.QueryRow(c.Request().Context(), auth_query, user_id).Scan(&hash)
+	hash, err := h.auth_service.PasswordHash(user_id)
 	if err != nil {
 		c.Logger().With("error", err).Error("could not retrieve user auth hash")
 		return c.NoContent(http.StatusUnauthorized)

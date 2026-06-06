@@ -1,11 +1,7 @@
 import * as types from "@/types";
-import { Suspense, useState } from "react";
-import type { MouseEvent } from "react";
+import { Suspense } from "react";
 import { ErrorBoundary } from "react-error-boundary";
-import type {
-    FallbackProps as ErrorBoundaryProps,
-    FallbackProps,
-} from "react-error-boundary";
+import type { FallbackProps as ErrorBoundaryProps } from "react-error-boundary";
 import { Link } from "react-router";
 import icon from "../icon";
 import * as common from "../common";
@@ -14,9 +10,8 @@ import classNames from "classnames";
 import project_service from "@/service/project.service";
 import data_service from "@/service/data.service";
 import { Loading, SuspenseError } from "@/components";
-import type { UUID } from "crypto";
 
-export default function Dashboard() {
+export default function () {
     return (
         <div>
             <div className="px-4 pt-2 flex gap-2 text-xl">

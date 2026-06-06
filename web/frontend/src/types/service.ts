@@ -616,8 +616,8 @@ export interface User {
   DbPermissions: DbPermission[];
 }
 export interface UserCreate {
-  Email: string;
-  Name: string;
-  Password: string;
-  DbPermissions: DbPermission[];
+  email: string;
+  name: string;
+  password: string;
+  db_permissions: DbPermission[];
 }

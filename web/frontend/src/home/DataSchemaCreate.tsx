@@ -1,6 +1,6 @@
 import type { ChangeEvent, MouseEvent, SubmitEvent } from "react";
-import { Suspense, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { Suspense, useContext, useRef, useState } from "react";
+import { Navigate, useNavigate } from "react-router";
 import * as common from "@/common";
 import data_service from "@/service/data.service";
 import icon from "@/icon";
@@ -9,8 +9,20 @@ import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { Loading, SuspenseError } from "@/components";
 import dataService from "@/service/data.service";
+import { Context } from "@/AppStateContext";
 
 export default function () {
+    const ctx = useContext(Context);
+    const user = ctx.user;
+    const canCreateSchema = common.hasDbPermission(
+        types.DbPermissionDataSchemaCreate,
+        user.DbPermissions,
+    );
+    if (!canCreateSchema) {
+        console.debug("insufficient permissions to create data schemas");
+        return <Navigate to="/" replace />;
+    }
+
     return (
         <ErrorBoundary FallbackComponent={DataSchemaCreateError}>
             <Suspense fallback={<Loading />}>

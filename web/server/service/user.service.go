@@ -123,10 +123,10 @@ func (s *UserService) UserPermissions(user_id uuid.UUID) ([]DbPermission, error)
 }
 
 type UserCreate struct {
-	Email         string         `form:"email"`
-	Name          string         `form:"name"`
-	Password      string         `form:"password"`
-	DbPermissions []DbPermission `form:"db_permissions"`
+	Email         string         `json:"email"`
+	Name          string         `json:"name"`
+	Password      string         `json:"password"`
+	DbPermissions []DbPermission `json:"db_permissions"`
 }
 
 func (s *UserService) CreateUser(user UserCreate) (uuid.UUID, error) {
@@ -204,6 +204,28 @@ func (s *UserService) DeactivateUser(user_id uuid.UUID) error {
 	}
 
 	return nil
+}
+
+func (s *UserService) PasswordUpdate(user_id uuid.UUID, password string) error {
+	query := "UPDATE user_auth_ SET auth=$1 WHERE _id=$2"
+	_, err := s.db.Conn.Exec(s.ctx, query, s.auth.EncodePassword(password), user_id)
+	if err != nil {
+		s.logger.With("error", err).Error("error inserting user authentication data")
+		return err
+	}
+
+	return nil
+}
+
+// Authenticate checks the given `user_id`/`password` pair against stroed passwords,
+// returning `true` if the credentials are valid, and `false` otherwise.
+func (s *UserService) Authenticate(user_id uuid.UUID, password string) (bool, error) {
+	hash, err := s.auth.PasswordHash(user_id)
+	if err != nil {
+		return false, err
+	}
+
+	return s.auth.ComparePasswordAndHash(password, hash)
 }
 
 func (s *UserService) UserUpdate(update User) error {

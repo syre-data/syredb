@@ -10,6 +10,7 @@ import ProjectSettings from "./ProjectSettings";
 import ProjectDataCreate from "./ProjectDataCreate";
 import DataSchemaCreate from "./DataSchemaCreate";
 import DataSchema from "./DataSchema";
+import DataSchemaEdit from "./DataSchemaEdit";
 import SampleEdit from "./SampleEdit";
 import NotFound from "./NotFound";
 import UserEdit from "./UserEdit";
@@ -22,6 +23,8 @@ import DataTypeTransforms from "./DataTypeTransforms";
 import DataTypeTransformCreate from "./DataTypeTransformCreate";
 import IngestionScripts from "./IngestionScripts";
 import IngestionScriptCreate from "./IngestionScriptCreate";
+import Profile from "./Profile";
+import DataTypeEdit from "./DataTypeEdit";
 
 export default function Home() {
     return (
@@ -29,6 +32,7 @@ export default function Home() {
             <Routes>
                 <Route index element={<Dashboard />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/profile" element={<Profile />} />
                 <Route path="/users" element={<Users />} />
                 <Route path="/user/create" element={<UserCreate />} />
                 <Route path="/user/:user_id" element={<User />} />
@@ -42,9 +46,17 @@ export default function Home() {
                     path="/data-schema/:data_schema_id"
                     element={<DataSchema />}
                 />
+                <Route
+                    path="/data-schema/:data_schema_id/edit"
+                    element={<DataSchemaEdit />}
+                />
                 <Route path="/data-types" element={<DataTypes />} />
                 <Route path="/data-type/create" element={<DataTypeCreate />} />
                 <Route path="/data-type/:data_type_id" element={<DataType />} />
+                <Route
+                    path="/data-type/:data_type_id/edit"
+                    element={<DataTypeEdit />}
+                />
                 <Route
                     path="/ingestion-scripts"
                     element={<IngestionScripts />}

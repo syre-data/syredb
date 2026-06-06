@@ -16,7 +16,7 @@ import { Loading } from "@/components";
 
 export default function () {
     return (
-        <ErrorBoundary FallbackComponent={Error}>
+        <ErrorBoundary FallbackComponent={LoadError}>
             <Suspense fallback={<Loading />}>
                 <UserCreate />
             </Suspense>
@@ -24,7 +24,7 @@ export default function () {
     );
 }
 
-function Error({ resetErrorBoundary, error }: FallbackProps) {
+function LoadError({ resetErrorBoundary, error }: FallbackProps) {
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}
@@ -79,7 +79,7 @@ function UserCreate() {
         const data = new FormData(e.target as HTMLFormElement);
         const email = data.get("email")!.toString();
         const name = data.get("name")!.toString();
-        const permission_values = data
+        const permissions = data
             .getAll("permission")
             .map((permission) =>
                 common.db_permission_id_string_to_variant(
@@ -87,40 +87,27 @@ function UserCreate() {
                 ),
             );
 
+        if (permissions.includes(undefined)) {
+            console.debug("invalid permissions", permissions);
+            throw new Error(`invalid permissions: ${permissions}`);
+        }
+
         if (!isEmail(email)) {
             emailInput.setCustomValidity("Invalid email");
             emailInput.reportValidity();
             return;
         }
 
-        for (const permission of permission_values) {
-            if (permission === undefined) {
-                const input = document.getElementById(
-                    `permission-${permission}`,
-                ) as HTMLInputElement | null;
-                if (input === null) {
-                    console.error(`invalid db permission: ${permission}`);
-                    return;
-                }
-
-                input.setCustomValidity("Invalid value");
-                return;
-            }
-        }
-        const permissions = permission_values.filter(
-            // user for typing
-            (permission) => permission !== undefined,
-        );
-
         const user = {
-            Email: email,
-            Name: name,
-            DbPermissions: permissions,
-            Password: "",
+            email,
+            name,
+            password: "",
+            db_permissions: permissions,
         };
 
         setPending(true);
         await user_service.userCreate(user).then(async (resp: Response) => {
+            setPending(false);
             if (resp.ok) {
                 return navigate(-1);
             }
@@ -134,7 +121,7 @@ function UserCreate() {
             }
 
             const err = (await resp.json()) as types.AppError;
-            if (err.Code == types.AppErrCodeUserWelcomeEmailNotSent) {
+            if (err.Code == types.AppErrCodeEmailNotSent) {
                 setPassword(err.Payload);
                 return;
             }
@@ -142,11 +129,10 @@ function UserCreate() {
             setError(err.Message);
             btn_submit.disabled = false;
         });
-        setPending(false);
     }
 
     const owner_permission = db_permissions.find(
-        (permission) => permission.Id === types.DbPermissionIdOwner,
+        (permission) => permission.Id === types.DbPermissionOwner,
     )!;
     return (
         <div className="flex flex-col gap-2 items-center">
@@ -222,10 +208,11 @@ function UserCreate() {
                                 .filter(
                                     (permission) =>
                                         permission.Id !==
-                                        types.DbPermissionIdOwner,
+                                        types.DbPermissionOwner,
                                 )
                                 .map((permission) => (
                                     <label
+                                        key={permission.Id}
                                         className="flex gap-2"
                                         title={permission.Description}
                                     >

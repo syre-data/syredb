@@ -113,6 +113,23 @@ func decodePasswordHash(encoded_hash string) (p *passwordHashParameters, salt, h
 	return p, salt, hash, nil
 }
 
+func (s *AuthService) PasswordHash(
+	user uuid.UUID,
+) (string, error) {
+	var hash string
+	query := "SELECT auth FROM user_auth_ WHERE _id=$1"
+	err := s.db.Conn.QueryRow(s.ctx, query, user).Scan(&hash)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"user", user,
+		).Error("could not retrieve user auth hash")
+		return "", err
+	}
+
+	return hash, nil
+}
+
 func (s *AuthService) ComparePasswordAndHash(
 	clear_text_password string,
 	encoded_hash string,

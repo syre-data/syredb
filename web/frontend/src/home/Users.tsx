@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router";
 import icon from "../icon";
-import { Suspense, useOptimistic, useState } from "react";
+import { Suspense, useContext, useOptimistic, useState } from "react";
 import type { Dispatch, MouseEvent, SetStateAction } from "react";
 import { MouseButton } from "../common";
 import { ErrorBoundary } from "react-error-boundary";
@@ -10,6 +10,7 @@ import * as types from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import * as common from "../common";
 import classNames from "classnames";
+import { Context } from "@/AppStateContext";
 
 export default function Users() {
     const navigate = useNavigate();
@@ -133,7 +134,7 @@ function UserItem({ user }: UserItemProps) {
             <div className="col-3 pr-4 invisible group-hover/user-row:visible">
                 <Link to={`/user/${user.Id}`}>
                     <button type="button" className="btn-cmd">
-                        <icon.Pen />
+                        <icon.Eye />
                     </button>
                 </Link>
             </div>

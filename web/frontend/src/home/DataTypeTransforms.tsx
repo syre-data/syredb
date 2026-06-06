@@ -1,4 +1,6 @@
+import { Context } from "@/AppStateContext";
 import {
+    hasDbPermission,
     MouseButton,
     QUERY_KEY_DATA_TYPE_TRANSFORMS,
     QUERY_KEY_DATA_TYPES,
@@ -6,9 +8,14 @@ import {
 import { Loading, SuspenseError } from "@/components";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
-import type { DataType, DataTypeTransform, DataTypeTransformRx } from "@/types";
+import {
+    DbPermissionTransformCreate,
+    type DataType,
+    type DataTypeTransform,
+    type DataTypeTransformRx,
+} from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, type MouseEvent } from "react";
+import { Suspense, useContext, type MouseEvent } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { Link, useNavigate } from "react-router";
 
@@ -40,6 +47,8 @@ function DataTypeTransforms() {
     });
 
     const navigate = useNavigate();
+    const ctx = useContext(Context);
+    const user = ctx.user;
 
     function close(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
@@ -49,17 +58,23 @@ function DataTypeTransforms() {
         navigate(-1);
     }
 
+    const canCreateTransform = hasDbPermission(
+        DbPermissionTransformCreate,
+        user.DbPermissions,
+    );
     return (
         <div>
             <div className="flex justify-between px-4 pt-2">
                 <div className="flex gap-2">
                     <h2 className="text-lg">Data type transforms</h2>
                     <div>
-                        <Link to="/data-type-transform/create">
-                            <button type="button" className="btn-cmd">
-                                <Icon.Plus />
-                            </button>
-                        </Link>
+                        {canCreateTransform ? (
+                            <Link to="/data-type-transform/create">
+                                <button type="button" className="btn-cmd">
+                                    <Icon.Plus />
+                                </button>
+                            </Link>
+                        ) : null}
                     </div>
                 </div>
                 <div>

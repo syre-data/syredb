@@ -17,7 +17,7 @@ export const Context = createContext(
         Email: "",
         Name: "",
         AccountStatus: types.AccountStatusDeactivated,
-        Role: types.UserRoleUser,
+        DbPermissions: [],
     }),
 );
 export const Dispatch = createContext<ActionDispatch<[Action]>>(() => {});

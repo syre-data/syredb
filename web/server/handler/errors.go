@@ -9,9 +9,10 @@ type AppError struct {
 type AppErrorCode string
 
 const (
-	AppErrCodeUserWelcomeEmailNotSent AppErrorCode = "USER_WELCOME_EMAIL_NOT_SENT"
-	AppErrorCodeUserNotAuthenticated  AppErrorCode = "USER_NOT_AUTHENTICATED"
-	AppErrorCodeRecordNotFound        AppErrorCode = "RECORD_NOT_FOUND"
+	AppErrCodeEmailNotSent           AppErrorCode = "USER_EMAIL_NOT_SENT"
+	AppErrorCodeUserNotAuthenticated AppErrorCode = "USER_NOT_AUTHENTICATED"
+	AppErrorCodeRecordNotFound       AppErrorCode = "RECORD_NOT_FOUND"
+	AppErrorCodeInvalidPassword      AppErrorCode = "INVALID_PASSWORD"
 )
 
 type DBErrorCode string

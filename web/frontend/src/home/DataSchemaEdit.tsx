@@ -29,6 +29,17 @@ export default function () {
         return <Navigate to="/" replace />;
     }
 
+    const ctx = useContext(Context);
+    const user = ctx.user;
+    const canModifySchema = common.hasDbPermission(
+        types.DbPermissionDataSchemaModify,
+        user.DbPermissions,
+    );
+    if (!canModifySchema) {
+        console.debug("invalid permissions to modify data schemas");
+        return <Navigate to="/" replace />;
+    }
+
     return (
         <ErrorBoundary FallbackComponent={DataSchemaError}>
             <Suspense fallback={<Loading />}>
@@ -67,9 +78,6 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
     });
     const queryClient = useQueryClient();
     const navigate = useNavigate();
-    const ctx = useContext(Context);
-    const user = ctx.user;
-
     const data_schema = data_schema_resources.DataSchema;
 
     function close(e: MouseEvent<HTMLButtonElement>) {
@@ -80,25 +88,72 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
         navigate(-1);
     }
 
-    const canModifySchema = common.hasDbPermission(
-        types.DbPermissionDataSchemaModify,
-        user.DbPermissions,
-    );
+    function validate_label(e: ChangeEvent<HTMLInputElement>) {
+        const input = e.target;
+        input.setCustomValidity("");
+
+        if (
+            data_schemas
+                .filter((schema) => schema.Id !== data_schema.Id)
+                .map((schema) => schema.Label)
+                .includes(input.value.trim())
+        ) {
+            input.setCustomValidity("Duplicate label, labels must be unique");
+        }
+    }
+
+    async function update(e: SubmitEvent<HTMLFormElement>) {
+        e.preventDefault();
+        const labelInput = document.getElementById(
+            "label",
+        )! as HTMLInputElement;
+        labelInput.setCustomValidity("");
+
+        const data = new FormData(e.target);
+        const label = data.get("label")!.toString().trim();
+        const description_str = data.get("description")!.toString().trim();
+
+        if (!label) {
+            labelInput.setCustomValidity("Label is required");
+            return;
+        }
+        if (
+            data_schemas
+                .filter((schema) => schema.Id !== data_schema.Id)
+                .map((schema) => schema.Label)
+                .includes(label)
+        ) {
+            labelInput.setCustomValidity(
+                "Duplicate label, labels must be unique",
+            );
+            return;
+        }
+
+        const description =
+            description_str.length === 0 ? undefined : description_str;
+        const update = {
+            Id: data_schema_id,
+            Label: label,
+            Description: description,
+        };
+        await dataService.dataSchemaUpdate(update).then((resp) => {
+            if (resp.status === StatusCodes.OK) {
+                queryClient.invalidateQueries({
+                    queryKey: [common.QUERY_KEY_DATA_SCHEMAS],
+                });
+                queryClient.invalidateQueries({
+                    queryKey: [common.QUERY_KEY_DATA_SCHEMA, data_schema_id],
+                });
+
+                navigate(-1);
+            }
+        });
+    }
+
     return (
         <div>
             <div className="pt-2 px-4 flex justify-between">
-                <div className="flex gap-2">
-                    <h1 className="text-xl">{data_schema.Label}</h1>
-                    <div>
-                        {canModifySchema ? (
-                            <Link to={`/data-schema/${data_schema_id}/edit`}>
-                                <button type="button" className="btn-cmd">
-                                    <icon.Pen />
-                                </button>
-                            </Link>
-                        ) : null}
-                    </div>
-                </div>
+                <h1 className="text-xl">Data schema</h1>
                 <div className="flex gap-2">
                     <button
                         type="button"
@@ -109,7 +164,46 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
                     </button>
                 </div>
             </div>
-            <div className="pt-2 px-4">{data_schema.Description}</div>
+            <div>
+                <form onSubmit={update} className="flex flex-col gap-2 px-4">
+                    <div className="flex flex-col gap-2">
+                        <div>
+                            <label>
+                                <span className="sr-only">Label</span>
+                                <input
+                                    type="text"
+                                    id="label"
+                                    name="label"
+                                    className="input-basic"
+                                    defaultValue={data_schema.Label}
+                                    placeholder="Label"
+                                    onChange={validate_label}
+                                    required
+                                />
+                            </label>
+                        </div>
+                        <div>
+                            <label>
+                                <span className="sr-only">Description</span>
+                                <textarea
+                                    id="description"
+                                    name="description"
+                                    className="input-basic"
+                                    placeholder="Description"
+                                    defaultValue={data_schema.Description}
+                                ></textarea>
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <div>
+                            <button type="submit" className="btn-submit">
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
             <div className="pt-4 px-4">
                 <h2>Cardinality</h2>
                 <div>{data_schema.Cardinality}</div>

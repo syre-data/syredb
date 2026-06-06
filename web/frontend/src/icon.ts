@@ -14,10 +14,12 @@ import {
     FaGear,
     FaPowerOff,
     FaRegCircleXmark,
+    FaRegCircleCheck,
     FaSpinner,
     FaTrash,
     FaArrowRight,
     FaX,
+    FaUserGroup,
 } from "react-icons/fa6";
 import { FcMultipleInputs } from "react-icons/fc";
 import { IoIosLogOut, IoMdHome, IoIosArrowRoundBack } from "react-icons/io";
@@ -32,6 +34,7 @@ export default {
     ArrowRight: FaArrowRight,
     CaretDown: FaCaretDown,
     Check: FaCheck,
+    CircleCheck: FaRegCircleCheck,
     CircleX: FaRegCircleXmark,
     Close: FaX,
     DataType: MdOutlineCategory,
@@ -58,4 +61,5 @@ export default {
     Spinner: FaSpinner,
     Trash: FaTrash,
     User: FaUser,
+    Users: FaUserGroup,
 };
