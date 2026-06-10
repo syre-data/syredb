@@ -356,6 +356,23 @@ export interface OrphanedDataResources {
   Origins: DataOriginRx[];
   DataTypes: DataType[];
 }
+export interface DataProjectResources {
+  Project: Project;
+  MembershipCreator: uuid.UUIDTypes;
+  Label?: string;
+  Tags: string[];
+  Properties: Property[];
+  Notes: ProjectDataNote[];
+}
+export interface ProjectDataNote {
+  Id: uuid.UUIDTypes;
+  Project: uuid.UUIDTypes;
+  Data: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Timestamp: Date;
+  Visibility: Visibility;
+  Content: string;
+}
 
 //////////
 // source: project.service.go
@@ -365,10 +382,6 @@ export const ProjectPermissionRead = "read";
 export const ProjectPermissionDataCreate = "data_create";
 export const ProjectPermissionDataGroupCreate = "data_group_create";
 export type ProjectPermission = typeof ProjectPermissionOwner | typeof ProjectPermissionRead | typeof ProjectPermissionDataCreate | typeof ProjectPermissionDataGroupCreate;
-export const ProjectSamplePermissionModifyLabel = "modify_label";
-export const ProjectSamplePermissionModifyTags = "modify_tags";
-export const ProjectSamplePermissionModifyProperties = "modify_properties";
-export type ProjectSamplePermission = typeof ProjectSamplePermissionModifyLabel | typeof ProjectSamplePermissionModifyTags | typeof ProjectSamplePermissionModifyProperties;
 export const VisibilityPublic = "public";
 export const VisibilityPrivate = "private";
 export type Visibility = typeof VisibilityPublic | typeof VisibilityPrivate;
@@ -398,14 +411,6 @@ export interface Property {
   Key: string;
   Type: PropertyType;
   Value: any; // TODO: Match value with type
-}
-export interface ProjectSampleNote {
-  Id: uuid.UUIDTypes;
-  Sample: uuid.UUIDTypes;
-  Project: uuid.UUIDTypes;
-  Creator: uuid.UUIDTypes;
-  Timestamp: Date;
-  Content: string;
 }
 export interface ProjectData {
   Id: uuid.UUIDTypes;
@@ -476,87 +481,6 @@ export interface FileInfo {
   Size: number /* int64 */;
   File?: File;
 }
-export interface ProjectSampleDataCreate {
-  Schema: uuid.UUIDTypes;
-  File: FileInfo;
-  Timestamp: Date;
-  Properties: ProjectSampleDataPropertyCreate[];
-}
-export interface ProjectSampleDataPropertyCreate {
-  Key: string;
-  Type: PropertyType;
-  Value: any; // TODO: match type
-}
-export interface SampleDataPayloadExternal {
-  Path: string;
-  Filename: string;
-}
-export interface ProjectSampleNoteCreate {
-  Timestamp: Date;
-  Content: string;
-}
-export interface ProjectSampleCreate {
-  Label: string;
-  Tags: string[];
-  Properties: Property[];
-  Data: ProjectSampleDataCreate[];
-  Notes: ProjectSampleNoteCreate[];
-}
-export const NUM_PROPERTY_VALUES = 3;
-export const NUM_VALUES_PER_PROPERTY = 4;
-export const NUM_NOTE_VALUES = 2;
-export const PROJECT_SAMPLE_USER_PERMISSION_COUNT = 3;
-export interface ParseSampleDataErrors {
-}
-export interface ProjectSampleMembershipAsResource {
-  Creator: User;
-  Timestamp: Date;
-  Label: string;
-}
-export interface SampleUserPermissions {
-  User: uuid.UUIDTypes;
-  Permissions: SampleUserPermission[];
-}
-export interface ProjectSampleUserPermissions {
-  User: uuid.UUIDTypes;
-  Permissions: ProjectSamplePermission[];
-}
-export interface ProjectSampleResources {
-  Id: uuid.UUIDTypes;
-  Creator: uuid.UUIDTypes;
-  Properties: Property[];
-  ProjectMembership: ProjectSampleMembershipAsResource;
-  ProjectTags: string[];
-  ProjectNotes: ProjectSampleNote[];
-  Data: DataRx[];
-  DerivedData: DerivedData[];
-  DataSchemas: DataSchema[];
-  Users: User[];
-  SampleUserPermissions: SampleUserPermissions[];
-  ProjectSampleUserPermissions: ProjectSampleUserPermissions[];
-}
-export interface ProjectSampleNoteUpdate {
-  Id: uuid.UUIDTypes;
-  Editor: uuid.UUIDTypes;
-  Content: string;
-}
-export interface ProjectSampleUpdate {
-  Id: uuid.UUIDTypes;
-  Label: string;
-  Tags: string[];
-  PropertiesUpsert: Property[];
-  PropertiesRemove: string[];
-  NotesNew: ProjectSampleNoteCreate[];
-  NotesUpdate: ProjectSampleNoteUpdate[];
-  NotesRemove: uuid.UUIDTypes[];
-}
-export interface ProjectSampleMembership {
-  Project: uuid.UUIDTypes;
-  Sample: uuid.UUIDTypes;
-  Creator: uuid.UUIDTypes;
-  Timestamp: Date;
-  Label: string;
-}
 export interface ProjectDataMembershipRx {
   Project: uuid.UUIDTypes;
   Data: uuid.UUIDTypes;
@@ -596,13 +520,14 @@ export const DbPermissionTransformCreate = "transform_create";
 export const DbPermissionTransformModify = "transform_modify";
 export const DbPermissionProjectCreate = "project_create";
 export const DbPermissionDataCreate = "data_create";
-export type DbPermission = typeof DbPermissionOwner | typeof DbPermissionUserCreate | typeof DbPermissionUserModify | typeof DbPermissionDataSchemaCreate | typeof DbPermissionDataSchemaModify | typeof DbPermissionDataTypeCreate | typeof DbPermissionDataTypeModify | typeof DbPermissionIngestionScriptCreate | typeof DbPermissionIngestionScriptModify | typeof DbPermissionTransformCreate | typeof DbPermissionTransformModify | typeof DbPermissionProjectCreate | typeof DbPermissionDataCreate;
+export const DbPermissionDataReadAll = "data_read_all";
+export type DbPermission = typeof DbPermissionOwner | typeof DbPermissionUserCreate | typeof DbPermissionUserModify | typeof DbPermissionDataSchemaCreate | typeof DbPermissionDataSchemaModify | typeof DbPermissionDataTypeCreate | typeof DbPermissionDataTypeModify | typeof DbPermissionIngestionScriptCreate | typeof DbPermissionIngestionScriptModify | typeof DbPermissionTransformCreate | typeof DbPermissionTransformModify | typeof DbPermissionProjectCreate | typeof DbPermissionDataCreate | typeof DbPermissionDataReadAll;
 export const AccountStatusActive = "active";
 export const AccountStatusDeactivated = "deactivated";
 export type AccountStatus = typeof AccountStatusActive | typeof AccountStatusDeactivated;
 export interface UserService {
 }
-export interface UserRecord {
+export interface UserRx {
   Id: uuid.UUIDTypes;
   AccountStatus: AccountStatus;
   Email: string;
@@ -620,4 +545,8 @@ export interface UserCreate {
   name: string;
   password: string;
   db_permissions: DbPermission[];
+}
+export interface DbUserPemission {
+  User: uuid.UUIDTypes;
+  Permission: DbPermission;
 }

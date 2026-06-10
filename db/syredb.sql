@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS _db_permission_ (
     label VARCHAR(128) UNIQUE NOT NULL, 
     description TEXT
 );
-INSERT INTO (_id, label, description) _db_permission_ VALUES
+INSERT INTO _db_permission_ (_id, label, description) VALUES
     ('owner', 'Owner', 'Full permissions'),
     ('user_create', 'Create users', 'Create new users'),
     ('user_modify', 'Modify users', 'Modify users'),
@@ -42,7 +42,8 @@ INSERT INTO (_id, label, description) _db_permission_ VALUES
     ('data_type_transform_create', 'Create data type transform', 'Create new data type transforms'),
     ('data_type_transform_modify', 'Modify data type transforms', 'Modify existing data type transforms'),
     ('project_create', 'Create project', 'Create new projects'),
-    ('data_create', 'Create data', 'Create new data');
+    ('data_create', 'Create data', 'Create new data'),
+    ('data_read_all', 'Read all data', 'Read all data');
 
 CREATE TABLE IF NOT EXISTS db_user_permission_ (
     _user UUID REFERENCES user_(_id) NOT NULL,

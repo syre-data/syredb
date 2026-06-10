@@ -54,15 +54,16 @@ function saveSampleDataMultiple(
     throw new Error("not yet impleneted");
 }
 
-function updateProjectSample(
+function dataMembershipCreate(
     project: UUIDTypes,
-    update: types.ProjectSampleUpdate,
+    data: UUIDTypes,
+    label?: string,
 ): Promise<Response> {
-    return fetch("/api/project/sample", {
+    return fetch("/api/project/data", {
         credentials: "same-origin",
-        method: "put",
+        method: "post",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project, update }),
+        body: JSON.stringify({ project, data, label }),
     });
 }
 
@@ -82,6 +83,6 @@ export default {
     getProjectResources,
     getProjectWithUserPermission,
     saveSampleDataMultiple,
-    updateProjectSample,
     hasPermission,
+    dataMembershipCreate,
 };

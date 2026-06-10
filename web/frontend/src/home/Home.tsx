@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router";
 import Dashboard from "./Dashboard";
-import SampleGroupCreate from "./SampleGroupCreate";
 import Settings from "./Settings";
 import Users from "./Users";
 import UserCreate from "./UserCreate";
@@ -11,7 +10,6 @@ import ProjectDataCreate from "./ProjectDataCreate";
 import DataSchemaCreate from "./DataSchemaCreate";
 import DataSchema from "./DataSchema";
 import DataSchemaEdit from "./DataSchemaEdit";
-import SampleEdit from "./SampleEdit";
 import NotFound from "./NotFound";
 import UserEdit from "./UserEdit";
 import User from "./User";
@@ -25,6 +23,7 @@ import IngestionScripts from "./IngestionScripts";
 import IngestionScriptCreate from "./IngestionScriptCreate";
 import Profile from "./Profile";
 import DataTypeEdit from "./DataTypeEdit";
+import Data from "./Data";
 
 export default function Home() {
     return (
@@ -78,12 +77,8 @@ export default function Home() {
                     <Route index element={<Project />} />
                     <Route path="settings" element={<ProjectSettings />} />
                     <Route path="data/create" element={<ProjectDataCreate />} />
-                    <Route path="data/:data_id/edit" element={<SampleEdit />} />
-                    <Route
-                        path="data-group/create"
-                        element={<SampleGroupCreate />}
-                    />
                 </Route>
+                <Route path="data/:data_id" element={<Data />} />
                 <Route path="*" element={<NotFound />} />
             </Routes>
         </BrowserRouter>

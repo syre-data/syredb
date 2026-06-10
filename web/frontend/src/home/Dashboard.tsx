@@ -148,111 +148,6 @@ function ProjectCard({ project }: ProjectCardProps) {
     );
 }
 
-interface DataTypesProps {
-    className?: string;
-}
-function DataTypes({ className }: DataTypesProps) {
-    return (
-        <div className={className ?? ""}>
-            <ErrorBoundary FallbackComponent={DataTypesError}>
-                <Suspense fallback={<DataTypesLoading />}>
-                    <DataTypesInner />
-                </Suspense>{" "}
-            </ErrorBoundary>
-        </div>
-    );
-}
-
-function DataTypesError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
-    const err = error as common.BackendError;
-    console.error(err);
-
-    return (
-        <SuspenseError
-            resetErrorBoundary={resetErrorBoundary}
-            className="text-center"
-        >
-            <div>Could not get data types</div>
-            <div>{err.message}</div>
-        </SuspenseError>
-    );
-}
-
-function DataTypesLoading() {
-    return (
-        <div>
-            <div className="flex gap-2 items-center px-4">
-                <h3 className="text-lg font-bold">Data types</h3>
-            </div>
-            <div className="text-center">Loading</div>
-        </div>
-    );
-}
-
-function DataTypesInner() {
-    const { data: data_types } = useSuspenseQuery({
-        queryKey: [common.QUERY_KEY_DATA_TYPES],
-        queryFn: data_service.dataTypesGetAll,
-    });
-
-    return (
-        <div className={`group`}>
-            <div className="flex gap-2 items-center px-4">
-                <h3 className="text-lg font-bold">Data types</h3>
-                <div
-                    className={classNames({
-                        "invisible group-hover:visible": data_types.length > 0,
-                    })}
-                >
-                    <Link to="/data-type">
-                        <button
-                            type="button"
-                            className="btn-cmd"
-                            title="Edit data types"
-                        >
-                            <icon.Pen />
-                        </button>
-                    </Link>
-                </div>
-            </div>
-            {data_types.length === 0 ? (
-                <DataTypesEmpty />
-            ) : (
-                <DataTypesContent data_types={data_types} />
-            )}
-        </div>
-    );
-}
-
-function DataTypesEmpty() {
-    return (
-        <div className="px-4">
-            <div>
-                <div>No data types</div>
-                <div>
-                    Create some by clicking the <icon.Pen className="inline" />{" "}
-                    above.
-                </div>
-            </div>
-        </div>
-    );
-}
-
-interface DataTypesContentProps {
-    data_types: types.DataType[];
-}
-function DataTypesContent({ data_types }: DataTypesContentProps) {
-    return (
-        <ul>
-            {data_types.map((data_type) => (
-                <li key={data_type.Id.toString()} className="px-4">
-                    {data_type.Description}
-                </li>
-            ))}
-        </ul>
-    );
-}
-
 function OrphanedData() {
     return (
         <ErrorBoundary FallbackComponent={OrphanedDataError}>
@@ -335,12 +230,20 @@ interface OrphanedDataItemProps {
     dataType: types.DataType;
 }
 function OrphanedDataItem({ data, origin, dataType }: OrphanedDataItemProps) {
-    console.debug(data.Timestamp);
     return (
-        <tr>
+        <tr className="group">
             <td>{dataType.Label}</td>
             <td>{origin.Label}</td>
             <td>{data.Timestamp}</td>
+            <td>
+                <div className="invisible group-hover:visible">
+                    <Link to={`/data/${data.Id}`}>
+                        <button type="button" className="btn-cmd">
+                            <icon.Eye />
+                        </button>
+                    </Link>
+                </div>
+            </td>
         </tr>
     );
 }

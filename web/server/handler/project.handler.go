@@ -163,3 +163,56 @@ func (h *ProjectHandler) ProjectResources(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, resources)
 }
+
+func (h *ProjectHandler) AddData(c *echo.Context) error {
+	type payloadData struct {
+		Project uuid.UUID `form:"project"`
+		Data    uuid.UUID `form:"data"`
+		Label   *string   `form:"label"`
+	}
+
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	var payload payloadData
+	err := c.Bind(&payload)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not bind payload")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	has_permission, err := h.project_service.UserHasProjectPermission(
+		service.ProjectPermissionDataCreate,
+		user_id,
+		payload.Project,
+	)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"project", payload.Project,
+		).Error("could not get project user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !has_permission {
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	err = h.project_service.DataMembershipCreate(
+		payload.Project,
+		payload.Data,
+		user_id,
+		payload.Label,
+	)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data", payload,
+		).Error("could not create project data membership")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.NoContent(http.StatusOK)
+}

@@ -296,9 +296,11 @@ func register_routes(
 	api.POST("/data-type-transform", data.DataTypeTransformCreate)
 	api.GET("/project", project.GetProjectWithUserPermission)
 	api.POST("/project", project.CreateProject)
+	api.POST("/project/data", project.AddData)
 	api.GET("/projects", project.GetUserProjects)
 	api.GET("/project/resources", project.ProjectResources)
 	api.POST("/data", data.DataCreate)
+	api.GET("/data", data.DataGet)
 	api.GET("/data/orphaned", data.OrphanedData)
 
 	resource := e.Group("/resource")

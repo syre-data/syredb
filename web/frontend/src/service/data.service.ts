@@ -1,3 +1,4 @@
+import { uuidToString } from "@/common";
 import * as types from "@/types";
 import type { IngestionScriptCreateData } from "@/types/handler";
 import * as uuid from "uuid";
@@ -327,9 +328,18 @@ function projectDataCreate(
 }
 
 function orphanedData(): Promise<types.OrphanedDataResources> {
-    return fetch(`/api/data/orphaned`, {
+    return fetch("/api/data/orphaned", {
         credentials: "same-origin",
     }).then(async (resp) => (await resp.json()) as types.OrphanedDataResources);
+}
+
+// TODO: Should be a `handler.DataResources` but it isn't being created by `tygo`.
+function dataGet(data_id: uuid.UUIDTypes): Promise<any> {
+    const params = new URLSearchParams();
+    params.set("id", uuidToString(data_id));
+    return fetch(`/api/data?${params}`, {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as any);
 }
 
 export default {
@@ -354,4 +364,5 @@ export default {
     ingestionScriptsForDataType,
     projectDataCreate,
     orphanedData,
+    dataGet,
 };

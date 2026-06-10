@@ -1,4 +1,5 @@
 import * as types from "@/types";
+import { stringify, type UUIDTypes } from "uuid";
 
 export const QUERY_KEY_DB_PERMISSIONS = "db_permissions";
 export const QUERY_KEY_USER = "user";
@@ -17,6 +18,7 @@ export const QUERY_KEY_PROJECT_RESOURCES = "project_resources";
 export const QUERY_KEY_PROJECT_SAMPLE_RESOURCES = "project_sample_resources";
 export const QUERY_KEY_PROJECT = "project";
 export const QUERY_KEY_ORPHANED_DATA = "orphaned_data";
+export const QUERY_KEY_DATA = "data";
 
 export interface BackendError {
     message: string;
@@ -68,6 +70,8 @@ export function db_permission_id_string_to_variant(
             return types.DbPermissionProjectCreate;
         case "data_create":
             return types.DbPermissionDataCreate;
+        case "data_read_all":
+            return types.DbPermissionDataReadAll;
         default:
             return undefined;
     }
@@ -130,5 +134,13 @@ export function data_storage_string_to_variant(
             return types.DataStorageExternal;
         default:
             return undefined;
+    }
+}
+
+export function uuidToString(id: UUIDTypes): string {
+    if (typeof id === "string") {
+        return id;
+    } else {
+        return stringify(id);
     }
 }

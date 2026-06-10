@@ -34,6 +34,7 @@ const (
 	DbPermissionTransformModify       DbPermission = "transform_modify"
 	DbPermissionProjectCreate         DbPermission = "project_create"
 	DbPermissionDataCreate            DbPermission = "data_create"
+	DbPermissionDataReadAll           DbPermission = "data_read_all"
 )
 
 type AccountStatus string
@@ -64,7 +65,7 @@ func NewUserService(
 	}
 }
 
-type UserRecord struct {
+type UserRx struct {
 	Id            uuid.UUID     `db:"_id"`
 	AccountStatus AccountStatus `db:"account_status"`
 	Email         string        `db:"email"`
@@ -343,38 +344,83 @@ func (s *UserService) AllUsers() ([]User, error) {
 	return users, nil
 }
 
+type DbUserPemission struct {
+	User       uuid.UUID    `db:"_user"`
+	Permission DbPermission `db:"_permission"`
+}
+
 func (s *UserService) UsersById(user_ids []uuid.UUID) ([]User, error) {
-	user_ids_str := make([]string, len(user_ids))
-	for idx, id := range user_ids {
-		user_ids_str[idx] = fmt.Sprintf("'%s'", id)
+	query :=
+		`SELECT _id, account_status, email, name FROM user_
+		WHERE _id=ANY($1)`
+	rows, _ := s.db.Conn.Query(s.ctx, query, user_ids)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[UserRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"users", user_ids,
+		).Error("could not collect users")
+		return nil, err
 	}
 
-	users_query := fmt.Sprintf(
-		`SELECT _id, account_status, email, name FROM user_
-		WHERE _id IN (%s)`,
-		strings.Join(user_ids_str, ", "),
-	)
-
-	rows, _ := s.db.Conn.Query(s.ctx, users_query)
-	users, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (User, error) {
-		var user User
-		err := row.Scan(&user.Id, &user.AccountStatus, &user.Email, &user.Name)
-		return user, err
-	})
+	query =
+		`SELECT _user, _permission FROM db_user_permission_
+		WHERE _user=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, query, user_ids)
+	perms, err := pgx.CollectRows(rows, pgx.RowToStructByName[DbUserPemission])
 	if err != nil {
-		s.logger.With("error", err, "user ids", user_ids).Error("could not collect users")
+		s.logger.With(
+			"error", err,
+			"users", user_ids,
+		).Error("could not collect db permissions")
 		return nil, err
+	}
+
+	user_perms := make(map[uuid.UUID][]DbPermission, len(rxs))
+	for _, perm := range perms {
+		user_perms[perm.User] = append(
+			user_perms[perm.User],
+			perm.Permission,
+		)
+	}
+
+	users := make([]User, len(rxs))
+	for idx, rx := range rxs {
+		perms := user_perms[rx.Id]
+		users[idx] = User{
+			Id:            rx.Id,
+			AccountStatus: rx.AccountStatus,
+			Email:         rx.Email,
+			Name:          rx.Name,
+			DbPermissions: perms,
+		}
 	}
 
 	return users, nil
 }
 
-func (s *UserService) UserHasPermission(user uuid.UUID, permission DbPermission) (bool, error) {
+func (s *UserService) UserHasPermission(
+	user uuid.UUID,
+	permission DbPermission,
+) (bool, error) {
 	query := fmt.Sprintf(
 		"SELECT 1 FROM db_user_permission_ WHERE _user=$1 AND _permission=ANY('{%s, $2}')",
 		DbPermissionOwner,
 	)
 	user_row := s.db.Conn.QueryRow(s.ctx, query, user, permission)
+	err := user_row.Scan()
+	has_permission := err != nil
+	return has_permission, nil
+}
+
+func (s *UserService) IsDbOwner(
+	user uuid.UUID,
+) (bool, error) {
+	query := fmt.Sprintf(
+		"SELECT 1 FROM db_user_permission_ WHERE _user=$1 AND _permission='%s'",
+		DbPermissionOwner,
+	)
+	user_row := s.db.Conn.QueryRow(s.ctx, query, user)
 	err := user_row.Scan()
 	has_permission := err != nil
 	return has_permission, nil

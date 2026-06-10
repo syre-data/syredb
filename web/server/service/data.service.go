@@ -1367,7 +1367,7 @@ func (s *DataService) DataSchemaGetResources(schema_id uuid.UUID) (DataSchemaRes
 
 	creator_query := "SELECT _id, account_status, email, name FROM user_ WHERE _id=$1"
 	rows, _ = s.db.Conn.Query(s.ctx, creator_query, schema.Creator)
-	creator_rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[UserRecord])
+	creator_rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[UserRx])
 	if err != nil {
 		s.logger.With("error", err, "user", schema.Creator).Error("could not get data schema creator")
 		return DataSchemaResources{}, err
@@ -2958,7 +2958,35 @@ type DataUserPermissions struct {
 	Permissions []DataUserPermission
 }
 
-func (s *DataService) GetDataUserPermission(data_ids []uuid.UUID, user uuid.UUID) ([]DataUserPermissions, error) {
+func (s *DataService) DataUserPermission(user uuid.UUID, data uuid.UUID) ([]DataUserPermission, error) {
+	type permissionRx struct {
+		Data       uuid.UUID          `db:"_data"`
+		Permission DataUserPermission `db:"_permission"`
+	}
+
+	query :=
+		`SELECT _data, _permission FROM data_user_permission_ 
+		WHERE _data=$1 AND _user=$2`
+	rows, _ := s.db.Conn.Query(s.ctx, query, data, user)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[permissionRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+			"user", user,
+		).Error("could not get data user permissions")
+		return nil, err
+	}
+
+	var permissions []DataUserPermission
+	for _, rx := range rxs {
+		permissions = append(permissions, rx.Permission)
+	}
+
+	return permissions, nil
+}
+
+func (s *DataService) DataUserPermissions(user uuid.UUID, data_ids []uuid.UUID) ([]DataUserPermissions, error) {
 	type permissionRx struct {
 		Data       uuid.UUID          `db:"_data"`
 		Permission DataUserPermission `db:"_permission"`
@@ -3800,4 +3828,271 @@ func (s *DataService) OrphanedData(user uuid.UUID) (OrphanedDataResources, error
 		Origins:   origins,
 		DataTypes: data_types,
 	}, nil
+}
+
+type DataProjectResources struct {
+	Project           Project
+	MembershipCreator uuid.UUID
+	Label             *string
+	Tags              []string
+	Properties        []Property
+	Notes             []ProjectDataNote
+}
+
+func (s *DataService) DataProjectsResources(data uuid.UUID) ([]DataProjectResources, error) {
+	memberships, err := s.dataProjectMemberships(data)
+	if err != nil {
+		return nil, err
+	}
+
+	project_ids := make([]uuid.UUID, len(memberships))
+	for idx, membership := range memberships {
+		project_ids[idx] = membership.Project
+	}
+	projects, err := s.dataProjects(project_ids)
+	if err != nil {
+		return nil, err
+	}
+
+	tags, err := s.dataProjectTags(data)
+	if err != nil {
+		return nil, err
+	}
+
+	properties, err := s.dataProjectProperties(data)
+	if err != nil {
+		return nil, err
+	}
+
+	notes, err := s.dataProjectNotes(data)
+	if err != nil {
+		return nil, err
+	}
+
+	resources := make([]DataProjectResources, len(memberships))
+	for idx, membership := range memberships {
+		resources[idx].MembershipCreator = membership.Creator
+		resources[idx].Label = membership.Label
+
+		idx := slices.IndexFunc(projects, func(res Project) bool {
+			return res.Id == membership.Project
+		})
+		if idx < 0 {
+			s.logger.With(
+				"project", membership.Project,
+			).Error("project not found")
+			panic("project not found")
+		}
+		resources[idx].Project = projects[idx]
+
+		idx = slices.IndexFunc(tags, func(res projectTags) bool {
+			return res.Project == membership.Project
+		})
+		if idx > -1 {
+			resources[idx].Tags = tags[idx].Tags
+		}
+
+		idx = slices.IndexFunc(properties, func(res projectProperties) bool {
+			return res.Project == membership.Project
+		})
+		if idx > -1 {
+			resources[idx].Properties = properties[idx].Properties
+		}
+
+		idx = slices.IndexFunc(notes, func(res projectNotes) bool {
+			return res.Project == membership.Project
+		})
+		if idx > -1 {
+			resources[idx].Notes = notes[idx].Notes
+		}
+	}
+
+	return resources, nil
+}
+
+type membershipRx struct {
+	Project uuid.UUID `db:"_project"`
+	Creator uuid.UUID `db:"_creator"`
+	Label   *string   `db:"label"`
+}
+
+func (s *DataService) dataProjectMemberships(data uuid.UUID) ([]membershipRx, error) {
+	query :=
+		`SELECT _project, _creator, label FROM project_data_membership_
+		WHERE _data=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, query, data)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[membershipRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get project data memberships")
+		return nil, err
+	}
+
+	return rxs, nil
+}
+
+func (s *DataService) dataProjects(projects []uuid.UUID) ([]Project, error) {
+	query :=
+		`SELECT _id, _creator, label, description, visibility
+		FROM project_ WHERE _id=ANY($1)`
+	rows, _ := s.db.Conn.Query(s.ctx, query, projects)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[Project])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"projects", projects,
+		).Error("could not get projects")
+		return nil, err
+	}
+
+	return rxs, nil
+}
+
+type projectTags struct {
+	Project uuid.UUID
+	Tags    []string
+}
+
+func (s *DataService) dataProjectTags(data uuid.UUID) ([]projectTags, error) {
+	type rx struct {
+		Project uuid.UUID `db:"_project"`
+		Tag     string    `db:"_tag"`
+	}
+
+	query := "SELECT _project, _tag FROM project_data_tag_ WHERE _data=$1"
+	rows, _ := s.db.Conn.Query(s.ctx, query, data)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[rx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get data project tags")
+		return nil, err
+	}
+
+	var tags []projectTags
+	for _, r := range rxs {
+		idx := slices.IndexFunc(tags, func(tag projectTags) bool {
+			return tag.Project == r.Project
+		})
+		if idx < 0 {
+			tags = append(tags, projectTags{Project: r.Project, Tags: []string{r.Tag}})
+		} else {
+			tags[idx].Tags = append(tags[idx].Tags, r.Tag)
+		}
+	}
+
+	return tags, nil
+}
+
+type projectProperties struct {
+	Project    uuid.UUID
+	Properties []Property
+}
+
+func (s *DataService) dataProjectProperties(data uuid.UUID) ([]projectProperties, error) {
+	type rx struct {
+		Project uuid.UUID    `db:"_project"`
+		Key     string       `db:"_key"`
+		Type    PropertyType `db:"_type"`
+		Value   any          `db:"value"`
+	}
+
+	query :=
+		`SELECT _project, _key, _type, value FROM project_data_property_ 
+		WHERE _data=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, query, data)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[rx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get data project properties")
+		return nil, err
+	}
+
+	var properties []projectProperties
+	for _, r := range rxs {
+		prop := Property{
+			Key:   r.Key,
+			Type:  r.Type,
+			Value: r.Value,
+		}
+
+		idx := slices.IndexFunc(properties, func(prop projectProperties) bool {
+			return prop.Project == r.Project
+		})
+		if idx < 0 {
+			properties = append(
+				properties,
+				projectProperties{
+					Project:    r.Project,
+					Properties: []Property{prop},
+				},
+			)
+		} else {
+			properties[idx].Properties = append(
+				properties[idx].Properties,
+				prop,
+			)
+		}
+	}
+
+	return properties, nil
+}
+
+type ProjectDataNote struct {
+	Id         uuid.UUID  `db:"_id"`
+	Project    uuid.UUID  `db:"_project"`
+	Data       uuid.UUID  `db:"_data"`
+	Creator    uuid.UUID  `db:"_creator"`
+	Timestamp  time.Time  `db:"timestamp"`
+	Visibility Visibility `db:"visibility"`
+	Content    string     `db:"content"`
+}
+
+type projectNotes struct {
+	Project uuid.UUID
+	Notes   []ProjectDataNote
+}
+
+func (s *DataService) dataProjectNotes(data uuid.UUID) ([]projectNotes, error) {
+
+	query :=
+		`SELECT _id, _project, _data, _creator, timestamp, visibility, content 
+		FROM project_data_note_ WHERE _data=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, query, data)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[ProjectDataNote])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get data project notes")
+		return nil, err
+	}
+
+	var notes []projectNotes
+	for _, r := range rxs {
+		idx := slices.IndexFunc(notes, func(note projectNotes) bool {
+			return note.Project == r.Project
+		})
+		if idx < 0 {
+			notes = append(
+				notes,
+				projectNotes{
+					Project: r.Project,
+					Notes:   []ProjectDataNote{r},
+				},
+			)
+		} else {
+			notes[idx].Notes = append(
+				notes[idx].Notes,
+				r,
+			)
+		}
+	}
+
+	return notes, nil
 }

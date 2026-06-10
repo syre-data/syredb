@@ -1,14 +1,6 @@
 import { ErrorBoundary } from "react-error-boundary";
 import { useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
-import {
-    Suspense,
-    type MouseEvent,
-    type SubmitEvent,
-    type ChangeEvent,
-    useState,
-    useRef,
-    useContext,
-} from "react";
+import { Suspense, type MouseEvent, useContext } from "react";
 import { useNavigate, useParams, Link, Navigate } from "react-router";
 import Loading from "../components/Loading";
 import { SuspenseError } from "@/components";
@@ -18,12 +10,9 @@ import * as uuid from "uuid";
 import data_service from "@/service/data.service";
 import icon from "@/icon";
 import * as common from "@/common";
-import dataService from "@/service/data.service";
-import { StatusCodes } from "http-status-codes";
 import { Context } from "@/AppStateContext";
 
 export default function () {
-    const navigate = useNavigate();
     const { data_schema_id } = useParams();
     if (!data_schema_id) {
         return <Navigate to="/" replace />;

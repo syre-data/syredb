@@ -467,9 +467,9 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 	}
 
 	if data_rx.Visibility != service.VisibilityPublic {
-		permissions, err := h.data_service.GetDataUserPermission(
-			[]uuid.UUID{data_id},
+		permissions, err := h.data_service.DataUserPermissions(
 			user_id,
+			[]uuid.UUID{data_id},
 		)
 		if err != nil {
 			c.Logger().With(
@@ -1052,7 +1052,7 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 				Label:   nil,
 			}
 		}
-		err = h.project_service.DataMembershipCreate(memberships)
+		err = h.project_service.DataMembershipsCreate(memberships)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
@@ -1121,4 +1121,158 @@ func (h *DataHandler) OrphanedData(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, data)
+}
+
+type DataResources struct {
+	Data             service.DataRx
+	DataType         service.DataType
+	ProjectResources []service.DataProjectResources
+	Users            []service.User
+}
+
+func (h *DataHandler) DataGet(c *echo.Context) error {
+	user := c.Get(UserIdKey).(uuid.UUID)
+	data_str := c.QueryParam("id")
+	data_id, err := uuid.Parse(data_str)
+	if err != nil {
+		c.Logger().With(
+			"user", user,
+			"data", data_str,
+		).Error("could not parse id as uuid")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	data_rx, err := h.data_service.DataById(data_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+		).Error("could not get data")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	user_data_permissions, err := h.data_service.DataUserPermission(user, data_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+		).Error("could not get data user permission")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	has_permission := slices.Contains(user_data_permissions, service.DataUserPermissionOwner) ||
+		slices.Contains(user_data_permissions, service.DataUserPermissionRead)
+
+	if !has_permission {
+		has_read_all, err := h.user_service.UserHasPermission(user, service.DbPermissionDataReadAll)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"user", user,
+			).Error("could not get user permissions")
+			return c.NoContent(http.StatusInternalServerError)
+		}
+
+		has_permission = has_read_all
+	}
+
+	if !has_permission {
+		c.Logger().With(
+			"user", user,
+			"data", data_id,
+		).Debug("insufficient permission")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	data_type, err := h.data_service.DataTypeById(data_rx.Type)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_rx,
+			"user", user,
+		).Error("could not get data type")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	project_resources, err := h.data_service.DataProjectsResources(data_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+			"user", user,
+		).Error("could not get data project resources")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	user_is_db_owner, err := h.user_service.IsDbOwner(user)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+			"user", user,
+		).Error("could not get user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !user_is_db_owner {
+		project_permission_ids := make([]uuid.UUID, 0, len(project_resources))
+		for _, project := range project_resources {
+			if project.Project.Visibility != service.VisibilityPublic {
+				project_permission_ids = append(project_permission_ids, project.Project.Id)
+			}
+		}
+
+		perms, err := h.project_service.ProjectsUserPermissions(project_permission_ids, user)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"projects", project_permission_ids,
+				"user", user,
+			).Error("could not get project user permissions")
+			return c.NoContent(http.StatusInternalServerError)
+		}
+
+		filtered := make([]service.DataProjectResources, 0, len(project_resources))
+		for _, resources := range project_resources {
+			pperms := perms[resources.Project.Id]
+			if slices.Contains(pperms, service.ProjectPermissionOwner) ||
+				slices.Contains(pperms, service.ProjectPermissionRead) {
+				filtered = append(filtered, resources)
+			}
+		}
+		project_resources = filtered
+	}
+
+	var user_ids []uuid.UUID
+	for _, resource := range project_resources {
+		if !slices.Contains(user_ids, resource.MembershipCreator) {
+			user_ids = append(user_ids, resource.MembershipCreator)
+		}
+
+		if !slices.Contains(user_ids, resource.Project.Creator) {
+			user_ids = append(user_ids, resource.MembershipCreator)
+		}
+
+		for _, note := range resource.Notes {
+			if !slices.Contains(user_ids, note.Creator) {
+				user_ids = append(user_ids, note.Creator)
+			}
+		}
+	}
+	users, err := h.user_service.UsersById(user_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+			"user", user,
+		).Error("could not get users")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	resources := DataResources{
+		Data:             data_rx,
+		DataType:         data_type,
+		ProjectResources: project_resources,
+		Users:            users,
+	}
+	return c.JSON(http.StatusOK, resources)
 }

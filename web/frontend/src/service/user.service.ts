@@ -1,3 +1,4 @@
+import { uuidToString } from "@/common";
 import * as types from "@/types";
 import type { UUID } from "crypto";
 import { parse, stringify, type UUIDTypes } from "uuid";
@@ -40,22 +41,8 @@ function userCreate(user: types.UserCreate): Promise<Response> {
     });
 }
 
-// function userResources(user: UUIDTypes) : Promise<types.UserResources> {
-//     const params = new URLSearchParams();
-//     params.append("id", user.toString())
-//     return fetch (`/api/user/resources?${params}`).then(async resp=> {
-//         await resp.json() as types.UserResources
-//     })
-// }
-
 function user(user: UUIDTypes): Promise<types.User> {
-    let id_str: string;
-    if (typeof user === "string") {
-        id_str = user;
-    } else {
-        id_str = stringify(user);
-    }
-
+    const id_str = uuidToString(user);
     const params = new URLSearchParams();
     params.append("id", id_str);
     return fetch(`/api/user?${params}`).then(
@@ -100,5 +87,4 @@ export default {
     userUpdate,
     passwordReset,
     passwordUpdate,
-    //  userResources,
 };
