@@ -244,6 +244,7 @@ export interface IngestionScriptCreate {
   Args: string[];
   Sources: ExternalSourceCreate[];
 }
+export const DATA_ORIGIN_WEB_CLIENT_LABEL = "__web_client__";
 export interface DataOriginRx {
   Id: uuid.UUIDTypes;
   Label: string;

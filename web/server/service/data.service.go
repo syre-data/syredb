@@ -1901,6 +1901,8 @@ func (s *DataService) IngestionScriptCreate(script IngestionScriptCreate, file *
 	return nil
 }
 
+const DATA_ORIGIN_WEB_CLIENT_LABEL = "__web_client__"
+
 type DataOriginRx struct {
 	Id          uuid.UUID `db:"_id"`
 	Label       string    `db:"label"`

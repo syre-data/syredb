@@ -73,7 +73,8 @@ import { NIL, parse as uuidParse, stringify, type UUIDTypes } from "uuid";
 
 function datetime_for_input(datetime: Date): string {
     const yyyy = datetime.getFullYear();
-    const mm = datetime.getMonth().toString().padStart(2, "0");
+    const mo = datetime.getMonth() + 1; // getMonth is 0 based
+    const mm = mo.toString().padStart(2, "0");
     const dd = datetime.getDate().toString().padStart(2, "0");
     const hh = datetime.getHours().toString().padStart(2, "0");
     const jj = datetime.getMinutes().toString().padStart(2, "0");

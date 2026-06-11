@@ -953,6 +953,15 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 		}
 	}
 
+	origin_web_client, err := h.data_service.DataOriginByLabel(service.DATA_ORIGIN_WEB_CLIENT_LABEL)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not get web client data origin")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
 	var info []DataCreate
 	err = json.Unmarshal([]byte(c.FormValue("data")), &info)
 	if err != nil {
@@ -967,8 +976,8 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 	for idx, datum := range info {
 		data[idx].Type = datum.Type
 		data[idx].Creator = service.DataCreatorUser{
-			Id:     datum.Creator,
-			Origin: datum.Origin,
+			Id:     user_id,
+			Origin: origin_web_client.Id,
 		}
 		data[idx].Timestamp = datum.Timestamp
 		data[idx].Visibility = datum.Visibility
