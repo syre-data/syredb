@@ -2234,41 +2234,6 @@ func (s *DataService) dataValuesByIdInternal(
 	return values, nil
 }
 
-// SaveSampleDataSingle saves a single data to the user's disk.
-// Returns the path the user selected.
-func (s *DataService) SaveSampleDataSingle(sample_data_id uuid.UUID) (string, error) {
-	panic("TODO: SaveSampleDataSingle")
-	// stored_datas, err := s.DataValuesById([]uuid.UUID{sample_data_id})
-	// if err != nil {
-	// 	return "", err
-	// }
-	// if len(stored_datas) != 1 {
-	// 	s.logger.With("sample data", sample_data_id, "stored data", stored_datas).Error("multiple data found")
-	// 	panic("unexpectedly found multiple data")
-	// }
-	// stored_data := stored_datas[0]
-
-	// var data []byte
-	// switch stored_data.Storage {
-	// case DataStorageExternal:
-	// 	data, err = s.data_storage_external_get_data(stored_data.Data.(string))
-	// 	if err != nil {
-	// 		s.logger.With("stored data", stored_data).Error("could not get stored sample data")
-	// 		return "", err
-	// 	}
-	// case DataStorageInternal:
-	// 	data, err = s.StoredDataToCsv(stored_data.Data.([]ColumnData))
-	// 	if err != nil {
-	// 		s.logger.With("stored data", stored_data).Error("could not get stored sample data")
-	// 		return "", err
-	// 	}
-	// default:
-	// 	panic(fmt.Sprintf("unexpected app.DataStorage: %#v", stored_data.Storage))
-	// }
-
-	// return s.fs_service.SaveFileSingle(data, "Save data", []FileFilter{})
-}
-
 func (s *DataService) StoredDataToCsv(fields []SchemaFieldValues) (string, error) {
 	var records strings.Builder
 	writer := csv.NewWriter(&records)
@@ -2325,17 +2290,36 @@ func (s *DataService) StoredDataToCsv(fields []SchemaFieldValues) (string, error
 
 func valueToString(dtype ValueType, value any) string {
 	fmtstr := dataTypeFormatString(dtype)
-	return fmt.Sprintf(fmtstr, value)
+	return fmt.Sprintf(fmtstr, castValueToGoType(dtype, value))
 }
 
 func valuesToStrings(dtype ValueType, values []any) []string {
 	strs := make([]string, len(values))
 	fmtstr := dataTypeFormatString(dtype)
 	for idx, val := range values {
-		strs[idx] = fmt.Sprintf(fmtstr, val)
+		strs[idx] = fmt.Sprintf(fmtstr, castValueToGoType(dtype, val))
 	}
 
 	return strs
+}
+
+func castValueToGoType(dtype ValueType, value any) any {
+	switch dtype {
+	case ValueTypeBoolean:
+		return value.(bool)
+	case ValueTypeFloat:
+		return value.(float64)
+	case ValueTypeInt:
+		return int64(value.(float64))
+	case ValueTypeUint:
+		return int64(value.(float64))
+	case ValueTypeString:
+		return value.(string)
+	case ValueTypeTimestamp:
+		return value.(time.Time)
+	default:
+		panic(fmt.Sprintf("unexpected ValueType: %#v", dtype))
+	}
 }
 
 func dataTypeFormatString(dtype ValueType) string {
