@@ -1,4 +1,8 @@
-import { MouseButton, QUERY_KEY_PROJECT_RESOURCES } from "@/common";
+import {
+    MouseButton,
+    QUERY_KEY_PROJECT_RESOURCES,
+    uuidToString,
+} from "@/common";
 import { Loading, SuspenseError } from "@/components";
 import Icon from "@/icon";
 import projectService from "@/service/project.service";
@@ -188,6 +192,7 @@ function ProjectDataItem({
 
     const params = new URLSearchParams();
     params.append("id", data.Id.toString());
+    params.append("project", uuidToString(projectId));
     const download = `/resource/data?${params}`;
     return (
         <li className="px-4 grid grid-cols-subgrid col-span-full group">

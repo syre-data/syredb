@@ -457,6 +457,18 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 		).Warn("could not parse id")
 		return c.NoContent(http.StatusBadRequest)
 	}
+	var project_id uuid.UUID
+	project_id_str := c.QueryParam("project")
+	if project_id_str != "" {
+		project_id, err = uuid.Parse(project_id_str)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"project", project_id_str,
+			).Warn("could not parse project id")
+			return c.NoContent(http.StatusBadRequest)
+		}
+	}
 
 	data_rx, err := h.data_service.DataById(data_id)
 	if err != nil {
@@ -511,8 +523,40 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 		ext_values := values.Values.([]service.DataSource)
 		return h.downloadDataValuesSingleExternal(c, data_id, ext_values)
 	case service.DataStorageInternal:
-		// TODO: Get data label
-		filename := fmt.Sprintf("%s.csv", data_id)
+		var filename string
+		if project_id == uuid.Nil {
+			filename = fmt.Sprintf("%s.csv", data_id)
+		} else {
+			project, project_err := h.project_service.ProjectById(project_id)
+			if project_err != nil {
+				c.Logger().With(
+					"error", project_err,
+					"project", project_id,
+					"data", data_id,
+				).Error("could not get project data membership")
+			}
+
+			membership, membership_err := h.project_service.DataMembership(project_id, data_id)
+			if membership_err != nil {
+				c.Logger().With(
+					"error", membership_err,
+					"project", project_id,
+					"data", data_id,
+				).Error("could not get project data membership")
+
+				filename = fmt.Sprintf("%s.csv", data_id)
+			}
+
+			if project_err == nil && membership_err == nil {
+				filename = fmt.Sprintf("%s.%s.csv", project.Label, *membership.Label)
+			} else if membership_err != nil && membership.Label != nil {
+				filename = fmt.Sprintf("%s.csv", *membership.Label)
+			} else {
+				filename = fmt.Sprintf("%s.csv", data_id)
+			}
+
+		}
+
 		int_values := values.Values.([]service.SchemaFieldValues)
 		return h.downloadDataValuesSingleInternal(c, data_id, filename, int_values)
 	default:

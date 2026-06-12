@@ -63,32 +63,42 @@ type Project struct {
 	Visibility  Visibility `db:"visibility"`
 }
 
+func (s *ProjectService) ProjectById(id uuid.UUID) (Project, error) {
+	query :=
+		`SELECT _id, _creator, label, description, visibility FROM project_ 
+		WHERE _id=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, query, id)
+	project, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Project])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"project", id,
+		).Error("could not get project")
+		return Project{}, err
+	}
+
+	return project, nil
+}
+
 func (s *ProjectService) GetUserProjects(user uuid.UUID) ([]Project, error) {
 	if user == uuid.Nil {
 		panic("invalid user id")
 	}
 
-	user_project_query :=
+	query :=
 		`SELECT _id, _creator, label, description, visibility FROM project_ 
 		WHERE _creator=$1 ORDER BY _id`
-	rows, _ := s.db.Conn.Query(s.ctx, user_project_query, user)
-	user_projects, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Project, error) {
-		var project Project
-		err := row.Scan(
-			&project.Id,
-			&project.Creator,
-			&project.Label,
-			&project.Description,
-			&project.Visibility,
-		)
-		return project, err
-	})
+	rows, _ := s.db.Conn.Query(s.ctx, query, user)
+	projects, err := pgx.CollectRows(rows, pgx.RowToStructByName[Project])
 	if err != nil {
-		s.logger.With("error", err).Error("could not collect user projects")
+		s.logger.With(
+			"error", err,
+			"user", user,
+		).Error("could not collect user projects")
 		return nil, err
 	}
 
-	return user_projects, nil
+	return projects, nil
 }
 
 type ProjectCreate struct {
@@ -755,4 +765,22 @@ func (s *ProjectService) DataMembershipCreate(
 	}
 
 	return nil
+}
+
+func (s *ProjectService) DataMembership(project uuid.UUID, data uuid.UUID) (ProjectDataMembershipRx, error) {
+	query :=
+		`SELECT _project, _data, _creator, label FROM project_data_membership_
+		WHERE _project=$1 AND _data=$2`
+	rows, _ := s.db.Conn.Query(s.ctx, query, project, data)
+	membership, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[ProjectDataMembershipRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"project", project,
+			"data", data,
+		).Error("could not get project data membership")
+		return ProjectDataMembershipRx{}, err
+	}
+
+	return membership, nil
 }
