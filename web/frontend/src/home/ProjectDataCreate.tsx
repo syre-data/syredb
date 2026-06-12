@@ -364,7 +364,7 @@ function parse_form_data(
     fields: [string, FormDataEntryValue][],
     datum: Datum,
     dataTypeSchemas: Record<string, DataSchemaResources>,
-): DataCreate | undefined {
+): [string, DataCreate] | undefined {
     const e_label = fields.find(
         ([key, _]) => key === `data[${data_id}][label]`,
     );
@@ -379,7 +379,8 @@ function parse_form_data(
         throw new Error("invalid data form input: missing timestamp");
     }
 
-    if (!e_label[1].toString() && !e_type) {
+    const label = e_label[1].toString();
+    if (!label && !e_type) {
         return undefined;
     }
     if (!e_type) {
@@ -533,7 +534,7 @@ function parse_form_data(
         }
     }
 
-    return datum_info;
+    return [label, datum_info];
 }
 
 interface ProjectDataProps {
@@ -593,20 +594,23 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
         const data_fields = partition_form_data(form);
 
         const info = new Array<DataCreate>();
+        const labels = new Array<string>();
         for (const [id, fields] of data_fields.entries()) {
             const idx = parseInt(id);
             const datum = data.find((datum) => datum.id === idx)!;
-            const datum_info = parse_form_data(
+            const datum_values = parse_form_data(
                 id,
                 fields,
                 datum,
                 dataTypeSchemas,
             );
-            if (datum_info === undefined) {
+            if (datum_values === undefined) {
                 continue;
             }
 
+            const [label, datum_info] = datum_values;
             info.push(datum_info);
+            labels.push(label);
         }
 
         if (info.length === 0) {
@@ -635,14 +639,13 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
             }
         }
 
-        const labels = new Array<string>();
         await dataService
             .projectDataCreate(project, info, labels, files)
             .then((resp) => {
                 if (resp.ok) {
                     navigate(-1);
                 }
-                console.debug(resp);
+                console.debug(resp); // REMOVE
             });
     }
 

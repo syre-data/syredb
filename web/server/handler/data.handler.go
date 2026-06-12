@@ -915,7 +915,7 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insufficient permission to create data")
+		).Debug("insufficient permission to create data")
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
@@ -927,7 +927,7 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 			c.Logger().With(
 				"error", err,
 				"id", c.Param("id"),
-			).Error("could not parse project id")
+			).Debug("could not parse project id")
 			return c.NoContent(http.StatusBadRequest)
 		}
 
@@ -948,7 +948,7 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 			c.Logger().With(
 				"user", user_id,
 				"project", project_id,
-			).Error("insufficient permission to create project data")
+			).Debug("insufficient permission to create project data")
 			return c.NoContent(http.StatusUnauthorized)
 		}
 	}
@@ -968,8 +968,28 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"data", c.FormValue("data"),
-		).Error("could not parse data")
+		).Debug("could not parse data")
 		return c.NoContent(http.StatusBadRequest)
+	}
+
+	var project_labels []string
+	if project_id != uuid.Nil {
+		err = json.Unmarshal([]byte(c.FormValue("project_labels")), &project_labels)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"data", c.FormValue("data"),
+			).Debug("could not parse data")
+			return c.NoContent(http.StatusBadRequest)
+		}
+		if len(project_labels) != len(info) {
+			c.Logger().With(
+				"user", user_id,
+				"data", info,
+				"project labels", project_labels,
+			).Debug("invalid project labels")
+			return c.NoContent(http.StatusBadRequest)
+		}
 	}
 
 	data := make([]service.DataCreate, len(info))
@@ -1042,23 +1062,17 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 	}
 
 	if project_id != uuid.Nil {
-		var project_labels []string
-		err = json.Unmarshal([]byte(c.FormValue("project_labels")), &project_labels)
-		if err != nil {
-			c.Logger().With(
-				"error", err,
-				"data", c.FormValue("data"),
-			).Error("could not parse data")
-			return c.NoContent(http.StatusBadRequest)
-		}
-
 		memberships := make([]service.ProjectDataMembershipRx, len(data_ids))
 		for idx, data_id := range data_ids {
+			var label *string
+			if project_labels[idx] != "" {
+				label = &project_labels[idx]
+			}
 			memberships[idx] = service.ProjectDataMembershipRx{
 				Project: project_id,
 				Data:    data_id,
 				Creator: user_id,
-				Label:   nil,
+				Label:   label,
 			}
 		}
 		err = h.project_service.DataMembershipsCreate(memberships)

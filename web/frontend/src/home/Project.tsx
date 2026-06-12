@@ -197,7 +197,9 @@ function ProjectDataItem({
                 <div className="col-3">
                     {data.Label ? (
                         <>
-                            <span className="text-nowrap">data.Label</span>
+                            <span className="text-nowrap pr-2">
+                                {data.Label}
+                            </span>
                             <span className="text-gray-500">
                                 ({data.Timestamp.toString()})
                             </span>
