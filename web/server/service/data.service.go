@@ -1279,7 +1279,6 @@ func (s *DataService) dataSchemaStorageTableCreate(
 			s.logger.With(
 				"error", err,
 				"schema", schema_id,
-				"query", table_constraint_query, // remove
 			).Error("could not create data table constraint for schema")
 			return err
 		}
@@ -2930,11 +2929,36 @@ func (s *DataService) DataById(id uuid.UUID) (DataRx, error) {
 	return data, nil
 }
 
+func (s *DataService) DataByIds(ids []uuid.UUID) ([]DataRx, error) {
+	query :=
+		`SELECT _id, _type, _creator_type, timestamp, visibility
+		FROM data_ WHERE _id=ANY($1)`
+	rows, err := s.db.Conn.Query(s.ctx, query, ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"ids", ids,
+		).Error("could not get data")
+		return nil, err
+	}
+	data, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"ids", ids,
+		).Error("could not get data")
+		return nil, err
+	}
+
+	return data, nil
+}
+
 type DataUserPermission string
 
 const (
 	DataUserPermissionOwner            DataUserPermission = "owner"
 	DataUserPermissionRead             DataUserPermission = "read"
+	DataUserPermissionReadValues       DataUserPermission = "read_values"
 	DataUserPermissionNoteCreate       DataUserPermission = "note_create"
 	DataUserPermissionPropertiesModify DataUserPermission = "properties_modify"
 )
@@ -3015,14 +3039,60 @@ func (s *DataService) DataUserPermissions(user uuid.UUID, data_ids []uuid.UUID) 
 	return permissions, nil
 }
 
-func (s *DataService) ProjectRawDataAll(project uuid.UUID) ([]DataRx, error) {
-	panic("TODO")
-	// query := `SELECT s._id, s._sample, s._schema, s._creator, s.timestamp, s.visibility, s.label
-	// 	FROM sample_data_ AS s JOIN project_sample_membership_ as p ON s._sample=p._sample
-	// 	WHERE p._project=$1`
-	// rows, _ := s.db.Conn.Query(s.ctx, query, project)
-	// sample_data, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataRecord])
-	// return sample_data, err
+type ProjectDataWithMembership struct {
+	Data              DataRx
+	MembershipCreator uuid.UUID
+	ProjectLabel      *string
+}
+
+func (s *DataService) ProjectDataAll(project uuid.UUID) ([]ProjectDataWithMembership, error) {
+	type dataMembership struct {
+		Data    uuid.UUID `db:"_data"`
+		Creator uuid.UUID `db:"_creator"`
+		Label   *string   `db:"label"`
+	}
+
+	query :=
+		`SELECT _data, _creator, label FROM project_data_membership_
+		WHERE _project=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, query, project)
+	memberships, err := pgx.CollectRows(rows, pgx.RowToStructByName[dataMembership])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"project", project,
+		).Error("could not get project data memberships")
+		return nil, err
+	}
+
+	data_ids := make([]uuid.UUID, len(memberships))
+	for idx, mem := range memberships {
+		data_ids[idx] = mem.Data
+	}
+	data, err := s.DataByIds(data_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"project", project,
+		).Error("could not get project data")
+		return nil, err
+	}
+
+	info := make([]ProjectDataWithMembership, len(memberships))
+	for idx, mem := range memberships {
+		data_idx := slices.IndexFunc(data, func(d DataRx) bool {
+			return d.Id == mem.Data
+		})
+		if data_idx < 0 {
+			panic("data not found")
+		}
+
+		info[idx].Data = data[data_idx]
+		info[idx].MembershipCreator = mem.Creator
+		info[idx].ProjectLabel = mem.Label
+	}
+
+	return info, nil
 }
 
 type DataTypeTransformRx struct {

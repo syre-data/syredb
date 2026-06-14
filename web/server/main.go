@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -118,9 +119,9 @@ func main() {
 			valid_token := jwt_err == nil
 
 			path := c.Request().URL.Path
-			api_call := len(path) > 3 && path[:4] == "/api"
-
-			return !valid_token || api_call
+			api_call := strings.HasPrefix(path, "/api")
+			resource_call := strings.HasPrefix(path, "/resource")
+			return !valid_token || api_call || resource_call
 		}),
 	}))
 
@@ -171,9 +172,8 @@ func (m *ApiMiddleware) SessionTokenFromJWT(next echo.HandlerFunc) echo.HandlerF
 		if err != nil {
 			c.Logger().With(
 				"error", err,
-				"token", token,
-			).Error("invalid jwt token")
-			return err
+			).Warn("jwt token not found in context")
+			return c.NoContent(http.StatusUnauthorized)
 		}
 
 		claims := token.Claims.(*handler.JWTCustomClaims)
@@ -308,7 +308,7 @@ func register_routes(
 	resource.Use(api_middleware.UserIdFromSessionToken)
 
 	resource.GET("/data", data.DownloadDataValuesSingle)
-	resource.GET("/project", data.DownloadRawDataProject)
+	resource.GET("/project/data", data.DownloadProjectDataValuesAll)
 
 	// client libraries
 	e.POST("/api/client/authenticate", api_client.Authenticate)

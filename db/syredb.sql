@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS _data_permission_ (
 INSERT INTO _data_permission_ (_id, label, description) VALUES
     ('owner', 'Owner', 'Full permission'),
     ('read', 'Read', 'Data is visible'), 
+    ('read_values', 'Read values', 'Data values are visible'), 
     ('note_create', 'Create note', 'Create notes on this data'),
     ('properties_modify', 'Modify properties', 'Add, remove, and modify data properties');
 

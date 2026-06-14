@@ -85,16 +85,33 @@ interface ProjectDataProps {
     types: DataType[];
 }
 function ProjectData({ projectId, data, types }: ProjectDataProps) {
+    const params = new URLSearchParams();
+    params.append("project", uuidToString(projectId));
+    const download = `/resource/project/data?${params}`;
+
     return (
         <div>
-            <div className="px-4 flex gap-2">
+            <div className="px-4 flex gap-2 group">
                 <h3 className="text-lg">Data</h3>
-                <div>
-                    <Link to={`/project/${projectId}/data/create`}>
-                        <button type="button" className="btn-cmd">
-                            <Icon.Plus />
-                        </button>
-                    </Link>
+                <div className="flex gap-2">
+                    <div>
+                        <Link to={`/project/${projectId}/data/create`}>
+                            <button type="button" className="btn-cmd">
+                                <Icon.Plus />
+                            </button>
+                        </Link>
+                    </div>
+                    <div className="invisible group-hover:visible">
+                        <a href={download}>
+                            <button
+                                type="button"
+                                className="btn-cmd"
+                                title="Download all data"
+                            >
+                                <Icon.Download />
+                            </button>
+                        </a>
+                    </div>
                 </div>
             </div>
             {data.length === 0 ? (

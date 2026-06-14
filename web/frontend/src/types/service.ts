@@ -273,12 +273,18 @@ export interface DataSource {
 }
 export const DataUserPermissionOwner = "owner";
 export const DataUserPermissionRead = "read";
+export const DataUserPermissionReadValues = "read_values";
 export const DataUserPermissionNoteCreate = "note_create";
 export const DataUserPermissionPropertiesModify = "properties_modify";
-export type DataUserPermission = typeof DataUserPermissionOwner | typeof DataUserPermissionRead | typeof DataUserPermissionNoteCreate | typeof DataUserPermissionPropertiesModify;
+export type DataUserPermission = typeof DataUserPermissionOwner | typeof DataUserPermissionRead | typeof DataUserPermissionReadValues | typeof DataUserPermissionNoteCreate | typeof DataUserPermissionPropertiesModify;
 export interface DataUserPermissions {
   Data: uuid.UUIDTypes;
   Permissions: DataUserPermission[];
+}
+export interface ProjectDataWithMembership {
+  Data: DataRx;
+  MembershipCreator: uuid.UUIDTypes;
+  ProjectLabel?: string;
 }
 export interface DataTypeTransformRx {
   Id: uuid.UUIDTypes;

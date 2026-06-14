@@ -1,13 +1,16 @@
 package handler
 
 import (
+	"archive/zip"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"syredb/database"
 	"syredb/service"
@@ -509,6 +512,26 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 		}
 	}
 
+	var data_type_label string
+	data_type, err := h.data_service.DataTypeById(data_rx.Type)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_rx,
+		).Error("could not get data type")
+	} else {
+		switch data_type.DataStorage() {
+		case service.DataStorageExternal:
+			data_type_ext := data_type.(service.DataTypeExternal)
+			data_type_label = data_type_ext.Label
+		case service.DataStorageInternal:
+			data_type_int := data_type.(service.DataTypeInternal)
+			data_type_label = data_type_int.Label
+		default:
+			panic("unexpected service.DataStorage")
+		}
+	}
+
 	values, err := h.data_service.DataValuesById(data_id)
 	if err != nil {
 		c.Logger().With(
@@ -525,7 +548,15 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 	case service.DataStorageInternal:
 		var filename string
 		if project_id == uuid.Nil {
-			filename = fmt.Sprintf("%s.csv", data_id)
+			if data_type_label != "" {
+				filename = fmt.Sprintf(
+					"%s.%s.csv",
+					sanitizeStringForFilename(data_type_label),
+					formatTimeForFilename(data_rx.Timestamp),
+				)
+			} else {
+				filename = fmt.Sprintf("%s.csv", data_id)
+			}
 		} else {
 			project, project_err := h.project_service.ProjectById(project_id)
 			if project_err != nil {
@@ -548,13 +579,25 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 			}
 
 			if project_err == nil && membership_err == nil {
-				filename = fmt.Sprintf("%s.%s.csv", project.Label, *membership.Label)
+				filename = fmt.Sprintf(
+					"%s.%s.csv",
+					sanitizeStringForFilename(project.Label),
+					sanitizeStringForFilename(*membership.Label),
+				)
 			} else if membership_err != nil && membership.Label != nil {
-				filename = fmt.Sprintf("%s.csv", *membership.Label)
+				filename = fmt.Sprintf(
+					"%s.csv",
+					sanitizeStringForFilename(*membership.Label),
+				)
+			} else if data_type_label != "" {
+				filename = fmt.Sprintf(
+					"%s.%s.csv",
+					sanitizeStringForFilename(data_type_label),
+					formatTimeForFilename(data_rx.Timestamp),
+				)
 			} else {
 				filename = fmt.Sprintf("%s.csv", data_id)
 			}
-
 		}
 
 		int_values := values.Values.([]service.SchemaFieldValues)
@@ -605,239 +648,262 @@ func (h *DataHandler) downloadDataValuesSingleInternal(
 	)
 }
 
-func (h *DataHandler) DownloadRawDataProject(c *echo.Context) error {
-	panic("todo")
-	// user_id := c.Get(UserIdKey).(uuid.UUID)
-	// project_id, err := uuid.Parse(c.QueryParam("id"))
-	// if err != nil {
-	// 	c.Logger().With(
-	// 		"error", err,
-	// 		"id", c.QueryParam("id"),
-	// 	).Error("could not parse id")
-	// 	return c.NoContent(http.StatusBadRequest)
-	// }
-	// hierarchy, err := service.ParseSaveDataHierarchy(c.QueryParam("hierarchy"))
-	// if err != nil {
-	// 	c.Logger().With(
-	// 		"error", err,
-	// 		"hierarchy", c.QueryParam("hierarchy"),
-	// 	).Error("invalid hierarchy parameter")
-	// 	return c.NoContent(http.StatusBadRequest)
-	// }
+func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	project_id, err := uuid.Parse(c.QueryParam("project"))
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"project", c.QueryParam("project"),
+		).Debug("could not parse project id")
+		return c.NoContent(http.StatusBadRequest)
+	}
 
-	// sample_data, err := h.data_service.ProjectRawDataAll(project_id)
-	// if err != nil {
-	// 	c.Logger().With(
-	// 		"error", err,
-	// 		"project", project_id,
-	// 	).Error("could not get project sample data")
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
-	// if len(sample_data) == 0 {
-	// 	c.Logger().With(
-	// 		"project", project_id,
-	// 	).Debug("no sample data found for project")
-	// 	return c.NoContent(http.StatusNoContent)
-	// }
+	tmpfile, err := os.CreateTemp("", "")
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not create temporary data file")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	defer tmpfile.Close()
 
-	// sample_data_ids := make([]uuid.UUID, len(sample_data))
-	// for idx, sample_data := range sample_data {
-	// 	sample_data_ids[idx] = sample_data.Id
-	// }
+	var project_label string
+	project, err := h.project_service.ProjectById(project_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"project", project_id,
+		).Error("could not get project")
+	} else {
+		project_label = project.Label
+	}
 
-	// permissions, err := h.data_service.GetSampleDataUserPermission(sample_data_ids, user_id)
-	// if err != nil {
-	// 	c.Logger().With(
-	// 		"error", err,
-	// 		"sample data", sample_data_ids,
-	// 		"user", user_id,
-	// 	).Error("could not get sample data user permissions")
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
-	// if len(sample_data_ids) != len(permissions) {
-	// 	c.Logger().With(
-	// 		"sample data", sample_data_ids,
-	// 		"permissions", permissions,
-	// 	).Error("invalid sample data user permissions")
-	// 	panic("invalid sample data user permissions")
-	// }
+	data, err := h.data_service.ProjectDataAll(project_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"project", project_id,
+		).Error("could not get user data")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	data_ids := make([]uuid.UUID, len(data))
+	for idx, d := range data {
+		data_ids[idx] = d.Data.Id
+	}
 
-	// sufficient_permissions := make([]uuid.UUID, 0, len(sample_data_ids))
-	// for _, user_permissions := range permissions {
-	// 	if !slices.Contains(sample_data_ids, user_permissions.SampleData) {
-	// 		c.Logger().With(
-	// 			"user permissions", user_permissions.SampleData,
-	// 			"sample data", sample_data_ids,
-	// 		).Error("invalid smaple data user permissions")
-	// 		panic("invalid sample data user permissions")
-	// 	}
+	data_permissions, err := h.data_service.DataUserPermissions(user_id, data_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"project", project_id,
+			"data", data_ids,
+		).Error("could not get data user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
 
-	// 	if len(user_permissions.Permissions) > 0 {
-	// 		sufficient_permissions = append(sufficient_permissions, user_permissions.SampleData)
-	// 	}
-	// }
-	// if len(sufficient_permissions) == 0 {
-	// 	return c.NoContent(http.StatusUnauthorized)
-	// }
+	filtered := make([]service.ProjectDataWithMembership, 0, len(data))
+	for _, d := range data {
+		if d.Data.Visibility == service.VisibilityPublic {
+			filtered = append(filtered, d)
+		} else {
+			perm_idx := slices.IndexFunc(data_permissions, func(perm service.DataUserPermissions) bool {
+				return perm.Data == d.Data.Id
+			})
+			if perm_idx < 0 {
+				c.Logger().With(
+					"data", d.Data.Id,
+					"user", user_id,
+				).Debug("data user permission not found")
+				continue
+			}
 
-	// var sample_ids []uuid.UUID
-	// var data_schema_ids []uuid.UUID
-	// for _, sample_data_id := range sufficient_permissions {
-	// 	raw_data_idx := slices.IndexFunc(sample_data, func(sample_data service.SampleData) bool {
-	// 		return sample_data.Id == sample_data_id
-	// 	})
-	// 	if raw_data_idx < 0 {
-	// 		c.Logger().With(
-	// 			"sample data", sample_data_id,
-	// 			"all sample data", sample_data,
-	// 		).Error("invalid sample data")
-	// 		panic("invalid sample data")
-	// 	}
-	// 	data := sample_data[raw_data_idx]
+			has_permission := false
+			for _, perm := range data_permissions[perm_idx].Permissions {
+				if perm == service.DataUserPermissionOwner ||
+					perm == service.DataUserPermissionReadValues {
+					has_permission = true
+					break
+				}
+			}
 
-	// 	if !slices.Contains(data_schema_ids, data.Schema) {
-	// 		data_schema_ids = append(data_schema_ids, data.Schema)
-	// 	}
+			if has_permission {
+				filtered = append(filtered, d)
+			}
+		}
+	}
 
-	// 	if !slices.Contains(sample_ids, data.Sample) {
-	// 		sample_ids = append(sample_ids, data.Sample)
-	// 	}
-	// }
+	filtered_ids := make([]uuid.UUID, len(filtered))
+	for idx, d := range filtered {
+		filtered_ids[idx] = d.Data.Id
+	}
+	values, err := h.data_service.DataValuesByIds(filtered_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", filtered_ids,
+		).Error("could not get data values")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	data_type_ids := make([]uuid.UUID, 0, len(filtered))
+	for _, d := range filtered {
+		if !slices.Contains(data_type_ids, d.Data.Type) {
+			data_type_ids = append(data_type_ids, d.Data.Type)
+		}
+	}
+	data_types, err := h.data_service.DataTypesById(data_type_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data types", data_type_ids,
+		).Error("could not get data types")
+	}
 
-	// samples, err := h.project_service.GetProjectSampleMembershipsByProject(project_id)
-	// if err != nil {
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
+	archive := zip.NewWriter(tmpfile)
+	defer archive.Close()
+	for _, vals := range values {
+		data_idx := slices.IndexFunc(filtered, func(d service.ProjectDataWithMembership) bool {
+			return d.Data.Id == vals.Data
+		})
+		if data_idx < 0 {
+			c.Logger().With(
+				"data", vals.Data,
+			).Error("could not find data")
+			panic("could not find data")
+		}
+		vdata := filtered[data_idx]
 
-	// data_schemas, err := h.data_service.GetDataSchemasById(data_schema_ids)
-	// if err != nil {
-	// 	c.Logger().With(
-	// 		"error", err,
-	// 		"data schemas", data_schema_ids,
-	// 	).Error("could not get data schemas")
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
+		type_idx := slices.IndexFunc(data_types, func(t service.DataType) bool {
+			switch t.DataStorage() {
+			case service.DataStorageExternal:
+				text := t.(service.DataTypeExternal)
+				return text.Id == vdata.Data.Type
+			case service.DataStorageInternal:
+				tint := t.(service.DataTypeInternal)
+				return tint.Id == vdata.Data.Type
+			default:
+				panic("unexpected service.DataStorage")
+			}
+		})
+		if type_idx < 0 {
+			c.Logger().With(
+				"data", vdata.Data.Id,
+				"type", vdata.Data.Type,
+			).Error("could not find data type")
+			panic("could not find data type")
+		}
 
-	// sample_data_stored, err := h.data_service.GetSampleDataStoredById(sufficient_permissions)
-	// if err != nil {
-	// 	c.Logger().With(
-	// 		"error", err,
-	// 		"sample data", sufficient_permissions,
-	// 	).Error("could not get stored sample data")
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
+		switch vals.Storage {
+		case service.DataStorageExternal:
+			panic("todo")
+		case service.DataStorageInternal:
+			data_type := data_types[type_idx].(service.DataTypeInternal)
+			fields := vals.Values.([]service.SchemaFieldValues)
+			csv, err := h.data_service.StoredDataToCsv(fields)
+			if err != nil {
+				c.Logger().With(
+					"error", err,
+					"data", vals.Data,
+				).Error("could not convert data values to csv")
+				return c.NoContent(http.StatusInternalServerError)
+			}
 
-	// tmpfile, err := os.CreateTemp("", "")
-	// if err != nil {
-	// 	c.Logger().With(
-	// 		"error", err,
-	// 	).Error("could not create temporary data file")
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
-	// defer tmpfile.Close()
+			filename := fmt.Sprintf(
+				"%s.%s.csv",
+				sanitizeStringForFilename(data_type.Label),
+				formatTimeForFilename(vdata.Data.Timestamp),
+			)
+			if vdata.ProjectLabel != nil && *vdata.ProjectLabel != "" {
+				filename = fmt.Sprintf(
+					"%s.csv",
+					sanitizeStringForFilename(*vdata.ProjectLabel),
+				)
+			}
 
-	// archive := zip.NewWriter(tmpfile)
-	// for _, stored_data := range sample_data_stored {
-	// 	sample_data_idx := slices.IndexFunc(sample_data, func(data service.SampleData) bool {
-	// 		return stored_data.SampleData == data.Id
-	// 	})
-	// 	if sample_data_idx < 0 {
-	// 		c.Logger().With(
-	// 			"sample data", stored_data.SampleData,
-	// 			"sample data all", sample_data,
-	// 		).Error("invalid sample data")
-	// 		panic("invalid sample data")
-	// 	}
-	// 	data_info := sample_data[sample_data_idx]
+			f, err := archive.Create(filename)
+			if err != nil {
+				c.Logger().With(
+					"error", err,
+					"data", vals.Data,
+				).Error("zip archive could not create file")
+				return c.NoContent(http.StatusInternalServerError)
+			}
+			_, err = f.Write([]byte(csv))
+			if err != nil {
+				c.Logger().With(
+					"error", err,
+					"data", vals.Data,
+				).Error("could not write data to archive file")
+				return c.NoContent(http.StatusInternalServerError)
+			}
+		default:
+			panic(fmt.Sprintf("unexpected service.DataStorage: %#v", vals.Storage))
+		}
+	}
 
-	// 	data_schema_idx := slices.IndexFunc(data_schemas, func(schema service.DataSchema) bool {
-	// 		return data_info.Schema == schema.Id
-	// 	})
-	// 	if sample_data_idx < 0 {
-	// 		c.Logger().With(
-	// 			"data schema", data_info.Schema,
-	// 			"data schema all", data_schemas,
-	// 		).Error("invalid data schema")
-	// 		panic("invalid data schema")
-	// 	}
-	// 	schema := data_schemas[data_schema_idx]
+	archive_name := "data.zip"
+	if project_label != "" {
+		archive_name = fmt.Sprintf("%s.data.zip", project_label)
+	}
 
-	// 	sample_idx := slices.IndexFunc(samples, func(sample service.ProjectSampleMembership) bool {
-	// 		return data_info.Sample == sample.Sample
-	// 	})
-	// 	if sample_idx < 0 {
-	// 		c.Logger().With(
-	// 			"sample", data_info.Sample,
-	// 			"samples", samples,
-	// 		).Error("invalid sample")
-	// 		panic("invalid sample")
-	// 	}
-	// 	sample := samples[sample_idx]
+	err = archive.Close()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"project", project_id,
+		).Error("could not close archive")
+		return c.NoContent(http.StatusInternalServerError)
+	}
 
-	// 	var filename strings.Builder
-	// 	switch hierarchy {
-	// 	case service.SaveDataHierarchyFlat:
-	// 		fmt.Fprintf(&filename, "%s.%s.", schema.Label, sample.Label)
-	// 		if data_info.Label != nil && *data_info.Label != "" {
-	// 			fmt.Fprintf(&filename, "%s.", *data_info.Label)
-	// 		}
-	// 	case service.SaveDataHierarchyDataSchema:
-	// 		panic("todo")
-	// 	case service.SaveDataHierarchyDataSchemaSample:
-	// 		panic("todo")
-	// 	case service.SaveDataHierarchySample:
-	// 		panic("todo")
-	// 	case service.SaveDataHierarchySampleDataSchema:
-	// 		panic("todo")
-	// 	default:
-	// 		panic(fmt.Sprintf("unexpected service.SaveDataHierarchy: %#v", hierarchy))
-	// 	}
+	stat, err := tmpfile.Stat()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"project", project_id,
+		).Error("could not stat archive")
+		return c.NoContent(http.StatusInternalServerError)
+	}
 
-	// 	if stored_data.Storage == service.DataStorageInternal {
-	// 		filename.WriteString("csv")
-	// 	}
-	// 	file, err := archive.Create(filename.String())
-	// 	if err != nil {
-	// 		c.Logger().With(
-	// 			"error", err,
-	// 			"sample data", stored_data.SampleData,
-	// 			"file name", filename,
-	// 		).Error("could not create file in archive")
-	// 		return c.NoContent(http.StatusInternalServerError)
-	// 	}
+	buf := make([]byte, stat.Size())
+	_, err = tmpfile.ReadAt(buf, 0)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"project", project_id,
+		).Error("could not read archive file")
+		return c.NoContent(http.StatusInternalServerError)
+	}
 
-	// 	switch stored_data.Storage {
-	// 	case service.DataStorageExternal:
-	// 		panic("todo")
-	// 	case service.DataStorageInternal:
-	// 		data, err := h.data_service.StoredDataToCsv(stored_data.Data.([]service.ColumnData))
-	// 		if err != nil {
-	// 			c.Logger().With(
-	// 				"error", err,
-	// 				"stored data", stored_data,
-	// 			).Error("could not write data to csv")
-	// 			return c.NoContent(http.StatusInternalServerError)
-	// 		}
-	// 		_, err = file.Write(data)
-	// 		if err != nil {
-	// 			c.Logger().With(
-	// 				"error", err,
-	// 				"stored data", stored_data,
-	// 			).Error("could not write data to archive file")
-	// 			return c.NoContent(http.StatusInternalServerError)
-	// 		}
-	// 	default:
-	// 		panic(fmt.Sprintf("unexpected service.DataStorage: %#v", stored_data.Storage))
-	// 	}
-	// }
+	c.Response().Header().Set(
+		echo.HeaderContentDisposition,
+		fmt.Sprintf(`attachment; filename="%s"`, archive_name),
+	)
+	return c.Blob(
+		http.StatusOK,
+		"text/csv; charset=utf-8",
+		buf,
+	)
+}
 
-	// err = archive.Close()
-	// if err != nil {
-	// 	c.Logger().With("error", err).Error("could not close archive")
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
+func sanitizeStringForFilename(s string) string {
+	invalid := regexp.MustCompile(`[^\w\d\s\.\-_]`)
+	sanitized := invalid.ReplaceAllString(s, "_")
+	return string(sanitized)
+}
 
-	// return c.Attachment(tmpfile.Name(), "data.zip")
+func formatTimeForFilename(t time.Time) string {
+	return fmt.Sprintf(
+		"%d-%02d-%02d-%02d-%02d-%02d",
+		t.Year(),
+		t.Month(),
+		t.Day(),
+		t.Hour(),
+		t.Minute(),
+		t.Second(),
+	)
 }
 
 func (h *DataHandler) DataTypeTransformsGetAll(c *echo.Context) error {
