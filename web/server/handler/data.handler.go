@@ -1259,6 +1259,8 @@ func (h *DataHandler) OrphanedData(c *echo.Context) error {
 type DataResources struct {
 	Data             service.DataRx
 	DataType         service.DataType
+	Properties       []service.Property
+	Notes            []service.Note
 	ProjectResources []service.DataProjectResources
 	Users            []service.User
 }
@@ -1324,6 +1326,26 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			"data", data_rx,
 			"user", user,
 		).Error("could not get data type")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	properties, err := h.data_service.DataProperties(data_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+			"user", user,
+		).Error("could not get data properties")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	notes, err := h.data_service.DataNotes(data_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+			"user", user,
+		).Error("could not get data notes")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
@@ -1404,6 +1426,8 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 	resources := DataResources{
 		Data:             data_rx,
 		DataType:         data_type,
+		Properties:       properties,
+		Notes:            notes,
 		ProjectResources: project_resources,
 		Users:            users,
 	}

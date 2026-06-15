@@ -15,21 +15,18 @@ type ProjectHandler struct {
 	db              *database.DBConnection
 	project_service *service.ProjectService
 	user_service    *service.UserService
-	sample_service  *service.SampleService
 }
 
 func NewProjectHandler(
 	db *database.DBConnection,
 	project_service *service.ProjectService,
 	user_service *service.UserService,
-	sample_service *service.SampleService,
 
 ) *ProjectHandler {
 	return &ProjectHandler{
 		db:              db,
 		project_service: project_service,
 		user_service:    user_service,
-		sample_service:  sample_service,
 	}
 }
 

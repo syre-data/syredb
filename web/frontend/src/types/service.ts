@@ -325,6 +325,8 @@ export const DataCreatorTypeUser = "user";
 export const DataCreatorTypeTransform = "transform";
 export type DataCreatorType = typeof DataCreatorTypeUser | typeof DataCreatorTypeTransform;
 export interface Note {
+  Id: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
   Timestamp: Date;
   Visibility: Visibility;
   Content: string;
@@ -493,18 +495,6 @@ export interface ProjectDataMembershipRx {
   Data: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
   Label?: string;
-}
-
-//////////
-// source: sample.service.go
-
-export const SampleUserPermissionOwner = "owner";
-export const SampleUserPermissionRead = "read";
-export const SampleUserPermissionAddData = "add_data";
-export const SampleUserPermissionCreateNote = "create_note";
-export const SampleUserPermissionModifyProperties = "modify_properties";
-export type SampleUserPermission = typeof SampleUserPermissionOwner | typeof SampleUserPermissionRead | typeof SampleUserPermissionAddData | typeof SampleUserPermissionCreateNote | typeof SampleUserPermissionModifyProperties;
-export interface SampleService {
 }
 
 //////////

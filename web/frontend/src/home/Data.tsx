@@ -7,7 +7,9 @@ import type {
     DataProjectResources,
     DataRx,
     DataType,
+    Note,
     ProjectResources,
+    Property,
     User,
 } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -22,7 +24,7 @@ import {
     type SubmitEvent,
 } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import { Link, Navigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
 import type { UUIDTypes } from "uuid";
 
 export default function () {
@@ -57,6 +59,7 @@ function Data({ data_id }: DataProps) {
         queryFn: async () => await dataService.dataGet(data_id),
     });
     const [showAddProject, setShowAddProject] = useState(false);
+    const navigate = useNavigate();
 
     function showAddProjectFn(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
@@ -66,21 +69,49 @@ function Data({ data_id }: DataProps) {
         setShowAddProject(true);
     }
 
+    function close(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== MouseButton.Primary) {
+            return;
+        }
+
+        navigate(-1);
+    }
+
     const data = resources.Data as DataRx;
     const data_type = resources.DataType as DataType;
+    const properties = resources.Properties as Property[];
+    const notes = resources.Notes as Note[];
     const project_resources =
         resources.ProjectResources as DataProjectResources[];
     const users = resources.Users as User[];
+    const currentProjects = project_resources.map(
+        (resource) => resource.Project.Id,
+    );
     return (
         <div>
-            <div className="px-4 pt-2">
-                <h1>Data</h1>
+            <div className="px-4 pt-2 flex justify-between">
+                <div>
+                    <h1>Data</h1>
+                </div>
+                <div>
+                    <div>
+                        <button
+                            type="button"
+                            className="btn-cmd"
+                            onMouseDown={close}
+                        >
+                            <Icon.Close />
+                        </button>
+                    </div>
+                </div>
             </div>
             <div className="px-4 pt-2">
                 <div>{data.Timestamp}</div>
                 <div>{data.Visibility}</div>
                 <div>{data_type.Label}</div>
             </div>
+            <Properties properties={properties} />
+            <Notes notes={notes} />
             <div className="pt-2">
                 <div className="px-4 flex gap-2">
                     <h2 className="text-lg">Projects</h2>
@@ -100,6 +131,7 @@ function Data({ data_id }: DataProps) {
                 >
                     <AddProject
                         data_id={data_id}
+                        currentProjects={currentProjects}
                         setShowAddProject={setShowAddProject}
                     />
                 </div>
@@ -113,11 +145,65 @@ function Data({ data_id }: DataProps) {
     );
 }
 
+interface PropertiesProps {
+    properties: Property[];
+}
+function Properties({ properties }: PropertiesProps) {
+    return (
+        <div>
+            <div className="px-4 pb-2">
+                <h3>Properties</h3>
+            </div>
+            <div className="px-4">
+                <table>
+                    <tbody>
+                        {properties.map((property) => (
+                            <tr key={property.Key}>
+                                <td>{property.Key}</td>
+                                <td>{property.Type}</td>
+                                <td>{property.Value}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+interface NotesProps {
+    notes: Note[];
+}
+function Notes({ notes }: NotesProps) {
+    return (
+        <div>
+            <div className="px-4 pb-2">
+                <h3>Notes</h3>
+            </div>
+            <ol>
+                {notes.map((note) => (
+                    <li key={note.Id.toString()}>
+                        <div className="px-4 pb-2">
+                            <h4>{note.Timestamp}</h4>
+                            <div>{note.Content}</div>
+                        </div>
+                    </li>
+                ))}
+            </ol>
+        </div>
+    );
+}
+
 interface AddProjectProps {
     data_id: UUIDTypes;
+    currentProjects: UUIDTypes[];
     setShowAddProject: Dispatch<SetStateAction<boolean>>;
 }
-function AddProject({ data_id, setShowAddProject }: AddProjectProps) {
+function AddProject({
+    data_id,
+    currentProjects,
+    setShowAddProject,
+}: AddProjectProps) {
     const { data: projects } = useSuspenseQuery({
         queryKey: [QUERY_KEY_USER_PROJECTS],
         queryFn: projectService.getUserProjects,
@@ -137,37 +223,56 @@ function AddProject({ data_id, setShowAddProject }: AddProjectProps) {
             });
     }
 
+    function close(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button != MouseButton.Primary) {
+            return;
+        }
+
+        setShowAddProject(false);
+    }
+
     return (
         <form onSubmit={addProject}>
-            <div className="pb-2">
-                <select
-                    id="add-project"
-                    name="add-project"
-                    className="input-basic"
-                >
-                    <option disabled hidden selected>
-                        Choose a project
-                    </option>
-                    {projects.map((project) => (
-                        <option
-                            key={project.Id.toString()}
-                            value={project.Id.toString()}
-                        >
-                            {project.Label}
+            <div className="pb-2 flex gap-2">
+                <div>
+                    <select
+                        id="add-project"
+                        name="add-project"
+                        className="input-basic"
+                    >
+                        <option disabled hidden selected>
+                            Choose a project
                         </option>
-                    ))}
-                </select>
-            </div>
-            <div className="flex gap-2">
-                <div>
-                    <button type="submit" className="btn-submit">
-                        Add
-                    </button>
+                        {projects
+                            .filter(
+                                (project) =>
+                                    !currentProjects.includes(project.Id),
+                            )
+                            .map((project) => (
+                                <option
+                                    key={project.Id.toString()}
+                                    value={project.Id.toString()}
+                                >
+                                    {project.Label}
+                                </option>
+                            ))}
+                    </select>
                 </div>
-                <div>
-                    <button type="button" className="btn-submit">
-                        Cancel
-                    </button>
+                <div className="flex gap-2">
+                    <div>
+                        <button type="submit" className="btn-submit">
+                            <Icon.Plus />
+                        </button>
+                    </div>
+                    <div>
+                        <button
+                            type="button"
+                            className="btn-submit"
+                            onMouseDown={close}
+                        >
+                            <Icon.Close />
+                        </button>
+                    </div>
                 </div>
             </div>
         </form>

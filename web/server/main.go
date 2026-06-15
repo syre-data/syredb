@@ -52,14 +52,13 @@ func main() {
 	app_service := service.NewAppService(ctx, e.Logger, db)
 	auth_service := service.NewAuthService(ctx, e.Logger, db)
 	user_service := service.NewUserService(ctx, e.Logger, db, auth_service)
-	sample_service := service.NewSampleService(ctx, e.Logger, db)
 	data_service := service.NewDataService(ctx, e.Logger, db, app_service, user_service)
 	project_service := service.NewProjectService(ctx, e.Logger, db, user_service, data_service)
 
 	app_handler := handler.NewAppHandler(db, app_service)
 	auth_handler := handler.NewAuthHandler(db, auth_service)
 	user_handler := handler.NewUserHandler(db, user_service, app_service)
-	project_handler := handler.NewProjectHandler(db, project_service, user_service, sample_service)
+	project_handler := handler.NewProjectHandler(db, project_service, user_service)
 	data_handler := handler.NewDataHandler(db, data_service, app_service, user_service, project_service)
 	api_client_handler := handler.NewApiClientHandler(db, auth_service, data_service)
 

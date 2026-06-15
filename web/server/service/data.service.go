@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -2937,7 +2938,7 @@ func (s *DataService) DataByIds(ids []uuid.UUID) ([]DataRx, error) {
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"ids", ids,
+			"data", ids,
 		).Error("could not get data")
 		return nil, err
 	}
@@ -2945,12 +2946,44 @@ func (s *DataService) DataByIds(ids []uuid.UUID) ([]DataRx, error) {
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"ids", ids,
+			"data", ids,
 		).Error("could not get data")
 		return nil, err
 	}
 
 	return data, nil
+}
+
+func (s *DataService) DataProperties(id uuid.UUID) ([]Property, error) {
+	query := "SELECT _key, _type, value FROM data_property_ WHERE _data=$1"
+	rows, _ := s.db.Conn.Query(s.ctx, query, id)
+	properties, err := pgx.CollectRows(rows, pgx.RowToStructByName[Property])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", id,
+		).Error("could not get data properties")
+		return nil, err
+	}
+
+	return properties, nil
+}
+
+func (s *DataService) DataNotes(id uuid.UUID) ([]Note, error) {
+	query :=
+		`SELECT _id, _creator, timestamp, visibility, content 
+		FROM data_note_ WHERE _data=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, query, id)
+	notes, err := pgx.CollectRows(rows, pgx.RowToStructByName[Note])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", id,
+		).Error("could not get data notes")
+		return nil, err
+	}
+
+	return notes, nil
 }
 
 type DataUserPermission string
@@ -3273,9 +3306,11 @@ const (
 )
 
 type Note struct {
-	Timestamp  time.Time
-	Visibility Visibility
-	Content    string
+	Id         uuid.UUID  `db:"_id"`
+	Creator    uuid.UUID  `db:"_creator"`
+	Timestamp  time.Time  `db:"timestamp"`
+	Visibility Visibility `db:"visibility"`
+	Content    string     `db:"content"`
 }
 
 type DataIngestionMethod string
@@ -3615,7 +3650,7 @@ func (s *DataService) dataCreateProperties(tx pgx.Tx, data []DataCreate, data_id
 	args := make([]any, num_properties*numFields)
 	var query strings.Builder
 	query.WriteString(
-		`INSERT INTO data_properties_ (_data, _key, _type, value) VALUES `,
+		`INSERT INTO data_property_ (_data, _key, _type, value) VALUES `,
 	)
 	idx := 0
 	for ddx, datum := range data {
@@ -3625,10 +3660,19 @@ func (s *DataService) dataCreateProperties(tx pgx.Tx, data []DataCreate, data_id
 			type_idx := key_idx + 1
 			value_idx := type_idx + 1
 
+			value, err := json.Marshal(property.Value)
+			if err != nil {
+				s.logger.With(
+					"error", err,
+					"property", property,
+				).Error("could not encode property as JSON")
+				return err
+			}
+
 			args[data_idx] = data_ids[ddx]
 			args[key_idx] = property.Key
 			args[type_idx] = property.Type
-			args[value_idx] = property.Value
+			args[value_idx] = value
 
 			if idx > 0 {
 				query.WriteString(", ")
@@ -3676,7 +3720,7 @@ func (s *DataService) dataCreateNotes(
 	args := make([]any, num_notes*numFields)
 	var query strings.Builder
 	query.WriteString(
-		`INSERT INTO data_properties_ (_data, _creator, timestamp, visibility, content) VALUES `,
+		`INSERT INTO data_note_ (_data, _creator, timestamp, visibility, content) VALUES `,
 	)
 	idx := 0
 	for ddx, datum := range data {
