@@ -381,6 +381,12 @@ CREATE TABLE IF NOT EXISTS data_creator_transform_ (
     _creator UUID REFERENCES data_type_transform_(_id) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS data_relation_ (
+    _parent UUID REFERENCES data_(_id) NOT NULL,
+    _child UUID REFERENCES data_(_id) NOT NULL,
+    PRIMARY KEY (_parent, _child)
+);
+
 CREATE TABLE IF NOT EXISTS data_group_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _creator UUID REFERENCES user_(_id) NOT NULL,

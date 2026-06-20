@@ -308,6 +308,7 @@ type ProjectResources struct {
 	Data               []ProjectData
 	DataTypes          []DataType
 	DataSchemas        []DataSchema
+	DataRelations      map[uuid.UUID][]uuid.UUID
 	DataGroups         []ProjectDataGroup
 	DataGroupRelations []DataGroupRelation
 	ProjectNoteCount   uint
@@ -448,6 +449,15 @@ func (s *ProjectService) GetProjectResources(
 			"error", err,
 			"schemas", data_schema_ids,
 		).Error("could not get data schemas")
+		return ProjectResources{}, err
+	}
+
+	project_resources.DataRelations, err = s.data_service.DataTree(data_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data_ids,
+		).Error("could not get data tree")
 		return ProjectResources{}, err
 	}
 

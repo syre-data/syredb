@@ -73,6 +73,7 @@ function Project({ projectId }: ProjectProps) {
             <ProjectData
                 projectId={projectId}
                 data={resources.Data}
+                relations={resources.DataRelations}
                 types={resources.DataTypes}
             />
         </div>
@@ -82,9 +83,10 @@ function Project({ projectId }: ProjectProps) {
 interface ProjectDataProps {
     projectId: uuid.UUIDTypes;
     data: ProjectData[];
+    relations: { [key: string]: uuid.UUIDTypes[] };
     types: DataType[];
 }
-function ProjectData({ projectId, data, types }: ProjectDataProps) {
+function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
     const params = new URLSearchParams();
     params.append("project", uuidToString(projectId));
     const download = `/resource/project/data?${params}`;
@@ -120,6 +122,7 @@ function ProjectData({ projectId, data, types }: ProjectDataProps) {
                 <ProjectDataList
                     projectId={projectId}
                     data={data}
+                    relations={relations}
                     types={types}
                 />
             )}
@@ -141,12 +144,50 @@ function ProjectDataEmpty() {
 interface ProjectDataListProps {
     projectId: uuid.UUIDTypes;
     data: ProjectData[];
+    relations: { [key: string]: uuid.UUIDTypes[] };
     types: DataType[];
 }
-function ProjectDataList({ projectId, data, types }: ProjectDataListProps) {
+function ProjectDataList({
+    projectId,
+    data,
+    relations,
+    types,
+}: ProjectDataListProps) {
+    let parents = new Map();
+    for (const parent in relations) {
+        const children = relations[parent]!;
+        for (const child of children) {
+            parents.set(child, parent);
+        }
+    }
+
     return (
-        <ul className="grid gap-2 grid-cols-[repeat(4,min-content)]">
+        <ul className="grid gap-2 grid-cols-[repeat(5,min-content)]">
             {data.map((datum, idx) => {
+                const parent_id = parents.get(datum.Id);
+                let parent: ProjectData | undefined = undefined;
+                let parent_label = undefined;
+                if (parent_id) {
+                    const parent_idx = data.findIndex(
+                        (datum) => datum.Id === parent_id,
+                    )!;
+                    parent = data[parent_idx]!;
+                    if (parent.Label) {
+                        const matching_label = data.findIndex(
+                            (datum) =>
+                                datum.Label === parent.Label &&
+                                datum.Id !== parent.Id,
+                        );
+                        if (matching_label < 0) {
+                            parent_label = parent.Label;
+                        } else {
+                            parent_label = `${parent.Label} (${parent_idx})`;
+                        }
+                    } else {
+                        parent_label = parent_idx.toString();
+                    }
+                }
+
                 const type = types.find((type) => type.Id === datum.Type);
                 if (!type) {
                     console.error(`could not get data type ${datum.Type}`);
@@ -159,6 +200,8 @@ function ProjectDataList({ projectId, data, types }: ProjectDataListProps) {
                         projectId={projectId}
                         data={datum}
                         type={type}
+                        parent={parent}
+                        parentLabel={parent_label}
                     />
                 );
             })}
@@ -171,13 +214,32 @@ interface ProjectDataItemProps {
     projectId: uuid.UUIDTypes;
     data: ProjectData;
     type: DataType;
+    parent: ProjectData | undefined;
+    parentLabel: string | undefined;
 }
 function ProjectDataItem({
     index,
     projectId,
     data,
     type,
+    parent,
+    parentLabel,
 }: ProjectDataItemProps) {
+    function highlight_parent(e: MouseEvent<HTMLElement>, active: boolean) {
+        const HIGHLIGHT_CLASS = ["bg-gray-200", "dark:bg-gray-800"];
+
+        const parent_elm = document.getElementById(`data-${parent?.Id}`)!;
+        if (active) {
+            for (const st of HIGHLIGHT_CLASS) {
+                parent_elm.classList.add(st);
+            }
+        } else {
+            for (const st of HIGHLIGHT_CLASS) {
+                parent_elm.classList.remove(st);
+            }
+        }
+    }
+
     function open_preview(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
             return;
@@ -212,7 +274,11 @@ function ProjectDataItem({
     params.append("project", uuidToString(projectId));
     const download = `/resource/data?${params}`;
     return (
-        <li className="px-4 grid grid-cols-subgrid col-span-full group">
+        <li
+            id={`data-${data.Id}`}
+            className="px-4 grid grid-cols-subgrid col-span-full group"
+            data-id={data.Id}
+        >
             <div className="grid grid-cols-subgrid col-span-full">
                 <div className="col-1">{index + 1}.</div>
                 <div className="col-2 text-nowrap">{type.Label}</div>
@@ -229,6 +295,18 @@ function ProjectDataItem({
                     ) : (
                         data.Timestamp.toString()
                     )}
+                </div>
+                <div>
+                    {parentLabel ? (
+                        <span
+                            className="text-nowrap pl-2 text-gray-500 cursor-pointer"
+                            onMouseEnter={(e) => highlight_parent(e, true)}
+                            onMouseLeave={(e) => highlight_parent(e, false)}
+                        >
+                            (<Icon.ArrowReturn className="inline" />{" "}
+                            {parentLabel})
+                        </span>
+                    ) : null}
                 </div>
                 <div className="flex gap-1 invisible group-hover:visible">
                     <div>

@@ -463,6 +463,7 @@ export interface ProjectResources {
   Data: ProjectData[];
   DataTypes: DataType[];
   DataSchemas: DataSchema[];
+  DataRelations: { [key: uuid.UUIDTypes]: uuid.UUIDTypes[]};
   DataGroups: ProjectDataGroup[];
   DataGroupRelations: DataGroupRelation[];
   ProjectNoteCount: number /* uint */;

@@ -1901,6 +1901,16 @@ func (d *TransformDaemon) dataCreate(
 		return err
 	}
 
+	relation_query := "INSERT INTO data_relation_ (_parent, _child) VALUES ($1, $2)"
+	_, err = tx.Exec(d.ctx, relation_query, payload, data_id)
+	if err != nil {
+		d.logger.With(
+			"error", err,
+			"data", payload,
+		).Error("could not create data relation")
+		return err
+	}
+
 	err = tx.Commit(d.ctx)
 	if err != nil {
 		d.logger.With(

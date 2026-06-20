@@ -26,12 +26,13 @@ import { IoIosLogOut, IoMdHome, IoIosArrowRoundBack } from "react-icons/io";
 import { MdEdit, MdOutlineCategory } from "react-icons/md";
 import { TbColumns3 } from "react-icons/tb";
 import { IoEyeOutline } from "react-icons/io5";
-import { BsFile, BsFiles } from "react-icons/bs";
+import { BsFile, BsFiles, BsArrowReturnRight } from "react-icons/bs";
 import { LuSquareFunction } from "react-icons/lu";
 
 export default {
     ArrowBack: IoIosArrowRoundBack,
     ArrowRight: FaArrowRight,
+    ArrowReturn: BsArrowReturnRight,
     CaretDown: FaCaretDown,
     Check: FaCheck,
     CircleCheck: FaRegCircleCheck,

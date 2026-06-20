@@ -2069,6 +2069,49 @@ func (s *DataService) DataValuesByIds(data_ids []uuid.UUID) ([]DataValues, error
 	return data_values, nil
 }
 
+func (s *DataService) DataTree(roots []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	tree := make(map[uuid.UUID][]uuid.UUID, len(roots))
+	for len(roots) > 0 {
+		idx_last := len(roots) - 1
+		parent := roots[idx_last]
+		roots = roots[:idx_last]
+
+		_, contains_parent := tree[parent]
+		if contains_parent {
+			continue
+		}
+
+		children, err := s.DataChildren(parent)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", parent,
+			).Error("could not get data children")
+			return nil, err
+		}
+
+		tree[parent] = children
+		roots = slices.Concat(roots, children)
+	}
+
+	return tree, nil
+}
+
+func (s *DataService) DataChildren(parent uuid.UUID) ([]uuid.UUID, error) {
+	query := "SELECT _child FROM data_relation_ WHERE _parent=$1"
+	rows, _ := s.db.Conn.Query(s.ctx, query, parent)
+	children, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", parent,
+		).Error("could not get data relations")
+		return nil, err
+	}
+
+	return children, nil
+}
+
 // DataSource is an externally stored data source.
 // `Sources` is a single path if `Cardinality` is `single`.
 // `Sources` is an array of paths if `Cardinality` is `multiple`.
