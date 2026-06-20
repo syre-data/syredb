@@ -240,6 +240,15 @@ function ProjectDataItem({
         }
     }
 
+    function goto_parent(e: MouseEvent<HTMLElement>) {
+        if (e.button !== MouseButton.Primary) {
+            return;
+        }
+
+        const parent_elm = document.getElementById(`data-${parent?.Id}`)!;
+        parent_elm.scrollIntoView();
+    }
+
     function open_preview(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
             return;
@@ -302,6 +311,8 @@ function ProjectDataItem({
                             className="text-nowrap pl-2 text-gray-500 cursor-pointer"
                             onMouseEnter={(e) => highlight_parent(e, true)}
                             onMouseLeave={(e) => highlight_parent(e, false)}
+                            onMouseDown={goto_parent}
+                            title="Parent data"
                         >
                             (<Icon.ArrowReturn className="inline" />{" "}
                             {parentLabel})
