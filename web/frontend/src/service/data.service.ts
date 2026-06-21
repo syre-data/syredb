@@ -342,6 +342,40 @@ function dataGet(data_id: uuid.UUIDTypes): Promise<any> {
     }).then(async (resp) => (await resp.json()) as any);
 }
 
+function dataOrigins(): Promise<types.DataOriginRx[]> {
+    return fetch("/api/data-origins", {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.DataOriginRx[]);
+}
+
+function dataOriginById(
+    data_origin_id: uuid.UUIDTypes,
+): Promise<types.DataOriginRx> {
+    const params = new URLSearchParams();
+    params.set("id", uuidToString(data_origin_id));
+    return fetch(`/api/data-origin?${params}`, {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.DataOriginRx);
+}
+
+function dataOriginCreate(origin: types.DataOriginCreate): Promise<Response> {
+    return fetch(`/api/data-origin`, {
+        credentials: "same-origin",
+        method: "post",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(origin),
+    });
+}
+
+function dataOriginUpdate(update: types.DataOriginRx): Promise<Response> {
+    return fetch(`/api/data-origin`, {
+        credentials: "same-origin",
+        method: "put",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+    });
+}
+
 export default {
     dataTypesGetAll,
     dataTypeCreateInternal,
@@ -365,4 +399,8 @@ export default {
     projectDataCreate,
     orphanedData,
     dataGet,
+    dataOrigins,
+    dataOriginById,
+    dataOriginCreate,
+    dataOriginUpdate,
 };

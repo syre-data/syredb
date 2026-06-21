@@ -24,6 +24,9 @@ import IngestionScriptCreate from "./IngestionScriptCreate";
 import Profile from "./Profile";
 import DataTypeEdit from "./DataTypeEdit";
 import Data from "./Data";
+import DataOrigins from "./DataOrigins";
+import DataOriginEdit from "./DataOriginEdit";
+import DataOriginCreate from "./DataOriginCreate";
 
 export default function Home() {
     return (
@@ -55,6 +58,15 @@ export default function Home() {
                 <Route
                     path="/data-type/:data_type_id/edit"
                     element={<DataTypeEdit />}
+                />
+                <Route
+                    path="/data-origin/create"
+                    element={<DataOriginCreate />}
+                />
+                <Route path="/data-origins" element={<DataOrigins />} />
+                <Route
+                    path="/data-origin/:data_origin_id/edit"
+                    element={<DataOriginEdit />}
                 />
                 <Route
                     path="/ingestion-scripts"

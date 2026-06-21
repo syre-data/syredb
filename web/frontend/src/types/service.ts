@@ -251,6 +251,11 @@ export interface DataOriginRx {
   Description: string;
   Active: boolean;
 }
+export interface DataOriginCreate {
+  Label: string;
+  Description: string;
+  Active: boolean;
+}
 /**
  * DataValues represents the actual data stored.
  * Values is []SchemaFieldValues if Storage is `internal`.
@@ -519,7 +524,9 @@ export const DbPermissionTransformModify = "transform_modify";
 export const DbPermissionProjectCreate = "project_create";
 export const DbPermissionDataCreate = "data_create";
 export const DbPermissionDataReadAll = "data_read_all";
-export type DbPermission = typeof DbPermissionOwner | typeof DbPermissionUserCreate | typeof DbPermissionUserModify | typeof DbPermissionDataSchemaCreate | typeof DbPermissionDataSchemaModify | typeof DbPermissionDataTypeCreate | typeof DbPermissionDataTypeModify | typeof DbPermissionIngestionScriptCreate | typeof DbPermissionIngestionScriptModify | typeof DbPermissionTransformCreate | typeof DbPermissionTransformModify | typeof DbPermissionProjectCreate | typeof DbPermissionDataCreate | typeof DbPermissionDataReadAll;
+export const DbPermissionDataOriginCreate = "data_origin_create";
+export const DbPermissionDataOriginModify = "data_origin_modify";
+export type DbPermission = typeof DbPermissionOwner | typeof DbPermissionUserCreate | typeof DbPermissionUserModify | typeof DbPermissionDataSchemaCreate | typeof DbPermissionDataSchemaModify | typeof DbPermissionDataTypeCreate | typeof DbPermissionDataTypeModify | typeof DbPermissionIngestionScriptCreate | typeof DbPermissionIngestionScriptModify | typeof DbPermissionTransformCreate | typeof DbPermissionTransformModify | typeof DbPermissionProjectCreate | typeof DbPermissionDataCreate | typeof DbPermissionDataReadAll | typeof DbPermissionDataOriginCreate | typeof DbPermissionDataOriginModify;
 export const AccountStatusActive = "active";
 export const AccountStatusDeactivated = "deactivated";
 export type AccountStatus = typeof AccountStatusActive | typeof AccountStatusDeactivated;

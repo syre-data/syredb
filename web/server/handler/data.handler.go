@@ -65,7 +65,10 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 	}
 
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	sufficient_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionDataTypeCreate)
+	sufficient_permission, err := h.user_service.UserHasPermission(
+		user_id,
+		service.DbPermissionDataTypeCreate,
+	)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -107,7 +110,10 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 
 func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	sufficient_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionDataTypeCreate)
+	sufficient_permission, err := h.user_service.UserHasPermission(
+		user_id,
+		service.DbPermissionDataTypeCreate,
+	)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -262,7 +268,10 @@ func (h *DataHandler) DataSchemaCreate(c *echo.Context) error {
 		).Error("could not bind data")
 	}
 
-	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionDataSchemaCreate)
+	has_permission, err := h.user_service.UserHasPermission(
+		user_id,
+		service.DbPermissionDataSchemaCreate,
+	)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -380,7 +389,10 @@ type IngestionScriptCreateData struct {
 
 func (h *DataHandler) IngestionScriptCreate(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionIngestionScriptCreate)
+	has_permission, err := h.user_service.UserHasPermission(
+		user_id,
+		service.DbPermissionIngestionScriptCreate,
+	)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -930,7 +942,10 @@ func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 	}
 
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	has_permission, err := h.user_service.UserHasPermission(user_id, service.DbPermissionTransformCreate)
+	has_permission, err := h.user_service.UserHasPermission(
+		user_id,
+		service.DbPermissionTransformCreate,
+	)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -1295,11 +1310,19 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	has_permission := slices.Contains(user_data_permissions, service.DataUserPermissionOwner) ||
-		slices.Contains(user_data_permissions, service.DataUserPermissionRead)
+	has_permission := slices.Contains(
+		user_data_permissions,
+		service.DataUserPermissionOwner,
+	) || slices.Contains(
+		user_data_permissions,
+		service.DataUserPermissionRead,
+	)
 
 	if !has_permission {
-		has_read_all, err := h.user_service.UserHasPermission(user, service.DbPermissionDataReadAll)
+		has_read_all, err := h.user_service.UserHasPermission(
+			user,
+			service.DbPermissionDataReadAll,
+		)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
@@ -1432,4 +1455,131 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 		Users:            users,
 	}
 	return c.JSON(http.StatusOK, resources)
+}
+
+func (h *DataHandler) DataOrigins(c *echo.Context) error {
+	origins, err := h.data_service.DataOriginsAll()
+	if err != nil {
+		user_id := c.Get(UserIdKey).(uuid.UUID)
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not get data origins")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.JSON(http.StatusOK, origins)
+}
+
+func (h *DataHandler) DataOriginCreate(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	sufficient_permission, err := h.user_service.UserHasPermission(
+		user_id,
+		service.DbPermissionDataOriginCreate,
+	)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not validate user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !sufficient_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Error("insuffiecient permission to create data origin")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	var origin service.DataOriginCreate
+	err = c.Bind(&origin)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data origin", c.Request().Body,
+		).Error("invalid data origin")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	err = h.data_service.DataOriginCreate(origin)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data origin", origin,
+		).Error("could not create data origin")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+func (h *DataHandler) DataOriginGet(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	origin_id, err := uuid.Parse(c.QueryParam("id"))
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data origin id", c.Param("id"),
+		).Error("could not get data origin id")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	origins, err := h.data_service.DataOriginById(origin_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data origin", origin_id,
+		).Error("could not get data origin")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.JSON(http.StatusOK, origins)
+}
+
+func (h *DataHandler) DataOriginUpdate(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	sufficient_permission, err := h.user_service.UserHasPermission(
+		user_id,
+		service.DbPermissionDataOriginModify,
+	)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not validate user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !sufficient_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Error("insuffiecient permission to create data origin")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	var update service.DataOriginRx
+	err = c.Bind(&update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"update", update,
+		).Error("invalid data origin update")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	err = h.data_service.DataOriginUpdate(update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"update", update,
+		).Error("could not get data origin")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.NoContent(http.StatusOK)
 }

@@ -301,6 +301,10 @@ func register_routes(
 	api.POST("/data", data.DataCreate)
 	api.GET("/data", data.DataGet)
 	api.GET("/data/orphaned", data.OrphanedData)
+	api.GET("/data-origins", data.DataOrigins)
+	api.GET("/data-origin", data.DataOriginGet)
+	api.PUT("/data-origin", data.DataOriginUpdate)
+	api.POST("/data-origin", data.DataOriginCreate)
 
 	resource := e.Group("/resource")
 	resource.Use(api_middleware.SessionTokenFromJWT)

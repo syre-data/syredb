@@ -35,6 +35,8 @@ const (
 	DbPermissionProjectCreate         DbPermission = "project_create"
 	DbPermissionDataCreate            DbPermission = "data_create"
 	DbPermissionDataReadAll           DbPermission = "data_read_all"
+	DbPermissionDataOriginCreate      DbPermission = "data_origin_create"
+	DbPermissionDataOriginModify      DbPermission = "data_origin_modify"
 )
 
 type AccountStatus string

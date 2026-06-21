@@ -43,7 +43,9 @@ INSERT INTO _db_permission_ (_id, label, description) VALUES
     ('data_type_transform_modify', 'Modify data type transforms', 'Modify existing data type transforms'),
     ('project_create', 'Create project', 'Create new projects'),
     ('data_create', 'Create data', 'Create new data'),
-    ('data_read_all', 'Read all data', 'Read all data');
+    ('data_read_all', 'Read all data', 'Read all data'),
+    ('data_origin_create', 'Create data origins', 'Create data origins'),
+    ('data_origin_modify', 'Modify data origins', 'Modify data origins');
 
 CREATE TABLE IF NOT EXISTS db_user_permission_ (
     _user UUID REFERENCES user_(_id) NOT NULL,

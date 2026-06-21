@@ -20,6 +20,7 @@ import {
     FaArrowRight,
     FaX,
     FaUserGroup,
+    FaLocationPin,
 } from "react-icons/fa6";
 import { FcMultipleInputs } from "react-icons/fc";
 import { IoIosLogOut, IoMdHome, IoIosArrowRoundBack } from "react-icons/io";
@@ -51,6 +52,7 @@ export default {
     Home: IoMdHome,
     Ingest: FcMultipleInputs,
     LeftArrow: FaArrowLeft,
+    LocationPin: FaLocationPin,
     Logout: IoIosLogOut,
     Minus: AiOutlineMinus,
     Pen: MdEdit,

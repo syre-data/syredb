@@ -1942,6 +1942,71 @@ func (s *DataService) DataOriginsByIds(ids []uuid.UUID) ([]DataOriginRx, error) 
 	return origins, nil
 }
 
+func (s *DataService) DataOriginById(id uuid.UUID) (DataOriginRx, error) {
+	query :=
+		`SELECT _id, label, description, active FROM data_origin_
+		WHERE _id=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, query, id)
+	origin, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataOriginRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"ids", id,
+		).Error("could not get data origin")
+		return DataOriginRx{}, err
+	}
+	return origin, nil
+}
+
+func (s *DataService) DataOriginsAll() ([]DataOriginRx, error) {
+	query := "SELECT _id, label, description, active FROM data_origin_"
+	rows, _ := s.db.Conn.Query(s.ctx, query)
+	origins, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataOriginRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get data origins")
+		return nil, err
+	}
+	return origins, nil
+}
+
+type DataOriginCreate struct {
+	Label       string
+	Description string
+	Active      bool
+}
+
+func (s *DataService) DataOriginCreate(origin DataOriginCreate) error {
+	query :=
+		`INSERT INTO data_origin_ (label, description, active)
+		VALUES ($1, $2, $3)`
+	_, err := s.db.Conn.Exec(s.ctx, query, origin.Label, origin.Description, origin.Active)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"origin", origin,
+		).Error("could not create data origin")
+		return err
+	}
+	return nil
+}
+
+func (s *DataService) DataOriginUpdate(update DataOriginRx) error {
+	query :=
+		`UPDATE data_origin_ SET label=$2, description=$3, active=$4 
+		WHERE _id=$1`
+	_, err := s.db.Conn.Exec(s.ctx, query, update.Id, update.Label, update.Description, update.Active)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"update", update,
+		).Error("could not get update data origin")
+		return err
+	}
+	return nil
+}
+
 // DataValues represents the actual data stored.
 // Values is []SchemaFieldValues if Storage is `internal`.
 // Values is a []DataSource if Storage is `external`.

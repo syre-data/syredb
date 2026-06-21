@@ -63,10 +63,6 @@ class Data:
 
         client.insert(data)
         ```
-
-        ```py
-
-        ```
     """
 
     def __init__(
@@ -76,12 +72,10 @@ class Data:
         origin: uuid.UUID | str,
         visiblility: Visibility = Visibility.Private,
         timestamp: dt.datetime = dt.datetime.now(tz=dt.timezone.utc),
-        notes: list[tuple[dt.datetime, str]] = [],
     ):
         self.origin = origin
         self.visibility = visiblility
         self.timestamp = timestamp
-        self.notes = notes
 
         dtype = client._data_type(data_type)
         self.__data_type_id = dtype["id"]
@@ -98,6 +92,7 @@ class Data:
         self._values: dict[str, Any] = {}
         self._properties: dict[str, Any] = {}
         self._tags: set[str] = set()
+        self._notes: list[tuple[dt.datetime, str]] = []
 
     def set_property(self, key: str, value: Any, dtype: Optional[PropertyType] = None):
         """Set a property value of the data.
@@ -142,6 +137,18 @@ class Data:
             tags (Iterable[str]): Tags to add.
         """
         self._tags.update(tags)
+
+    def add_note(
+        self, content: str, timestamp: dt.datetime = dt.datetime.now(tz=dt.timezone.utc)
+    ):
+        """Add a note to the data.
+
+        Args:
+            content (str): Note content.
+            timestamp (dt.datetime): Timestamp assosciated with the note.
+            Defaults to dt.datetime.now(tz=dt.timezone.utc).
+        """
+        self._notes.append((timestamp, content))
 
     # TODO: Allow pandas and polars dataframes.
     def set_values(self, values: dict[str, Any]):
@@ -192,7 +199,8 @@ class Data:
     def set_data_source(self, key: str, source: Any):
         if self.__sources is None:
             raise NotImplementedError(
-                "set_data_source can not be called on data types with internal storage, use set_values"
+                "set_data_source can not be called on data types with internal storage, "
+                + "use set_values"
             )
 
         raise NotImplementedError("TODO")
@@ -204,7 +212,7 @@ class Data:
         ]
         notes = [
             {"timestamp": timestamp.isoformat(), "content": content}
-            for (timestamp, content) in self.notes
+            for (timestamp, content) in self._notes
         ]
         data = {
             "id": self.__data_type_id,

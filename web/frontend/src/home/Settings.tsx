@@ -60,6 +60,13 @@ function Nav() {
                     </Link>
                 </div>
                 <div>
+                    <Link to="/data-origins" title="Data origins">
+                        <button type="button" className="btn-cmd">
+                            <icon.LocationPin />
+                        </button>
+                    </Link>
+                </div>
+                <div>
                     <Link to="/ingestion-scripts" title="Ingestion scripts">
                         <button type="button" className="btn-cmd">
                             <icon.Ingest />

@@ -19,6 +19,8 @@ export const QUERY_KEY_PROJECT_SAMPLE_RESOURCES = "project_sample_resources";
 export const QUERY_KEY_PROJECT = "project";
 export const QUERY_KEY_ORPHANED_DATA = "orphaned_data";
 export const QUERY_KEY_DATA = "data";
+export const QUERY_KEY_DATA_ORIGINS = "data_origins";
+export const QUERY_KEY_DATA_ORIGIN = "data_origin";
 
 export interface BackendError {
     message: string;
