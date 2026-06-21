@@ -8,7 +8,6 @@ import type {
     DataRx,
     DataType,
     Note,
-    ProjectResources,
     Property,
     User,
 } from "@/types";
@@ -193,6 +192,21 @@ function Notes({ notes }: NotesProps) {
         </div>
     );
 }
+
+// TODO: Show data tree.
+// interface FamilyTreeProps {
+//     tree: any
+// }
+// function FamilyTree({tree}: FamilyTreeProps) {
+//     return <div>
+//         <div>
+//             <h2>Family tree</h2>
+//         </div>
+//         <ul>
+
+//         </ul>
+//     </div>
+// }
 
 interface AddProjectProps {
     data_id: UUIDTypes;

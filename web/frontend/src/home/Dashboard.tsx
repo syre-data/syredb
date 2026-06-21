@@ -186,6 +186,7 @@ function OrphanedDataContent() {
                 data={data.Data}
                 origins={data.Origins}
                 dataTypes={data.DataTypes}
+                children={data.Children}
             />
         </div>
     ) : null;
@@ -195,8 +196,14 @@ interface OrphanedDataListProps {
     data: types.DataWithOrigin[];
     origins: types.DataOriginRx[];
     dataTypes: types.DataType[];
+    children: { [key: string]: types.DataRx[] };
 }
-function OrphanedDataList({ data, origins, dataTypes }: OrphanedDataListProps) {
+function OrphanedDataList({
+    data,
+    origins,
+    dataTypes,
+    children,
+}: OrphanedDataListProps) {
     return (
         <table className="text-left [&_td]:px-2 [&_td]:py-0.5">
             <thead className="[&_th]:px-2 [&_th]:py-0.5">
@@ -208,14 +215,17 @@ function OrphanedDataList({ data, origins, dataTypes }: OrphanedDataListProps) {
             </thead>
             <tbody>
                 {data.map((data) => {
+                    const data_id = common.uuidToString(data.Data.Id);
                     const origin = origins.find((o) => o.Id === data.Origin)!;
                     const type = dataTypes.find((t) => data.Data.Type == t.Id)!;
+                    const d_children = children[data_id] ?? [];
                     return (
                         <OrphanedDataItem
-                            key={data.Data.Id.toString()}
+                            key={data_id}
                             data={data.Data}
                             origin={origin}
                             dataType={type}
+                            children={d_children}
                         />
                     );
                 })}
@@ -228,13 +238,22 @@ interface OrphanedDataItemProps {
     data: types.DataRx;
     origin: types.DataOriginRx;
     dataType: types.DataType;
+    children: types.DataRx[];
 }
-function OrphanedDataItem({ data, origin, dataType }: OrphanedDataItemProps) {
+function OrphanedDataItem({
+    data,
+    origin,
+    dataType,
+    children,
+}: OrphanedDataItemProps) {
     return (
         <tr className="group">
             <td>{dataType.Label}</td>
             <td>{origin.Label}</td>
             <td>{data.Timestamp}</td>
+            <td className="text-gray-600 dark:text-gray-400">
+                ({children.length} children)
+            </td>
             <td>
                 <div className="invisible group-hover:visible">
                     <Link to={`/data/${data.Id}`}>

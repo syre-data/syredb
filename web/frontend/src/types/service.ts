@@ -369,6 +369,7 @@ export interface OrphanedDataResources {
   Data: DataWithOrigin[];
   Origins: DataOriginRx[];
   DataTypes: DataType[];
+  Children: { [key: uuid.UUIDTypes]: DataRx[]};
 }
 export interface DataProjectResources {
   Project: Project;

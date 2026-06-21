@@ -2177,6 +2177,81 @@ func (s *DataService) DataChildren(parent uuid.UUID) ([]uuid.UUID, error) {
 	return children, nil
 }
 
+func (s *DataService) DataChildrenMany(parents []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	type relation struct {
+		Parent uuid.UUID `db:"_parent"`
+		Child  uuid.UUID `db:"_child"`
+	}
+
+	query := "SELECT _parent, _child FROM data_relation_ WHERE _parent=ANY($1)"
+	rows, _ := s.db.Conn.Query(s.ctx, query, parents)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[relation])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", parents,
+		).Error("could not get data relations")
+		return nil, err
+	}
+
+	children := make(map[uuid.UUID][]uuid.UUID, len(parents))
+	for _, rx := range rxs {
+		_, exists := children[rx.Parent]
+		if !exists {
+			children[rx.Parent] = []uuid.UUID{rx.Child}
+		} else {
+			children[rx.Parent] = append(children[rx.Parent], rx.Child)
+		}
+	}
+
+	return children, nil
+}
+
+func (s *DataService) DataChildrenRxMap(data []uuid.UUID) (map[uuid.UUID][]DataRx, error) {
+	type record struct {
+		Parent      uuid.UUID       `db:"r._parent"`
+		Id          uuid.UUID       `db:"d._id"`
+		Type        uuid.UUID       `db:"d._type"`
+		CreatorType DataCreatorType `db:"d._creator_type"`
+		Timestamp   time.Time       `db:"d.timestamp"`
+		Visibility  Visibility      `db:"d.visibility"`
+	}
+
+	query :=
+		`SELECT d._id, d._type, d._creator_type, d.timestamp, d.visibility
+		FROM data_ d JOIN data_relation_ r ON d._id=r._child
+		WHERE r._parent=ANY($1)`
+	rows, _ := s.db.Conn.Query(s.ctx, query, data)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[record])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get data children")
+		return nil, err
+	}
+
+	children := make(map[uuid.UUID][]DataRx, len(data))
+	for _, rx := range rxs {
+		child := DataRx{
+			Id:          rx.Id,
+			Type:        rx.Type,
+			CreatorType: rx.CreatorType,
+			Timestamp:   rx.Timestamp,
+			Visibility:  rx.Visibility,
+		}
+
+		_, exists := children[rx.Parent]
+		if !exists {
+			children[rx.Parent] = []DataRx{child}
+		} else {
+			children[rx.Parent] = append(children[rx.Parent], child)
+		}
+	}
+
+	return children, nil
+}
+
 // DataSource is an externally stored data source.
 // `Sources` is a single path if `Cardinality` is `single`.
 // `Sources` is an array of paths if `Cardinality` is `multiple`.
@@ -3950,6 +4025,7 @@ type OrphanedDataResources struct {
 	Data      []DataWithOrigin
 	Origins   []DataOriginRx
 	DataTypes []DataType
+	Children  map[uuid.UUID][]DataRx
 }
 
 func (s *DataService) OrphanedData(user uuid.UUID) (OrphanedDataResources, error) {
@@ -4018,6 +4094,7 @@ func (s *DataService) OrphanedData(user uuid.UUID) (OrphanedDataResources, error
 	}
 
 	data := make([]DataWithOrigin, len(rxs))
+	data_ids := make([]uuid.UUID, len(rxs))
 	for idx, r := range rxs {
 		data[idx] = DataWithOrigin{
 			Data: DataRx{
@@ -4029,12 +4106,24 @@ func (s *DataService) OrphanedData(user uuid.UUID) (OrphanedDataResources, error
 			},
 			Origin: r.Origin,
 		}
+
+		data_ids[idx] = r.Id
+	}
+
+	children, err := s.DataChildrenRxMap(data_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data_ids,
+		).Error("could not get data children")
+		return OrphanedDataResources{}, err
 	}
 
 	return OrphanedDataResources{
 		Data:      data,
 		Origins:   origins,
 		DataTypes: data_types,
+		Children:  children,
 	}, nil
 }
 
