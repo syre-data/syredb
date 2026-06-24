@@ -378,6 +378,58 @@ func (h *DataHandler) IngestionScriptsGet(c *echo.Context) error {
 	}
 }
 
+type IngestionScriptResources struct {
+	Script    service.IngestionScript
+	DataType  service.DataType
+	CmdScript string
+}
+
+func (h *DataHandler) IngestionScriptResources(c *echo.Context) error {
+	id, err := uuid.Parse(c.QueryParam("id"))
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not parse id")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	script, err := h.data_service.IngestionScriptGet(id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"script", id,
+		).Error("could not get ingestion script")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	data_type, err := h.data_service.DataTypeById(script.Type)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"script", id,
+			"type", script.Type,
+		).Error("could not get data type")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	cmd_script, err := os.ReadFile(script.Cmd.Path)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"script", id,
+			"path", script.Cmd.Path,
+		).Error("could not read cmd script file")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	resources := IngestionScriptResources{
+		Script:    script,
+		DataType:  data_type,
+		CmdScript: string(cmd_script),
+	}
+	return c.JSON(http.StatusOK, resources)
+}
+
 type IngestionScriptCreateData struct {
 	Type        uuid.UUID
 	Label       string
@@ -462,12 +514,61 @@ func ingestion_script_command_from_file_ext(ext string) (string, error) {
 	}
 }
 
+func (h *DataHandler) IngestionScriptDownload(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	script_id, err := uuid.Parse(c.QueryParam("id"))
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"id", c.QueryParam("id"),
+		).Warn("could not parse id")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	script, err := h.data_service.IngestionScriptGet(script_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"script", script_id,
+		).Warn("could not get ingestion script")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	buf, err := os.ReadFile(script.Cmd.Path)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"script", script.Id,
+			"path", script.Cmd.Path,
+		).Warn("could not read ingestion script file")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	filename := fmt.Sprintf(
+		"%s.%s",
+		script.Label,
+		"py", // TODO: If allow other languages, adapt extension
+	)
+	c.Response().Header().Set(
+		echo.HeaderContentDisposition,
+		fmt.Sprintf(`attachment; filename="%s"`, filename),
+	)
+	return c.Blob(
+		http.StatusOK,
+		"application/octet-stream",
+		buf,
+	)
+}
+
 func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	data_id, err := uuid.Parse(c.QueryParam("id"))
 	if err != nil {
 		c.Logger().With(
 			"error", err,
+			"user", user_id,
 			"id", c.QueryParam("id"),
 		).Warn("could not parse id")
 		return c.NoContent(http.StatusBadRequest)

@@ -298,10 +298,22 @@ function ingestionScriptsForDataType(
     data_type: uuid.UUIDTypes,
 ): Promise<types.IngestionScript[]> {
     const params = new URLSearchParams();
-    params.set("data_type", data_type.toString());
+    params.set("data_type", uuidToString(data_type));
     return fetch(`/api/ingestion-scripts?${params}`, {
         credentials: "same-origin",
     }).then(async (resp) => (await resp.json()) as types.IngestionScript[]);
+}
+
+function ingestionScriptResources(
+    id: uuid.UUIDTypes,
+): Promise<types.IngestionScriptResources> {
+    const params = new URLSearchParams();
+    params.set("id", uuidToString(id));
+    return fetch(`/api/ingestion-script/resources?${params}`, {
+        credentials: "same-origin",
+    }).then(
+        async (resp) => (await resp.json()) as types.IngestionScriptResources,
+    );
 }
 
 function projectDataCreate(
@@ -393,6 +405,7 @@ export default {
     parseDataFileToSchema,
     dataTypeTransformCreate,
     dataTypeTransformsGetAll,
+    ingestionScriptResources,
     ingestionScriptsGetAll,
     ingestionScriptCreate,
     ingestionScriptsForDataType,

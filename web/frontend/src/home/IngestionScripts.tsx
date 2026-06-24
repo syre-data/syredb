@@ -2,6 +2,7 @@ import { Context } from "@/AppStateContext";
 import {
     hasDbPermission,
     MouseButton,
+    QUERY_KEY_DATA_TYPES,
     QUERY_KEY_INGESTION_SCRIPTS,
 } from "@/common";
 import { Loading, SuspenseError } from "@/components";
@@ -9,6 +10,7 @@ import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import {
     DbPermissionIngestionScriptCreate,
+    type DataType,
     type IngestionScript,
 } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -42,6 +44,11 @@ function IngestionScripts() {
         queryKey: [QUERY_KEY_INGESTION_SCRIPTS],
         queryFn: dataService.ingestionScriptsGetAll,
     });
+    const { data: types } = useSuspenseQuery({
+        queryKey: [QUERY_KEY_DATA_TYPES],
+        queryFn: dataService.dataTypesGetAll,
+    });
+
     const navigate = useNavigate();
 
     const ctx = useContext(Context);
@@ -88,7 +95,7 @@ function IngestionScripts() {
             {scripts.length === 0 ? (
                 <IngestionScriptsEmpty />
             ) : (
-                <IngestionScriptsList scripts={scripts} />
+                <IngestionScriptsList scripts={scripts} types={types} />
             )}
         </div>
     );
@@ -108,22 +115,50 @@ function IngestionScriptsEmpty() {
 
 interface IngestionScriptsListProps {
     scripts: IngestionScript[];
+    types: DataType[];
 }
-function IngestionScriptsList({ scripts }: IngestionScriptsListProps) {
+function IngestionScriptsList({ scripts, types }: IngestionScriptsListProps) {
     return (
-        <ul className="px-4">
-            {scripts.map((script) => (
-                <li key={script.Id.toString()}>
-                    <IngestionScriptItem script={script} />
-                </li>
-            ))}
-        </ul>
+        <div className="px-4">
+            <table>
+                <tbody>
+                    {scripts.map((script) => {
+                        const type = types.find(
+                            (type) => type.Id === script.Type,
+                        )!;
+
+                        return (
+                            <IngestionScriptItem
+                                key={script.Id.toString()}
+                                script={script}
+                                type={type}
+                            />
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
     );
 }
 
 interface IngestionScriptItemProps {
     script: IngestionScript;
+    type: DataType;
 }
-function IngestionScriptItem({ script }: IngestionScriptItemProps) {
-    return <div>{script.Label}</div>;
+function IngestionScriptItem({ script, type }: IngestionScriptItemProps) {
+    return (
+        <tr className="group">
+            <td className="pr-2">{script.Label}</td>
+            <td className="pr-2">{type.Label}</td>
+            <td className="pr-2">
+                <div className="invisible group-hover:visible">
+                    <Link to={`/ingestion-script/${script.Id}`}>
+                        <button type="button" className="btn-cmd">
+                            <Icon.Eye />
+                        </button>
+                    </Link>
+                </div>
+            </td>
+        </tr>
+    );
 }

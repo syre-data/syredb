@@ -2209,16 +2209,22 @@ func (s *DataService) DataChildrenMany(parents []uuid.UUID) (map[uuid.UUID][]uui
 
 func (s *DataService) DataChildrenRxMap(data []uuid.UUID) (map[uuid.UUID][]DataRx, error) {
 	type record struct {
-		Parent      uuid.UUID       `db:"r._parent"`
-		Id          uuid.UUID       `db:"d._id"`
-		Type        uuid.UUID       `db:"d._type"`
-		CreatorType DataCreatorType `db:"d._creator_type"`
-		Timestamp   time.Time       `db:"d.timestamp"`
-		Visibility  Visibility      `db:"d.visibility"`
+		Parent      uuid.UUID       `db:"parent"`
+		Id          uuid.UUID       `db:"id"`
+		Type        uuid.UUID       `db:"type"`
+		CreatorType DataCreatorType `db:"creator_type"`
+		Timestamp   time.Time       `db:"timestamp"`
+		Visibility  Visibility      `db:"visibility"`
 	}
 
 	query :=
-		`SELECT d._id, d._type, d._creator_type, d.timestamp, d.visibility
+		`SELECT 
+			r._parent AS parent,
+			d._id AS id, 
+			d._type AS type, 
+			d._creator_type AS creator_type, 
+			d.timestamp AS timestamp, 
+			d.visibility AS visibility
 		FROM data_ d JOIN data_relation_ r ON d._id=r._child
 		WHERE r._parent=ANY($1)`
 	rows, _ := s.db.Conn.Query(s.ctx, query, data)

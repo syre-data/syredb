@@ -104,12 +104,8 @@ function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
                         </Link>
                     </div>
                     <div className="invisible group-hover:visible">
-                        <a href={download}>
-                            <button
-                                type="button"
-                                className="btn-cmd"
-                                title="Download all data"
-                            >
+                        <a href={download} title="Download all data">
+                            <button type="button" className="btn-cmd">
                                 <Icon.Download />
                             </button>
                         </a>
@@ -343,12 +339,8 @@ function ProjectDataItem({
                         </button>
                     </div>
                     <div>
-                        <a href={download}>
-                            <button
-                                type="button"
-                                className="btn-cmd"
-                                title="Download"
-                            >
+                        <a href={download} title="Download">
+                            <button type="button" className="btn-cmd">
                                 <Icon.Download />
                             </button>
                         </a>

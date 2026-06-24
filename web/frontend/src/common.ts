@@ -12,6 +12,7 @@ export const QUERY_KEY_DATA_TYPE = "data_type";
 export const QUERY_KEY_INGESTION_SCRIPTS = "ingestion_scripts";
 export const QUERY_KEY_INGESTION_SCRIPTS_FOR_DATA_TYPE =
     "ingestion_scripts_for_data_type";
+export const QUERY_KEY_INGESTION_SCRIPT = "ingestion_script";
 export const QUERY_KEY_DATA_TYPE_TRANSFORMS = "data_type_transforms";
 export const QUERY_KEY_USER_PROJECTS = "user_projects";
 export const QUERY_KEY_PROJECT_RESOURCES = "project_resources";

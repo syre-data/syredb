@@ -27,6 +27,7 @@ import Data from "./Data";
 import DataOrigins from "./DataOrigins";
 import DataOriginEdit from "./DataOriginEdit";
 import DataOriginCreate from "./DataOriginCreate";
+import IngestionScript from "./IngestionScript";
 
 export default function Home() {
     return (
@@ -75,6 +76,10 @@ export default function Home() {
                 <Route
                     path="/ingestion-script/create"
                     element={<IngestionScriptCreate />}
+                />
+                <Route
+                    path="/ingestion-script/:id"
+                    element={<IngestionScript />}
                 />
                 <Route
                     path="/data-type-transforms"
