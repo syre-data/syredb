@@ -1273,7 +1273,7 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 	if err != nil {
 		c.Logger().With(
 			"error", err,
-		).Error("could not get data ingestion script")
+		).Error("could not validate ingestion script")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 

@@ -5,8 +5,11 @@ import pandas as pd
 # Get ingestion sources
 sources = ingest.get_sources()
 
+# Access data source
+data_source = sources["data"]
+
 # Process sources
-df = pd.read_csv(sources["data"])
+df = pd.read_csv(data_source.source.path)
 
 # Create data
 data = ingest.Data()

@@ -2258,17 +2258,20 @@ func (s *DataService) DataChildrenRxMap(data []uuid.UUID) (map[uuid.UUID][]DataR
 	return children, nil
 }
 
+type SourceFileInfo struct {
+	Path     string
+	Filename string
+}
+
 // DataSource is an externally stored data source.
-// `Sources` is a single path if `Cardinality` is `single`.
-// `Sources` is an array of paths if `Cardinality` is `multiple`.
+// `Sources` is a single `SourceFileInfo` if `Cardinality` is `single`.
+// `Sources` is an array of `SourceFileInfo`s  if `Cardinality` is `multiple`.
 type DataSource struct {
 	Label       string
 	Cardinality DataSourceCardinality
 	Source      any
 }
 
-// get_sample_data_stored_by_id_storage_external_data gets the file path of a sample data
-// with file storage
 func (s *DataService) dataValuesByIdExternalSource(
 	data uuid.UUID,
 ) ([]DataSource, error) {
@@ -2276,11 +2279,16 @@ func (s *DataService) dataValuesByIdExternalSource(
 		Cardinality DataSourceCardinality `db:"cardinality"`
 		Label       string                `db:"label"`
 		Path        string                `db:"path"`
+		Filename    string                `db:"filename"`
 	}
 
 	query :=
-		`SELECT s._path as path, t._cardinality as cardinality, t._label as label
-		FROM data_source s JOIN data_type_external_source_ t
+		`SELECT 
+			s._path as path, 
+			s.label as filename,
+			t._cardinality as cardinality, 
+			t.label as label
+		FROM data_source s JOIN data_type_source_ t
 		WHERE s._data=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, query, data)
 	info, err := pgx.CollectRows(rows, pgx.RowToStructByName[sourceInfo])
@@ -2292,30 +2300,34 @@ func (s *DataService) dataValuesByIdExternalSource(
 		return nil, err
 	}
 
-	single_sources := make(map[string]string)
-	multisources := make(map[string][]string)
+	single_sources := make(map[string]SourceFileInfo)
+	multi_sources := make(map[string][]SourceFileInfo)
 	for _, i := range info {
+		src := SourceFileInfo{
+			Path:     i.Path,
+			Filename: i.Filename,
+		}
 		if i.Cardinality == DataSourceCardinalitySingle {
-			single_sources[i.Label] = i.Path
+			single_sources[i.Label] = src
 		} else {
-			srcs := multisources[i.Label]
-			multisources[i.Label] = append(srcs, i.Path)
+			srcs := multi_sources[i.Label]
+			multi_sources[i.Label] = append(srcs, src)
 		}
 	}
 
-	sources := make([]DataSource, 0, len(single_sources)+len(multisources))
-	for key, path := range single_sources {
+	sources := make([]DataSource, 0, len(single_sources)+len(multi_sources))
+	for key, src := range single_sources {
 		sources = append(sources, DataSource{
 			Label:       key,
 			Cardinality: DataSourceCardinalitySingle,
-			Source:      path,
+			Source:      src,
 		})
 	}
-	for key, paths := range multisources {
+	for key, srcs := range multi_sources {
 		sources = append(sources, DataSource{
 			Label:       key,
 			Cardinality: DataSourceCardinalityMultiple,
-			Source:      paths,
+			Source:      srcs,
 		})
 	}
 

@@ -189,6 +189,36 @@ CREATE TABLE IF NOT EXISTS ingestion_script_source_ (
     UNIQUE (_script, _label)
 );
 
+CREATE TABLE IF NOT EXISTS data_ingestion_script_source_ (
+    _data UUID REFERENCES data_(_id) NOT NULL,
+    _source UUID REFERENCES ingestion_script_source_(_id) NOT NULL,
+    _path VARCHAR(2048) PRIMARY KEY,
+    _filename VARCHAR(256) NOT NULL
+);
+
+CREATE TYPE ingestion_script_job_status AS ENUM (
+    'pending',
+    'running',
+    'completed',
+    'failed'
+);
+
+CREATE TABLE IF NOT EXISTS _ingestion_script_queue_ (
+    _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _script UUID REFERENCES ingestion_script_(_id) NOT NULL,
+    status ingestion_script_job_status DEFAULT 'pending' NOT NULL,
+    started TIMESTAMP WITH TIME ZONE,
+    finished TIMESTAMP WITH TIME ZONE,
+    error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS _ingestion_script_queue_source_ (
+    _job UUID REFERENCES _ingestion_script_queue_(_id) NOT NULL,
+    _source UUID REFERENCES ingestion_script_source_(_id) NOT NULL,
+    _path VARCHAR(2048) PRIMARY KEY,
+    _filename VARCHAR(256) NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS data_type_transform_cmd_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _creator UUID REFERENCES user_(_id) NOT NULL,
@@ -289,17 +319,10 @@ DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION enforce_data_has_owner();
 
-CREATE TABLE IF NOT EXISTS data_ingestion_script_source_ (
-    _data UUID REFERENCES data_(_id) NOT NULL,
-    _source UUID REFERENCES ingestion_script_source_(_id) NOT NULL,
-    _path VARCHAR(2048) PRIMARY KEY,
-    _filename VARCHAR(256) NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS data_source_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _data UUID REFERENCES data_(_id) NOT NULL,
-    _source UUID REFERENCES data_type_external_source_(_id) NOT NULL,
+    _source UUID REFERENCES data_type_source_(_id) NOT NULL,
     _path VARCHAR(2048) NOT NULL UNIQUE,
     label VARCHAR(256) -- filename
 );

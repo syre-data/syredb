@@ -29,14 +29,14 @@ import (
 
 const pollInteraval = 1500 * time.Millisecond
 
-func NewTransformDaemon(
+func NewScriptDaemon(
 	ctx context.Context,
 	logger *slog.Logger,
 	db *database.DBConnection,
 	app_service *service.AppService,
 	data_service *service.DataService,
-) *TransformDaemon {
-	return &TransformDaemon{
+) *ScriptDaemon {
+	return &ScriptDaemon{
 		ctx:          ctx,
 		logger:       logger,
 		db:           db,
@@ -45,7 +45,7 @@ func NewTransformDaemon(
 	}
 }
 
-type TransformDaemon struct {
+type ScriptDaemon struct {
 	ctx          context.Context
 	logger       *slog.Logger
 	db           *database.DBConnection
@@ -53,48 +53,564 @@ type TransformDaemon struct {
 	data_service *service.DataService
 }
 
-func (d *TransformDaemon) Start(ctx context.Context) error {
+func (d *ScriptDaemon) Start(ctx context.Context) error {
 	last_poll := time.Now()
 	for {
 		sleep := pollInteraval - time.Since(last_poll)
 		time.Sleep(sleep)
 		last_poll = time.Now()
 
-		jobs, err := d.pollPending()
+		d.processIngestionJobs()
+		d.processTransformJobs()
+	}
+}
+
+func (d *ScriptDaemon) processIngestionJobs() {
+	jobs, err := d.pollPendingIngestions()
+	if err != nil {
+		d.logger.With(
+			"error", err,
+		).Error("could not poll pending ingestion jobs")
+		return
+	}
+
+	script_ids := make([]uuid.UUID, 0, len(jobs))
+	for _, job := range jobs {
+		if !slices.Contains(script_ids, job.Script) {
+			script_ids = append(script_ids, job.Script)
+		}
+	}
+	script_info, err := d.ingestionScriptsByIds(script_ids)
+	if err != nil {
+		return
+	}
+
+	for _, job := range jobs {
+		script_idx := slices.IndexFunc(script_info, func(info ingestionInfo) bool {
+			return info.Id == job.Script
+		})
+		if script_idx < 0 {
+			d.logger.With("script", job.Script).Error("invalid script")
+			panic("invalid script")
+		}
+		script := script_info[script_idx]
+
+		go d.runIngestionScript(
+			job.Id,
+			script,
+			job.Sources,
+		)
+	}
+}
+
+type ingestionJobStatus string
+
+const (
+	ingestionJobStatusPending   transformJobStatus = "pending"
+	ingestionJobStatusRunning   transformJobStatus = "running"
+	ingestionJobStatusCompleted transformJobStatus = "completed"
+	ingestionJobStatusFailed    transformJobStatus = "failed"
+)
+
+type dataSource struct {
+	Cardinality service.DataSourceCardinality
+	Single      service.SourceFileInfo
+	Multiple    []service.SourceFileInfo
+}
+
+type ingestionJobRx struct {
+	Id      uuid.UUID
+	Script  uuid.UUID
+	Sources map[string]dataSource
+}
+
+func (d *ScriptDaemon) pollPendingIngestions() ([]ingestionJobRx, error) {
+	type jobRx struct {
+		Id     uuid.UUID `db:"_id"`
+		Script uuid.UUID `db:"_script"`
+	}
+
+	query := fmt.Sprintf(
+		"SELECT _id, _script FROM _ingestion_script_queue_ WHERE status='%s'",
+		ingestionJobStatusPending,
+	)
+	rows, _ := d.db.Conn.Query(d.ctx, query)
+	job_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[ingestionJobRx])
+	if err != nil {
+		d.logger.With(
+			"error", err,
+		).Error("could not poll ingestion script queue")
+		return nil, err
+	}
+
+	job_ids := make([]uuid.UUID, len(job_rxs))
+	for idx, job := range job_rxs {
+		job_ids[idx] = job.Id
+	}
+	job_sources, err := d.ingestionJobSources(job_ids)
+	if err != nil {
+		return nil, err
+	}
+
+	jobs := make([]ingestionJobRx, len(job_rxs))
+	for idx, job_rx := range job_rxs {
+		var sources map[string]dataSource
+		srcs := job_sources[job_rx.Id]
+		for _, src := range srcs {
+			file_info := service.SourceFileInfo{
+				Path:     src.Path,
+				Filename: src.Filename,
+			}
+			s, exists := sources[src.Label]
+			switch src.Cardinality {
+			case service.DataSourceCardinalitySingle:
+				if exists {
+					panic("single cardinality source has multiple")
+				}
+				sources[src.Label] = dataSource{
+					Cardinality: service.DataSourceCardinalitySingle,
+					Single:      file_info,
+				}
+			case service.DataSourceCardinalityMultiple:
+				if exists {
+					s.Multiple = append(s.Multiple, file_info)
+				} else {
+					sources[src.Label] = dataSource{
+						Cardinality: service.DataSourceCardinalityMultiple,
+						Multiple:    []service.SourceFileInfo{file_info},
+					}
+				}
+			default:
+				panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", src.Cardinality))
+			}
+		}
+
+		jobs[idx] = ingestionJobRx{
+			Id:      job_rx.Id,
+			Script:  job_rx.Script,
+			Sources: sources,
+		}
+	}
+
+	return jobs, nil
+}
+
+type ingestionJobSourceRx struct {
+	Job         uuid.UUID                     `db:"job"`
+	Source      uuid.UUID                     `db:"source"`
+	Label       string                        `db:"label"`
+	Path        string                        `db:"path"`
+	Filename    string                        `db:"filename"`
+	Cardinality service.DataSourceCardinality `db:"cardinality"`
+}
+
+// ingestionJobSources returns the sources associated to the given jobs.
+// Map keys are the job ids.
+func (d *ScriptDaemon) ingestionJobSources(job_ids []uuid.UUID) (map[uuid.UUID][]ingestionJobSourceRx, error) {
+	query :=
+		`SELECT 
+			q._job as job, 
+			q._source as source, 
+			q._path as path, 
+			q._filename as filename,
+			s._cardinality as cardinality,
+			s._label as label
+		FROM _ingestion_script_queue_source_ q JOIN ingestion_script_source_ s 
+			ON q._source=s._id
+		WHERE _job=ANY($1)`
+	rows, _ := d.db.Conn.Query(d.ctx, query, job_ids)
+	sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[ingestionJobSourceRx])
+	if err != nil {
+		d.logger.With(
+			"error", err,
+		).Error("could not get ingestion script sources")
+		return nil, err
+	}
+
+	job_sources := make(map[uuid.UUID][]ingestionJobSourceRx)
+	for _, rx := range sources {
+		s, exists := job_sources[rx.Job]
+		if exists {
+			job_sources[rx.Job] = append(s, rx)
+		} else {
+			job_sources[rx.Job] = []ingestionJobSourceRx{rx}
+		}
+	}
+
+	return job_sources, nil
+}
+
+type ingestionCmd struct {
+	Path string   `db:"_path"`
+	Cmd  string   `db:"_cmd"`
+	Args []string `db:"_args"`
+}
+
+type ingestionInfo struct {
+	Id       uuid.UUID
+	DataType service.DataType
+	Cmd      ingestionCmd
+}
+
+func (d *ScriptDaemon) ingestionScriptsByIds(ids []uuid.UUID) ([]ingestionInfo, error) {
+	type scriptRx struct {
+		Id       uuid.UUID `db:"id"`
+		DataType uuid.UUID `db:"dtype"`
+		Path     string    `db:"path"`
+		Cmd      string    `db:"cmd"`
+		Args     []string  `db:"args"`
+	}
+
+	query :=
+		`SELECT 
+			s._id as id, 
+			s._type as dtype, 
+			c._path as path,
+			c._cmd as cmd,
+			c._args as args  
+		FROM ingestion_script_ s JOIN ingestion_script_cmd_ c
+			ON s.cmd=c._id
+		WHERE s._id=ANY($1)`
+	rows, _ := d.db.Conn.Query(d.ctx, query, ids)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[scriptRx])
+	if err != nil {
+		d.logger.With(
+			"error", err,
+			"scripts", ids,
+		).Error("could not get ingestion scripts")
+		return nil, err
+	}
+
+	dtype_ids := make([]uuid.UUID, 0, len(rxs))
+	for _, rx := range rxs {
+		if !slices.Contains(dtype_ids, rx.DataType) {
+			dtype_ids = append(dtype_ids, rx.DataType)
+		}
+	}
+
+	data_types, err := d.data_service.DataTypesById(dtype_ids)
+	if err != nil {
+		d.logger.With(
+			"error", err,
+			"data types", dtype_ids,
+		).Error("could not get data types")
+		return nil, err
+	}
+
+	info := make([]ingestionInfo, len(ids))
+	for idx, rx := range rxs {
+		idx_type := slices.IndexFunc(data_types, func(dtype service.DataType) bool {
+			switch dtype.DataStorage() {
+			case service.DataStorageExternal:
+				text := dtype.(service.DataTypeExternal)
+				return text.Id == rx.DataType
+			case service.DataStorageInternal:
+				tint := dtype.(service.DataTypeInternal)
+				return tint.Id == rx.DataType
+			default:
+				panic("unexpected service.DataStorage")
+			}
+		})
+		if idx_type < 0 {
+			panic("could not find data type")
+		}
+
+		info[idx] = ingestionInfo{
+			Id:       rx.Id,
+			DataType: data_types[idx_type],
+			Cmd: ingestionCmd{
+				Path: rx.Cmd,
+				Cmd:  rx.Path,
+				Args: rx.Args,
+			},
+		}
+
+	}
+
+	return info, nil
+}
+
+func (d *ScriptDaemon) runIngestionScript(
+	job uuid.UUID,
+	script ingestionInfo,
+	sources map[string]dataSource,
+) {
+	start_query := fmt.Sprintf(
+		"UPDATE _ingestion_script_queue_ SET status='%s', started=$1 WHERE _id=$2",
+		ingestionJobStatusRunning,
+	)
+	_, err := d.db.Conn.Exec(
+		d.ctx,
+		start_query,
+		time.Now().Format(time.RFC3339),
+		job,
+	)
+	if err != nil {
+		d.logger.With(
+			"error", err,
+			"job", job,
+		).Error("could not update job on start")
+		return
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		d.logger.With(
+			"error", err,
+			"job", job,
+		).Error("could not open listening port")
+		return
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	go d.ingestionListener(listener, job, script.DataType, sources)
+
+	cmd := exec.Command(
+		script.Cmd.Cmd,
+		script.Cmd.Path,
+		job.String(),
+		strconv.Itoa(port),
+	)
+	var stdout strings.Builder
+	var stderr strings.Builder
+	cmd.Stderr = &stdout
+	cmd.Stderr = &stderr
+
+	d.logger.With("job", job).Debug("running ingestion command")
+	cmd_err := cmd.Run()
+	d.logger.With(
+		"job", job,
+		"stdout", stdout.String(),
+		"stderr", stderr.String(),
+	).Debug("ingestion command complete")
+
+	finish_time := time.Now().Format(time.RFC3339)
+	err = listener.Close()
+	if err != nil {
+		d.logger.With(
+			"error", err,
+			"job", job,
+		).Error("could not close ingestion listener")
+	}
+
+	if cmd_err != nil {
+		d.logger.With(
+			"error", cmd_err,
+			"job", job,
+			"cmd", cmd.String(),
+			"stderr", stderr.String(),
+		).Error("error running command")
+		// SAFETY: Logging occurs in `setJobError` function
+		// and nothing to do here if the status couldn't be updated
+		_ = d.setIngestionJobError(job, finish_time, cmd_err)
+	} else {
+		ok_query := fmt.Sprintf(
+			`UPDATE _ingestion_script_queue_ 
+			SET status='%s', finished=$2, error=''
+			WHERE _id=$1`,
+			transformJobStatusCompleted,
+		)
+		_, err = d.db.Conn.Exec(d.ctx, ok_query, job, finish_time)
 		if err != nil {
 			d.logger.With(
 				"error", err,
-			).Error("could not poll pending data type transform jobs")
-			continue
+				"job", job,
+			).Error("could not update ingestion job status")
 		}
+	}
+}
 
-		var transform_ids []uuid.UUID
-		for _, job := range jobs {
-			if !slices.Contains(transform_ids, job.Transform) {
-				transform_ids = append(transform_ids, job.Transform)
-			}
-		}
-		transforms_info, err := d.transformsById(transform_ids)
+type ingestionFn string
+
+const (
+	fnIngestionGetSources  ingestionFn = "get_sources"
+	fnIngestionGetDataType ingestionFn = "get_data_type"
+	fnIngestionSaveData    ingestionFn = "save_data"
+)
+
+// `token` is the job id.
+func (d *ScriptDaemon) ingestionListener(
+	listener net.Listener,
+	token uuid.UUID,
+	data_type service.DataType,
+	sources map[string]dataSource,
+) error {
+	d.logger.With("job", token).Debug("ingestion listener launched")
+	conn, err := listener.Accept()
+	if err != nil {
+		d.logger.With(
+			"error", err,
+			"job", token,
+		).Error("could not connect listener")
+		return err
+	}
+	defer conn.Close()
+
+	var files []*os.File
+	for {
+		msg, err := readMessage[ingestionFn](conn)
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
+				d.logger.With(
+					"error", err,
+					"job", token,
+				).Debug("job complete")
+				break
+			} else {
+				d.logger.With(
+					"error", err,
+					"job", token,
+				).Error("could not read message")
+				continue
+			}
+		}
+		d.logger.With(
+			"job", token,
+			"message", msg,
+		).Debug("message received")
+
+		if msg.Token != token {
+			d.logger.With(
+				"token", token,
+				"message", msg,
+			).Warn("invalid token, message ignored")
 			continue
 		}
 
-		for _, job := range jobs {
-			transform_idx := slices.IndexFunc(transforms_info, func(info transformInfo) bool {
-				return info.Id == job.Transform
-			})
-			if transform_idx < 0 {
-				d.logger.With("transform", job.Transform).Error("invalid transform")
-				panic("invalid transform")
+		switch msg.Fn {
+		case fnIngestionGetSources:
+			err = d.ingestionListenerFnGetSources(conn, token, sources)
+			if err != nil {
+				d.logger.With(
+					"error", err,
+					"job", token,
+				).Error("could not send ingestion sources")
+				return err
 			}
-			transform := transforms_info[transform_idx]
-
-			go d.runTransform(
-				job.Id,
-				transform,
-				job.Payload,
-			)
+		case fnIngestionGetDataType:
+			err = d.ingestionListenerFnGetDataType(conn, token, data_type)
+			if err != nil {
+				d.logger.With(
+					"error", err,
+					"job", token,
+				).Error("could not send ingestion data type")
+				return err
+			}
+		case fnIngestionSaveData:
+			err = d.ingestionListenerFnSaveData(conn, token)
+			if err != nil {
+				d.logger.With(
+					"error", err,
+					"job", token,
+				).Error("could not save data")
+				return err
+			}
+		default:
+			panic("invalid function")
 		}
+	}
+
+	for _, file := range files {
+		err = file.Close()
+		if err != nil {
+			d.logger.With(
+				"error", err,
+				"job", token,
+				"file", file.Name(),
+			).Error("could not close file")
+		}
+	}
+
+	return nil
+}
+
+func (d *ScriptDaemon) ingestionListenerFnGetSources(
+	conn net.Conn,
+	token uuid.UUID,
+	sources map[string]dataSource,
+) error {
+	err := writeMessage(conn, sources)
+	if err != nil {
+		d.logger.With(
+			"error", err,
+			"token", token,
+			"sources", sources,
+		).Error("could not write response")
+		return err
+	}
+
+	return nil
+}
+
+func (d *ScriptDaemon) ingestionListenerFnGetDataType(
+	conn net.Conn,
+	token uuid.UUID,
+	data_type service.DataType,
+) error {
+	panic("todo")
+}
+
+func (d *ScriptDaemon) ingestionListenerFnSaveData(
+	conn net.Conn,
+	token uuid.UUID,
+) error {
+	panic("todo")
+}
+
+func (d *ScriptDaemon) setIngestionJobError(job uuid.UUID, finish_time string, err error) error {
+	err_query := fmt.Sprintf(
+		`UPDATE _ingestion_script_queue_ 
+			SET status='%s', finished=$2, error=$3
+			WHERE _id=$1`,
+		ingestionJobStatusFailed,
+	)
+	_, err = d.db.Conn.Exec(d.ctx, err_query, job, finish_time, err.Error())
+	if err != nil {
+		d.logger.With(
+			"error", err,
+			"job", job,
+		).Error("could not update ingestion job status")
+		return err
+	}
+
+	return nil
+}
+
+func (d *ScriptDaemon) processTransformJobs() {
+	jobs, err := d.pollPendingTransforms()
+	if err != nil {
+		d.logger.With(
+			"error", err,
+		).Error("could not poll pending data type transform jobs")
+		return
+	}
+
+	var transform_ids []uuid.UUID
+	for _, job := range jobs {
+		if !slices.Contains(transform_ids, job.Transform) {
+			transform_ids = append(transform_ids, job.Transform)
+		}
+	}
+	transforms_info, err := d.transformsById(transform_ids)
+	if err != nil {
+		return
+	}
+
+	for _, job := range jobs {
+		transform_idx := slices.IndexFunc(transforms_info, func(info transformInfo) bool {
+			return info.Id == job.Transform
+		})
+		if transform_idx < 0 {
+			d.logger.With("transform", job.Transform).Error("invalid transform")
+			panic("invalid transform")
+		}
+		transform := transforms_info[transform_idx]
+
+		go d.runTransform(
+			job.Id,
+			transform,
+			job.Payload,
+		)
 	}
 }
 
@@ -113,7 +629,7 @@ type transformJobRx struct {
 	Payload   uuid.UUID `db:"_payload"`
 }
 
-func (d *TransformDaemon) pollPending() ([]transformJobRx, error) {
+func (d *ScriptDaemon) pollPendingTransforms() ([]transformJobRx, error) {
 	query := fmt.Sprintf(
 		"SELECT _id, _transform, _payload FROM _data_type_transform_queue_ WHERE status='%s'",
 		transformJobStatusPending,
@@ -152,7 +668,7 @@ type transformInfo struct {
 	Destination service.DataType
 }
 
-func (d *TransformDaemon) transformsById(transforms []uuid.UUID) ([]transformInfo, error) {
+func (d *ScriptDaemon) transformsById(transforms []uuid.UUID) ([]transformInfo, error) {
 	// TODO
 	transform_query :=
 		`SELECT _id, _source, _destination, cmd FROM data_type_transform_
@@ -276,7 +792,7 @@ func (d *dataTypeInfoExternal) DataStorage() service.DataStorage {
 }
 
 // dataTypesById returns `dataTypeInfoInternal` and `dataTypeInfoExternal`.
-func (d *TransformDaemon) dataTypesById(type_ids []uuid.UUID) ([]service.DataType, error) {
+func (d *ScriptDaemon) dataTypesById(type_ids []uuid.UUID) ([]service.DataType, error) {
 	query := "SELECT _id, _storage FROM data_type_ WHERE _id=ANY($1)"
 	rows, _ := d.db.Conn.Query(d.ctx, query, type_ids)
 	types_info, err := pgx.CollectRows(rows, pgx.RowToStructByName[dataTypeInfoBasic])
@@ -384,7 +900,7 @@ type schemaInfo struct {
 	Schema      []service.DataSchemaField
 }
 
-func (d *TransformDaemon) dataSchemasByTypeId(types []uuid.UUID) ([]schemaInfo, error) {
+func (d *ScriptDaemon) dataSchemasByTypeId(types []uuid.UUID) ([]schemaInfo, error) {
 	data_type_query :=
 		`SELECT d._data_type, d._schema, s._cardinality
 		FROM data_type_schema_ d JOIN data_schema_ s ON d._schema=s._id
@@ -456,7 +972,7 @@ type dataSourceInfo struct {
 	ExtFilter   []string                      `db:"ext_filter"`
 }
 
-func (d *TransformDaemon) dataSourcesByTypeId(types []uuid.UUID) ([]dataSourceInfo, error) {
+func (d *ScriptDaemon) dataSourcesByTypeId(types []uuid.UUID) ([]dataSourceInfo, error) {
 	query :=
 		`SELECT _id, _data_type, _label, _required, _cardinality, ext_filter 
 		FROM data_type_source_ WHERE _data_type=ANY($1)`
@@ -478,28 +994,7 @@ type DataSchemaInfo struct {
 	Schema []service.DataSchemaField
 }
 
-func (d *TransformDaemon) getDataSchemasById(data_schemas []uuid.UUID) ([]DataSchemaInfo, error) {
-	// TODO
-	return nil, nil
-	// query := "SELECT _id, _schema FROM data_schema_ WHERE _id=ANY($1)"
-	// rows, _ := d.db.Conn.Query(d.ctx, query, data_schemas)
-	// schemas, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (DataSchemaInfo, error) {
-	// 	var schema DataSchemaInfo
-	// 	err := row.Scan(&schema.Id, &schema.Schema)
-	// 	return schema, err
-	// })
-	// if err != nil {
-	// 	d.logger.With(
-	// 		"error", err,
-	// 		"schemas", data_schemas,
-	// 	).Error("could not get data schemas")
-	// 	return nil, err
-	// }
-
-	// return schemas, nil
-}
-
-func (d *TransformDaemon) runTransform(
+func (d *ScriptDaemon) runTransform(
 	job uuid.UUID,
 	transform transformInfo,
 	payload uuid.UUID,
@@ -629,23 +1124,23 @@ func (d *TransformDaemon) runTransform(
 }
 
 // readMessage reads a framed JSON message from `reader`.
-func readMessage(reader io.Reader) (transformMessage, error) {
+func readMessage[F any](reader io.Reader) (clientMessage[F], error) {
 	var length uint64
 	err := binary.Read(reader, binary.LittleEndian, &length)
 	if err != nil {
-		return transformMessage{}, err
+		return clientMessage[F]{}, err
 	}
 
 	buf := make([]byte, length)
 	_, err = io.ReadFull(reader, buf)
 	if err != nil {
-		return transformMessage{}, err
+		return clientMessage[F]{}, err
 	}
 
-	var msg transformMessage
+	var msg clientMessage[F]
 	err = json.Unmarshal(buf, &msg)
 	if err != nil {
-		return transformMessage{}, err
+		return clientMessage[F]{}, err
 	}
 
 	return msg, nil
@@ -709,14 +1204,14 @@ const (
 	fnSaveData       transformFn = "save_data"
 )
 
-type transformMessage struct {
-	Token uuid.UUID   `json:"token"`
-	Fn    transformFn `json:"fn"`
+type clientMessage[F any] struct {
+	Token uuid.UUID `json:"token"`
+	Fn    F         `json:"fn"`
 }
 
 // `token` is the job id.
 // `payload` is the id of the input data.
-func (d *TransformDaemon) transformListener(
+func (d *ScriptDaemon) transformListener(
 	listener net.Listener,
 	token uuid.UUID,
 	payload uuid.UUID,
@@ -736,7 +1231,7 @@ func (d *TransformDaemon) transformListener(
 
 	var files []*os.File
 	for {
-		msg, err := readMessage(conn)
+		msg, err := readMessage[transformFn](conn)
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
 				d.logger.With(
@@ -890,7 +1385,7 @@ func (d *TransformDaemon) transformListener(
 	return nil
 }
 
-func (d *TransformDaemon) transformListenerFnGetData(
+func (d *ScriptDaemon) transformListenerFnGetData(
 	conn net.Conn,
 	data transformData,
 ) error {
@@ -919,10 +1414,10 @@ func (d *TransformDaemon) transformListenerFnGetData(
 		}
 	case service.DataStorageExternal:
 		type inputDataExternal struct {
-			Storage    service.DataStorage           `json:"storage"`
-			Tags       []string                      `json:"tags"`
-			Properties []PropertyValue               `json:"properties"`
-			DataPaths  map[string]dataSourceFilePath `json:"data_paths"`
+			Storage    service.DataStorage   `json:"storage"`
+			Tags       []string              `json:"tags"`
+			Properties []PropertyValue       `json:"properties"`
+			DataPaths  map[string]dataSource `json:"data_paths"`
 		}
 
 		dataExt := data.Input.(transformScriptInputDataExternal)
@@ -956,7 +1451,7 @@ const (
 	ValuesFileFormatFeather ValuesFileFormat = "feather"
 )
 
-func (d *TransformDaemon) transformListenerFnGetValues(
+func (d *ScriptDaemon) transformListenerFnGetValues(
 	conn net.Conn,
 	payload uuid.UUID,
 	format ValuesFileFormat,
@@ -1009,7 +1504,7 @@ type PropertyValue struct {
 	Value any                  `json:"value"`
 }
 
-func (d *TransformDaemon) setJobError(job uuid.UUID, finish_time string, err error) error {
+func (d *ScriptDaemon) setJobError(job uuid.UUID, finish_time string, err error) error {
 	err_query := fmt.Sprintf(
 		`UPDATE _data_type_transform_queue_ 
 			SET status='%s', finished=$2, error=$3
@@ -1048,9 +1543,9 @@ type transformScriptInputDataInternal struct {
 func (d transformScriptInputDataInternal) TranformScriptInputData() {}
 
 type transformScriptInputDataExternal struct {
-	Tags       []string                      `json:"tags"`
-	Properties []PropertyValue               `json:"properties"`
-	DataPaths  map[string]dataSourceFilePath `json:"sources"`
+	Tags       []string              `json:"tags"`
+	Properties []PropertyValue       `json:"properties"`
+	DataPaths  map[string]dataSource `json:"sources"`
 }
 
 func (d transformScriptInputDataExternal) TranformScriptInputData() {}
@@ -1078,13 +1573,8 @@ type transformScriptOutputDataExternal struct {
 	Sources []outputDataSource `json:"sources"`
 }
 
-type dataSourceFilePath struct {
-	Single   string
-	Multiple []string
-}
-
 // TODO: Include project specific properties?
-func (d *TransformDaemon) createTransformData(
+func (d *ScriptDaemon) createTransformData(
 	payload uuid.UUID,
 	transform transformInfo,
 ) (transformData, error) {
@@ -1125,18 +1615,26 @@ func (d *TransformDaemon) createTransformData(
 			).Error("could not create data file")
 			return transformData{}, err
 		}
-		source_paths := make(map[string]dataSourceFilePath, len(sources))
+		source_paths := make(map[string]dataSource, len(sources))
 		for key, source := range sources {
 			if source.Single != nil {
-				source_paths[key] = dataSourceFilePath{Single: source.Single.Name()}
+				source_paths[key] = dataSource{Single: service.SourceFileInfo{
+					Path: source.Single.Name(),
+					// Filename: , TODO
+				}}
 				transform_data.Files = append(transform_data.Files, source.Single)
 			} else if source.Multiple != nil {
-				paths := make([]string, len(source.Multiple))
+				paths := make([]service.SourceFileInfo, len(source.Multiple))
 				for idx, file := range source.Multiple {
-					paths[idx] = file.Name()
+					paths[idx] = service.SourceFileInfo{
+						Path: file.Name(),
+						// Filename: , TODO
+					}
 				}
-				source_paths[key] = dataSourceFilePath{Multiple: paths}
+				source_paths[key] = dataSource{Multiple: paths}
 				transform_data.Files = slices.Concat(transform_data.Files, source.Multiple)
+			} else {
+				panic("invalid source")
 			}
 		}
 
@@ -1189,10 +1687,10 @@ func (d *TransformDaemon) createTransformData(
 	return transform_data, nil
 }
 
-func (d *TransformDaemon) createTransformDataSources(
+func (d *ScriptDaemon) createTransformDataSources(
 	data uuid.UUID,
 ) (map[string]dataSourceFileValue, error) {
-	values_arr, err := d.data_service.DataValuesByIds([]uuid.UUID{data})
+	values, err := d.data_service.DataValuesById(data)
 	if err != nil {
 		d.logger.With(
 			"error", err,
@@ -1200,11 +1698,9 @@ func (d *TransformDaemon) createTransformDataSources(
 		).Error("could not get data values")
 		return nil, err
 	}
-	values := values_arr[0]
 
 	if values.Storage != service.DataStorageExternal {
 		panic("should not be called on data that is not externally stored")
-
 	}
 
 	sources := values.Values.([]service.DataSource)
@@ -1258,7 +1754,7 @@ func transformDataSourcesCreateTemp(sources []service.DataSource) (map[string]da
 	return source_files, nil
 }
 
-func (d *TransformDaemon) createTransformDataValues(
+func (d *ScriptDaemon) createTransformDataValues(
 	data uuid.UUID,
 	format ValuesFileFormat,
 ) (*os.File, error) {
@@ -1314,7 +1810,7 @@ func (d *TransformDaemon) createTransformDataValues(
 	}
 }
 
-func (d *TransformDaemon) createTransformDataFileCsv(fields []service.SchemaFieldValues) (*os.File, error) {
+func (d *ScriptDaemon) createTransformDataFileCsv(fields []service.SchemaFieldValues) (*os.File, error) {
 	out, err := d.data_service.StoredDataToCsv(fields)
 	if err != nil {
 		return nil, err
@@ -1546,7 +2042,7 @@ func valueTypeToArrow(kind service.ValueType) arrow.DataType {
 	}
 }
 
-func (d *TransformDaemon) transformListenerFnGetOutputDataInfo(
+func (d *ScriptDaemon) transformListenerFnGetOutputDataInfo(
 	conn net.Conn,
 	data transformData,
 ) error {
@@ -1615,7 +2111,7 @@ func (d *TransformDaemon) transformListenerFnGetOutputDataInfo(
 	return nil
 }
 
-func (d *TransformDaemon) transformListenerFnSaveData(
+func (d *ScriptDaemon) transformListenerFnSaveData(
 	conn net.Conn,
 	token uuid.UUID,
 	payload uuid.UUID,
@@ -1680,7 +2176,7 @@ func (d *TransformDaemon) transformListenerFnSaveData(
 	return nil
 }
 
-func (d *TransformDaemon) dataCreate(
+func (d *ScriptDaemon) dataCreate(
 	payload uuid.UUID,
 	transform_info transformInfo,
 	data outputData,
@@ -1923,7 +2419,7 @@ func (d *TransformDaemon) dataCreate(
 	return nil
 }
 
-func (d *TransformDaemon) dataCreateValues(
+func (d *ScriptDaemon) dataCreateValues(
 	tx pgx.Tx,
 	dst_info service.DataType,
 	data_id uuid.UUID,
@@ -1941,7 +2437,7 @@ func (d *TransformDaemon) dataCreateValues(
 	}
 }
 
-func (d *TransformDaemon) dataCreateValuesExternal(
+func (d *ScriptDaemon) dataCreateValuesExternal(
 	tx pgx.Tx,
 	dst *dataTypeInfoExternal,
 	data_id uuid.UUID,
@@ -1950,7 +2446,7 @@ func (d *TransformDaemon) dataCreateValuesExternal(
 	panic("TODO: dataCreateValuesExternal")
 }
 
-func (d *TransformDaemon) dataCreateValuesInternal(
+func (d *ScriptDaemon) dataCreateValuesInternal(
 	tx pgx.Tx,
 	dst *dataTypeInfoInternal,
 	data_id uuid.UUID,

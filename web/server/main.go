@@ -63,7 +63,7 @@ func main() {
 	api_client_handler := handler.NewApiClientHandler(db, auth_service, data_service)
 
 	transform_daemon_logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	transform_daemon := NewTransformDaemon(ctx, transform_daemon_logger, db, app_service, data_service)
+	transform_daemon := NewScriptDaemon(ctx, transform_daemon_logger, db, app_service, data_service)
 	go transform_daemon.Start(ctx)
 
 	env_session_secret, env_session_secret_exists := os.LookupEnv(handler.EnvSessionSecretKey)

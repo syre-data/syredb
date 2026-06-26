@@ -266,10 +266,14 @@ export interface DataValues {
   Storage: DataStorage;
   Values: any;
 }
+export interface SourceFileInfo {
+  Path: string;
+  Filename: string;
+}
 /**
  * DataSource is an externally stored data source.
- * `Sources` is a single path if `Cardinality` is `single`.
- * `Sources` is an array of paths if `Cardinality` is `multiple`.
+ * `Sources` is a single `SourceFileInfo` if `Cardinality` is `single`.
+ * `Sources` is an array of `SourceFileInfo`s  if `Cardinality` is `multiple`.
  */
 export interface DataSource {
   Label: string;
