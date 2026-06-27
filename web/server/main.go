@@ -299,7 +299,7 @@ func register_routes(
 	api.POST("/project/data", project.AddData)
 	api.GET("/projects", project.GetUserProjects)
 	api.GET("/project/resources", project.ProjectResources)
-	api.POST("/data", data.DataCreate)
+	api.POST("/data", data.DataIngest)
 	api.GET("/data", data.DataGet)
 	api.GET("/data/orphaned", data.OrphanedData)
 	api.GET("/data-origins", data.DataOrigins)

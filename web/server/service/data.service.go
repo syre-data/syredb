@@ -279,6 +279,10 @@ func (s *DataService) DataTypesAll() ([]DataType, error) {
 }
 
 func (s *DataService) DataTypesById(ids []uuid.UUID) ([]DataType, error) {
+	if len(ids) == 0 {
+		return []DataType{}, nil
+	}
+
 	data_type_query :=
 		`SELECT _id, _creator, _storage, label, description, active
 		FROM data_type_ WHERE _id=ANY($1)`
@@ -1752,7 +1756,7 @@ func (s *DataService) IngestionScriptGet(id uuid.UUID) (IngestionScript, error) 
 	if err != nil {
 		s.logger.With(
 			"error", err,
-		).Error("could not get ingestion scripts")
+		).Error("could not get ingestion script")
 		return IngestionScript{}, err
 	}
 
@@ -1791,6 +1795,82 @@ func (s *DataService) IngestionScriptGet(id uuid.UUID) (IngestionScript, error) 
 	}
 
 	return script, nil
+}
+
+func (s *DataService) IngestionScriptsById(ids []uuid.UUID) ([]IngestionScript, error) {
+	if len(ids) == 0 {
+		return []IngestionScript{}, nil
+	}
+
+	script_query :=
+		`SELECT _id, _type, _creator, cmd, label, description
+		FROM ingestion_script_ WHERE _id=ANY($1)`
+	rows, _ := s.db.Conn.Query(s.ctx, script_query, ids)
+	script_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[IngestionScriptRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion scripts")
+		return nil, err
+	}
+
+	cmd_ids := make([]uuid.UUID, len(script_rxs))
+	for idx, rx := range script_rxs {
+		cmd_ids[idx] = rx.Cmd
+	}
+	cmd_query :=
+		`SELECT _id, _creator, _path, _cmd, _args 
+		FROM ingestion_script_cmd_ WHERE _id=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, cmd_query, cmd_ids)
+	cmd_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[IngestionScriptCmdRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion script command")
+		return nil, err
+	}
+
+	source_query :=
+		`SELECT _id, _script, _label, _required, _cardinality, description, ext_filter
+		FROM ingestion_script_source_ WHERE _script=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, source_query, ids)
+	sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[IngestionScriptSourceRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get ingestion script source")
+		return nil, err
+	}
+
+	scripts := make([]IngestionScript, len(script_rxs))
+	for idx, rx := range script_rxs {
+		cmd_idx := slices.IndexFunc(cmd_rxs, func(cmd IngestionScriptCmdRx) bool {
+			return cmd.Id == rx.Cmd
+		})
+		if cmd_idx < 0 {
+			panic(fmt.Sprintf("invalid ingestion script command for script `%s`", rx.Id))
+		}
+
+		var script_sources []IngestionScriptSourceRx
+		for _, src := range sources {
+			if src.Script == rx.Id {
+				script_sources = append(script_sources, src)
+			}
+		}
+
+		script := IngestionScript{
+			Id:          rx.Id,
+			Type:        rx.Type,
+			Creator:     rx.Creator,
+			Label:       rx.Label,
+			Description: rx.Description,
+			Cmd:         cmd_rxs[cmd_idx],
+			Sources:     script_sources,
+		}
+		scripts = append(scripts, script)
+	}
+
+	return scripts, nil
 }
 
 type IngestionScriptCreate struct {
@@ -3524,16 +3604,23 @@ const (
 // `Values` is only valid if `IngestionMethod` is `manual`.
 // `IngestionScript` and `IngestionScriptSources` are only valid if `IngestionMethod` is `script`.
 type DataCreate struct {
-	Type                   uuid.UUID
-	Creator                DataCreatorUser
-	Timestamp              time.Time
-	Visibility             Visibility
-	Properties             []Property
-	Notes                  []Note
-	IngestionMethod        DataIngestionMethod
-	Values                 map[string]any
-	IngestionScript        uuid.UUID
-	IngestionScriptSources map[uuid.UUID][]*multipart.FileHeader
+	Type       uuid.UUID
+	Creator    DataCreatorUser
+	Timestamp  time.Time
+	Visibility Visibility
+	Properties []Property
+	Notes      []Note
+	Values     DataCreateValues
+}
+
+// If data is being processed via ingestion script
+// `Values` are the paths
+// Otherwise, if data type has internal storage,
+// `Values` should be values matching the data's type schema,
+// or if external storage should be teh data's type sources.
+type DataCreateValues struct {
+	IngestionScript uuid.UUID
+	Values          map[string]any
 }
 
 func (s *DataService) DataCreate(
@@ -3542,6 +3629,20 @@ func (s *DataService) DataCreate(
 ) ([]uuid.UUID, error) {
 	if len(data) == 0 {
 		return []uuid.UUID{}, nil
+	}
+
+	data_type_ids := make([]uuid.UUID, 0, len(data))
+	for _, datum := range data {
+		if !slices.Contains(data_type_ids, datum.Type) {
+			data_type_ids = append(data_type_ids, datum.Type)
+		}
+	}
+	data_types, err := s.DataTypesById(data_type_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data types", data_type_ids,
+		).Error("could not get data types")
 	}
 
 	tx, err := s.db.Conn.Begin(s.ctx)
@@ -3577,103 +3678,149 @@ func (s *DataService) DataCreate(
 	}
 
 	for idx, datum := range data {
-		switch datum.IngestionMethod {
-		case DataIngestionManual:
-			var schema_id uuid.UUID
-			schema_query := "SELECT _schema FROM data_type_schema_ WHERE _data_type=$1"
-			err = s.db.Conn.QueryRow(s.ctx, schema_query, datum.Type).Scan(&schema_id)
-			if err != nil {
-				s.logger.With(
-					"erorr", err,
-					"data type", datum.Type,
-				).Error("could not get data type schema")
-				return nil, err
+		data_type_idx := slices.IndexFunc(data_types, func(dtype DataType) bool {
+			switch dtype.DataStorage() {
+			case DataStorageExternal:
+				dtext := dtype.(DataTypeExternal)
+				return dtext.Id == datum.Type
+			case DataStorageInternal:
+				dtint := dtype.(DataTypeInternal)
+				return dtint.Id == datum.Type
+			default:
+				panic("unexpected service.DataStorage")
 			}
-
-			schema, err := s.DataSchemaById(schema_id)
-			if err != nil {
-				s.logger.With(
-					"error", err,
-					"schema", schema_id,
-				).Error("could not get data schema")
-				return nil, err
-			}
-
-			err = s.dataCreateValidateValuesAsSchema(schema, datum.Values)
-			if err != nil {
-				return nil, err
-			}
-
-			field_labels := make([]string, len(schema.Fields))
-			for idx, field := range schema.Fields {
-				field_labels[idx] = field.Label
-			}
-			var values_query strings.Builder
-			fmt.Fprintf(
-				&values_query,
-				`INSERT INTO %s (_data, %s) VALUES ($1`,
-				DataStorageTableNameFromSchemaId(schema_id),
-				strings.Join(field_labels, ", "),
-			)
-			args := make([]any, len(schema.Fields)+1)
-			args[0] = data_ids[idx]
-			for idx, field := range schema.Fields {
-				idx_arg := idx + 1
-				fmt.Fprintf(&values_query, ", $%d", idx_arg+1)
-				args[idx_arg] = datum.Values[field.Label]
-			}
-			values_query.WriteString(")")
-			_, err = tx.Exec(s.ctx, values_query.String(), args...)
-			if err != nil {
-				s.logger.With(
-					"error", err,
-					"data", datum,
-				).Error("could not store data values")
-				return nil, err
-			}
-
-		case DataIngestionScript:
-			// TODO: Validate sources are valid relative to ingestion script
-			var save_err error
-			data_id := data_ids[idx]
-			filepaths, err := s.dataCreateDataIngestionScriptSources(tx, data_id, datum.IngestionScriptSources)
-			for source, files := range datum.IngestionScriptSources {
-				source_paths := filepaths[source]
-				for idx, file := range files {
-					filepath := source_paths[idx]
-					err = SaveFormFile(file, filepath)
-					if err != nil {
-						s.logger.With(
-							"error", err,
-							"data", data_id,
-							"source", source,
-						).Error("could not save data ingestion source file")
-						save_err = err
-						break
-					}
-				}
-
-				if save_err != nil {
-					break
-				}
-			}
-
-			if save_err != nil {
-				for _, files := range filepaths {
-					for _, filepath := range files {
-						err = os.Remove(filepath)
-						if !os.IsNotExist(err) {
-							s.logger.With(
-								"error", err,
-								"file", filepath,
-							).Error("could not remove file")
-						}
-					}
-				}
-
-				return nil, save_err
-			}
+		})
+		if data_type_idx < 0 {
+			panic("invalid data type")
 		}
+
+		err = s.dataCreateValues(tx, datum, data_ids[idx], data_types[data_type_idx])
+		if err != nil {
+			return nil, err
+		}
+		// 	data_type_idx := slices.IndexFunc(data_types, func(dtype DataType) bool {
+		// 		switch dtype.DataStorage() {
+		// 		case DataStorageExternal:
+		// 			dtext := dtype.(DataTypeExternal)
+		// 			return dtext.Id == datum.Type
+		// case DataStorageInternal:
+		// 	dtint := dtype.(DataTypeInternal)
+		// 	return dtint.Id == datum.Type
+		// default:
+		// 	panic("unexpected service.DataStorage")
+		// }
+		// 	})
+		// 	if data_type_idx < 0 {
+		// 		panic("invalid data type")
+		// 	}
+
+		// 	switch dtype.DataStorage() {
+		// 		case DataStorageExternal:
+		// 			dtext := dtype.(DataTypeExternal)
+		// 			err := s.dataCreateTypeExternal(datum, dtext)
+		// case DataStorageInternal:
+		// 	dtint := dtype.(DataTypeInternal)
+		// 			err := s.dataCreateTypeInternal(datum, dtint)
+		// default:
+		// 	panic("unexpected service.DataStorage")
+
+		// switch datum.IngestionMethod {
+		// case DataIngestionManual:
+		// var schema_id uuid.UUID
+		// schema_query := "SELECT _schema FROM data_type_schema_ WHERE _data_type=$1"
+		// err = s.db.Conn.QueryRow(s.ctx, schema_query, datum.Type).Scan(&schema_id)
+		// if err != nil {
+		// 	s.logger.With(
+		// 		"erorr", err,
+		// 		"data type", datum.Type,
+		// 	).Error("could not get data type schema")
+		// 	return nil, err
+		// }
+
+		// schema, err := s.DataSchemaById(schema_id)
+		// if err != nil {
+		// 	s.logger.With(
+		// 		"error", err,
+		// 		"schema", schema_id,
+		// 	).Error("could not get data schema")
+		// 	return nil, err
+		// }
+
+		// err = s.dataCreateValidateValuesAsSchema(schema, datum.Values)
+		// if err != nil {
+		// 	return nil, err
+		// }
+
+		// field_labels := make([]string, len(schema.Fields))
+		// for idx, field := range schema.Fields {
+		// 	field_labels[idx] = field.Label
+		// }
+		// var values_query strings.Builder
+		// fmt.Fprintf(
+		// 	&values_query,
+		// 	`INSERT INTO %s (_data, %s) VALUES ($1`,
+		// 	DataStorageTableNameFromSchemaId(schema_id),
+		// 	strings.Join(field_labels, ", "),
+		// )
+		// args := make([]any, len(schema.Fields)+1)
+		// args[0] = data_ids[idx]
+		// for idx, field := range schema.Fields {
+		// 	idx_arg := idx + 1
+		// 	fmt.Fprintf(&values_query, ", $%d", idx_arg+1)
+		// 	args[idx_arg] = datum.Values[field.Label]
+		// }
+		// values_query.WriteString(")")
+		// _, err = tx.Exec(s.ctx, values_query.String(), args...)
+		// if err != nil {
+		// 	s.logger.With(
+		// 		"error", err,
+		// 		"data", datum,
+		// 	).Error("could not store data values")
+		// 	return nil, err
+		// }
+
+		// case DataIngestionScript:
+		// 	// TODO: Validate sources are valid relative to ingestion script
+		// 	var save_err error
+		// 	data_id := data_ids[idx]
+		// 	filepaths, err := s.dataCreateDataIngestionScriptSources(tx, data_id, datum.IngestionScriptSources)
+		// 	for source, files := range datum.IngestionScriptSources {
+		// 		source_paths := filepaths[source]
+		// 		for idx, file := range files {
+		// 			filepath := source_paths[idx]
+		// 			err = SaveFormFile(file, filepath)
+		// 			if err != nil {
+		// 				s.logger.With(
+		// 					"error", err,
+		// 					"data", data_id,
+		// 					"source", source,
+		// 				).Error("could not save data ingestion source file")
+		// 				save_err = err
+		// 				break
+		// 			}
+		// 		}
+
+		// 		if save_err != nil {
+		// 			break
+		// 		}
+		// 	}
+
+		// 	if save_err != nil {
+		// 		for _, files := range filepaths {
+		// 			for _, filepath := range files {
+		// 				err = os.Remove(filepath)
+		// 				if !os.IsNotExist(err) {
+		// 					s.logger.With(
+		// 						"error", err,
+		// 						"file", filepath,
+		// 					).Error("could not remove file")
+		// 				}
+		// 			}
+		// 		}
+
+		// 		return nil, save_err
+		// 	}
+		// }
 	}
 
 	err = tx.Commit(s.ctx)
@@ -3683,6 +3830,65 @@ func (s *DataService) DataCreate(
 	}
 
 	return data_ids, nil
+}
+
+func (s *DataService) dataCreateValues(tx pgx.Tx, data DataCreate, id uuid.UUID, data_type DataType) error {
+	switch data_type.DataStorage() {
+	case DataStorageExternal:
+		dtext := data_type.(DataTypeExternal)
+		return s.dataCreateValuesExternal(tx, data, id, dtext)
+	case DataStorageInternal:
+		dtint := data_type.(DataTypeInternal)
+		return s.dataCreateValuesInternal(tx, data, id, dtint)
+	default:
+		panic("unexpected service.DataStorage")
+	}
+}
+
+func (s *DataService) dataCreateValuesInternal(tx pgx.Tx, data DataCreate, id uuid.UUID, data_type DataTypeInternal) error {
+	schema, err := s.DataSchemaById(data_type.Schema)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"schema", data_type.Schema,
+		).Error("could not get data schema")
+		return err
+	}
+
+	err = s.dataCreateValidateValuesAsSchema(schema, data.Values)
+	if err != nil {
+		return err
+	}
+
+	field_labels := make([]string, len(schema.Fields))
+	for idx, field := range schema.Fields {
+		field_labels[idx] = field.Label
+	}
+	var values_query strings.Builder
+	fmt.Fprintf(
+		&values_query,
+		`INSERT INTO %s (_data, %s) VALUES ($1`,
+		DataStorageTableNameFromSchemaId(data_type.Schema),
+		strings.Join(field_labels, ", "),
+	)
+	args := make([]any, len(schema.Fields)+1)
+	args[0] = id
+	for idx, field := range schema.Fields {
+		idx_arg := idx + 1
+		fmt.Fprintf(&values_query, ", $%d", idx_arg+1)
+		args[idx_arg] = data.Values[field.Label]
+	}
+	values_query.WriteString(")")
+	_, err = tx.Exec(s.ctx, values_query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not store data values")
+		return err
+	}
+
+	return nil
 }
 
 func (s *DataService) dataCreateValidateValuesAsSchema(schema DataSchema, values map[string]any) error {
@@ -3719,6 +3925,97 @@ func (s *DataService) dataCreateValidateValuesAsSchema(schema DataSchema, values
 	}
 
 	panic("unreachable")
+}
+
+func (s *DataService) dataCreateValuesExternal(
+	tx pgx.Tx,
+	data DataCreate,
+	id uuid.UUID,
+	data_type DataTypeExternal,
+) error {
+	err := s.dataCreateValidateValuesAsSources(data_type.Sources, data.Values)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("invalid data")
+		return err
+	}
+
+	panic("TODO")
+
+	return nil
+}
+
+func (s *DataService) dataCreateValidateValuesAsSources(sources []DataTypeExternalSourceRx, values map[string]any) error {
+	for _, src := range sources {
+		value, exists := values[src.Label]
+		if src.Required {
+			if !exists {
+				return fmt.Errorf("`%s` not found", src.Label)
+			}
+		}
+
+		switch src.Cardinality {
+		case DataSourceCardinalityMultiple:
+			files, ok := value.([]string)
+			if !ok {
+				return fmt.Errorf("could not cast `%s` as multiple cardinality data source")
+			}
+			if src.Required {
+				if len(files) == 0 {
+					return fmt.Errorf("`%s` not found", src.Label)
+				}
+			}
+
+			if len(src.ExtFilter) > 0 {
+				for _, file := range files {
+					ext := filepath.Ext(file)
+					if ext == "" {
+						return fmt.Errorf("`%s` does not match extension filter of `%s`", file, src.Label)
+					}
+
+					matches := false
+					for _, filter := range src.ExtFilter {
+						if filter == ext[1:] {
+							matches = true
+							break
+						}
+					}
+					if !matches {
+						return fmt.Errorf("`%s` does not match extension filter of `%s`", file, src.Label)
+					}
+				}
+			}
+		case DataSourceCardinalitySingle:
+			file, ok := value.(string)
+			if !ok {
+				return fmt.Errorf("could not cast `%s` as single cardinality data source")
+			}
+
+			if len(src.ExtFilter) > 0 {
+				ext := filepath.Ext(file)
+				if ext == "" {
+					return fmt.Errorf("`%s` does not match extension filter of `%s`", file, src.Label)
+				}
+
+				matches := false
+				for _, filter := range src.ExtFilter {
+					if filter == ext[1:] {
+						matches = true
+						break
+					}
+				}
+				if !matches {
+					return fmt.Errorf("`%s` does not match extension filter of `%s`", file, src.Label)
+				}
+			}
+		default:
+			panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", src.Cardinality))
+		}
+	}
+
+	return nil
 }
 
 type DataPermissionKey string
@@ -3966,6 +4263,88 @@ func (s *DataService) dataCreateNotes(
 	}
 
 	return nil
+}
+
+type IngestionScriptSource struct {
+	Source   uuid.UUID
+	Path     string
+	Filename string
+}
+
+// # Notes
+// + **Does not validate sources** against script's data type.
+func (s *DataService) IngestionScriptQueueCreate(script uuid.UUID, sources []IngestionScriptSource) (uuid.UUID, error) {
+	if len(sources) == 0 {
+		return uuid.Nil, fmt.Errorf("ingestions script sources is empty")
+	}
+
+	tx, err := s.db.Conn.Begin(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not begin transaction")
+		return uuid.Nil, err
+	}
+	defer tx.Rollback(s.ctx)
+
+	var job_id uuid.UUID
+	query :=
+		`INSERT INTO _ingestion_script_queue_ (_script)
+		VALUES ($1) RETURNING _id`
+	err = tx.QueryRow(s.ctx, query, script).Scan(&job_id)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"script", script,
+		).Error("could not create ingestion script queue job")
+		return uuid.Nil, err
+	}
+
+	const argsOffest = 1
+	const fieldsPerSource = 3
+	args := make([]any, len(sources)*fieldsPerSource+argsOffest)
+	args[0] = job_id
+	var src_query strings.Builder
+	src_query.WriteString(
+		`INSERT INTO data_ingestion_script_source_
+		(_job, _source, _path, _filename) VALUES `,
+	)
+	for idx, src := range sources {
+		if idx > 0 {
+			src_query.WriteString(", ")
+		}
+
+		idx_src := idx*fieldsPerSource + argsOffest
+		idx_path := idx_src + 1
+		idx_filename := idx_path + 1
+
+		args[idx_src] = src.Source
+		args[idx_path] = src.Path
+		args[idx_filename] = src.Filename
+		fmt.Fprintf(
+			&src_query,
+			"($1, $%d, $%d, $%d)",
+			idx_src,
+			idx_path,
+			idx_filename,
+		)
+	}
+
+	_, err = tx.Exec(s.ctx, src_query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"sources", sources,
+			"query", src_query.String(),
+		).Error("could not create ignestion script queue sources")
+		return uuid.Nil, err
+	}
+
+	err = tx.Commit(s.ctx)
+	if err != nil {
+		s.logger.With("error", err).Error("could not commit transaction")
+		return uuid.Nil, err
+	}
+
+	return job_id, nil
 }
 
 // dataCreateDataIngestionScriptSources returns the file paths each file should be saved to.

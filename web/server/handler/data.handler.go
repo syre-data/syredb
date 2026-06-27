@@ -1110,7 +1110,7 @@ func data_type_transform_command_from_file_ext(ext string) (string, error) {
 	}
 }
 
-type DataCreate struct {
+type DataIngest struct {
 	Type                   uuid.UUID
 	Creator                uuid.UUID
 	Origin                 uuid.UUID
@@ -1119,12 +1119,12 @@ type DataCreate struct {
 	Properties             []service.Property
 	Notes                  []service.Note
 	IngestionMethod        service.DataIngestionMethod
-	Values                 map[string]any
-	IngestionScript        uuid.UUID
-	IngestionScriptSources map[string]string
+	Values                 map[string]any    // only valid for ingestion method manual
+	IngestionScript        uuid.UUID         // only valid for ingestion method script
+	IngestionScriptSources map[string]string // only valid for ingestion method script
 }
 
-func (h *DataHandler) DataCreate(c *echo.Context) error {
+func (h *DataHandler) DataIngest(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 
 	sufficient_permission, err := h.user_service.UserHasPermission(
@@ -1188,7 +1188,7 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	var info []DataCreate
+	var info []DataIngest
 	err = json.Unmarshal([]byte(c.FormValue("data")), &info)
 	if err != nil {
 		c.Logger().With(
@@ -1218,7 +1218,28 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 		}
 	}
 
-	data := make([]service.DataCreate, len(info))
+	data_type_ids := make([]uuid.UUID, 0, len(info))
+	ingestion_script_ids := make([]uuid.UUID, 0, len(info))
+	for _, datum := range info {
+		if !slices.Contains(data_type_ids, datum.Type) {
+			data_type_ids = append(data_type_ids, datum.Type)
+		}
+		if datum.IngestionMethod == service.DataIngestionScript &&
+			!slices.Contains(ingestion_script_ids, datum.IngestionScript) {
+			ingestion_script_ids = append(ingestion_script_ids, datum.IngestionScript)
+		}
+	}
+
+	ingestion_scripts, err := h.data_service.IngestionScriptsById(ingestion_script_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data types", ingestion_script_ids,
+		).Error("could not get ingestion scripts")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	data := make([]service.DataCreate, 0, len(info))
 	for idx, datum := range info {
 		data[idx].Type = datum.Type
 		data[idx].Creator = service.DataCreatorUser{
@@ -1229,15 +1250,23 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 		data[idx].Visibility = datum.Visibility
 		data[idx].Properties = datum.Properties
 		data[idx].Notes = datum.Notes
-		data[idx].IngestionMethod = datum.IngestionMethod
 
 		switch datum.IngestionMethod {
 		case service.DataIngestionManual:
-			data[idx].Values = datum.Values
+			data[idx].Values = service.DataCreateValues{
+				Values: datum.Values,
+			}
 
 		case service.DataIngestionScript:
-			data[idx].IngestionScript = datum.IngestionScript
-			data[idx].IngestionScriptSources = make(map[uuid.UUID][]*multipart.FileHeader, len(datum.IngestionScriptSources))
+			ingestion_script_idx := slices.IndexFunc(ingestion_scripts, func(s service.IngestionScript) bool {
+				return s.Id == datum.IngestionScript
+			})
+			if ingestion_script_idx < 0 {
+				panic(fmt.Sprintf("invalid ingestion script `%s`", datum.IngestionScript))
+			}
+			ingestion_script := ingestion_scripts[ingestion_script_idx]
+
+			sources := make(map[uuid.UUID]any, len(datum.IngestionScriptSources))
 			for source, name := range datum.IngestionScriptSources {
 				file, err := c.FormFile(name)
 				if err != nil {
@@ -1258,23 +1287,57 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 					return c.NoContent(http.StatusBadRequest)
 				}
 
-				data[idx].IngestionScriptSources[sid] = []*multipart.FileHeader{file}
+				source_idx := slices.IndexFunc(ingestion_script.Sources, func(s service.IngestionScriptSourceRx) bool {
+					return s.Id == sid
+				})
+				if source_idx < 0 {
+					panic(fmt.Sprintf("invalid ingestion script source `%s`", sid))
+				}
+				source := ingestion_script.Sources[source_idx]
+
+				f_sources, exists := sources[sid]
+				switch source.Cardinality {
+				case service.DataSourceCardinalityMultiple:
+					if exists {
+						sources[sid] = append(f_sources.([]*multipart.FileHeader), file)
+					} else {
+						sources[sid] = []*multipart.FileHeader{file}
+					}
+				case service.DataSourceCardinalitySingle:
+					if exists {
+						c.Logger().With(
+							"script", ingestion_script.Id,
+							"source", sid,
+						).Warn("multiple sources assigned to cardinality single")
+						return c.NoContent(http.StatusBadRequest)
+					}
+
+					sources[sid] = file
+				default:
+					panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", source.Cardinality))
+				}
+			}
+
+			data[idx].Values = service.DataCreateValues{
+				IngestionScript:  datum.IngestionScript,
+				IngestionSources: sources,
 			}
 		}
 	}
 
-	dataScriptIngestion := make([]service.DataCreate, 0, len(data))
+	dataScriptIngestion := make([]service.DataCreateValues, 0, len(info))
 	for _, datum := range data {
-		if datum.IngestionMethod == service.DataIngestionScript {
-			dataScriptIngestion = append(dataScriptIngestion, datum)
+		if datum.Values.IngestionScript != uuid.Nil {
+			dataScriptIngestion = append(dataScriptIngestion, datum.Values)
 		}
 	}
-	err = h.dataCreateValidateIngestionScriptSources(dataScriptIngestion)
+
+	err = h.dataIngestValidateIngestionScriptSources(dataScriptIngestion, ingestion_scripts)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
-		).Error("could not validate ingestion script")
-		return c.NoContent(http.StatusInternalServerError)
+		).Error("could not validate ingestion script sources")
+		return c.NoContent(http.StatusBadRequest)
 	}
 
 	data_ids, err := h.data_service.DataCreate(data, user_id)
@@ -1315,40 +1378,26 @@ func (h *DataHandler) DataCreate(c *echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (h *DataHandler) dataCreateValidateIngestionScriptSources(data []service.DataCreate) error {
-	ingestion_scripts := []service.IngestionScript{}
-	for _, datum := range data {
+// Validates ingestion values against expected sources.
+//
+// # Panics
+// + If an ingestion script is not present
+// + If a value is not valid for ingestion (i.e. `IngestionScript` is nil)
+func (h *DataHandler) dataIngestValidateIngestionScriptSources(
+	values []service.DataCreateValues,
+	ingestion_scripts []service.IngestionScript,
+) error {
+	for _, value := range values {
 		script_idx := slices.IndexFunc(ingestion_scripts, func(script service.IngestionScript) bool {
-			return script.Id == datum.IngestionScript
-		})
-		if script_idx > -1 {
-			continue
-		}
-
-		script, err := h.data_service.IngestionScriptGet(datum.IngestionScript)
-		if err != nil {
-			return fmt.Errorf("could not get ingestion script %s: %w", datum.IngestionScript, err)
-		}
-
-		ingestion_scripts = append(ingestion_scripts, script)
-	}
-
-	for _, datum := range data {
-		script_idx := slices.IndexFunc(ingestion_scripts, func(script service.IngestionScript) bool {
-			return script.Id == datum.IngestionScript
+			return script.Id == value.IngestionScript
 		})
 		script := ingestion_scripts[script_idx]
 
 		for _, src := range script.Sources {
-			files, exists := datum.IngestionScriptSources[src.Id]
+			_, exists := value.IngestionSources[src.Id]
 			if src.Required {
 				if !exists {
 					return errors.New("data is missing required ingestion script source")
-				}
-			}
-			if src.Cardinality == service.DataSourceCardinalitySingle {
-				if len(files) > 1 {
-					return errors.New("data has multiple sources for single cardinality source")
 				}
 			}
 		}

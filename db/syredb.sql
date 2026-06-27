@@ -203,20 +203,15 @@ CREATE TYPE ingestion_script_job_status AS ENUM (
     'failed'
 );
 
+-- TODO: Add "runs" table that tracks result of each run.
 CREATE TABLE IF NOT EXISTS _ingestion_script_queue_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
+    _data UUID REFERENCES data_(_id) NOT NULL,
     _script UUID REFERENCES ingestion_script_(_id) NOT NULL,
     status ingestion_script_job_status DEFAULT 'pending' NOT NULL,
     started TIMESTAMP WITH TIME ZONE,
     finished TIMESTAMP WITH TIME ZONE,
     error TEXT
-);
-
-CREATE TABLE IF NOT EXISTS _ingestion_script_queue_source_ (
-    _job UUID REFERENCES _ingestion_script_queue_(_id) NOT NULL,
-    _source UUID REFERENCES ingestion_script_source_(_id) NOT NULL,
-    _path VARCHAR(2048) PRIMARY KEY,
-    _filename VARCHAR(256) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS data_type_transform_cmd_ (

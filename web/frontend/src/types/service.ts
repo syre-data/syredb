@@ -354,10 +354,18 @@ export interface DataCreate {
   Visibility: Visibility;
   Properties: Property[];
   Notes: Note[];
-  IngestionMethod: DataIngestionMethod;
-  Values: { [key: string]: any};
+  Values: DataCreateValues;
+}
+/**
+ * If data is being processed via ingestion script
+ * `Values` are the paths
+ * Otherwise, if data type has internal storage,
+ * `Values` should be values matching the data's type schema,
+ * or if external storage should be teh data's type sources.
+ */
+export interface DataCreateValues {
   IngestionScript: uuid.UUIDTypes;
-  IngestionScriptSources: { [key: uuid.UUIDTypes]: (any /* multipart.FileHeader */ | undefined)[]};
+  Values: { [key: string]: any};
 }
 export const DataPermissionKeyOwner = "owner";
 export const DataPermissionKeyRead = "read";
@@ -365,6 +373,11 @@ export const DataPermissionKeyNoteCreate = "note_create";
 export const DataPermissionKeyPropertiesModify = "properties_modify";
 export type DataPermissionKey = typeof DataPermissionKeyOwner | typeof DataPermissionKeyRead | typeof DataPermissionKeyNoteCreate | typeof DataPermissionKeyPropertiesModify;
 export const FIELDS = 3;
+export interface IngestionScriptSource {
+  Source: uuid.UUIDTypes;
+  Path: string;
+  Filename: string;
+}
 export interface DataWithOrigin {
   Data: DataRx;
   Origin: uuid.UUIDTypes;
