@@ -68,7 +68,7 @@ export interface DataTypeExternalSourceRx {
   Required: boolean;
   Cardinality: DataSourceCardinality;
   Description: string;
-  ExtFilter: string[];
+  MediaTypes: string[];
 }
 export interface DataTypeRx {
   Id: uuid.UUIDTypes;
@@ -105,17 +105,17 @@ export interface DataCreatorUser {
 export interface DataCreatorTransform {
   Id: uuid.UUIDTypes;
 }
-export interface ExternalSourceCreate {
+export interface DataTypeSourceCreate {
   Cardinality: DataSourceCardinality;
   Required: boolean;
-  ExtensionFilter: string[];
+  MediaTypes: string[];
   Label: string;
   Description?: string;
 }
 export interface DataTypeSourceUpdate {
   Id: uuid.UUIDTypes;
   Description: string;
-  ExtensionFilter: string[];
+  MediaTypes: string[];
 }
 export interface DataTypeUpdate {
   Id: uuid.UUIDTypes;
@@ -228,8 +228,8 @@ export interface SourceFileInfo {
 }
 /**
  * DataSource is an externally stored data source.
- * `Sources` is a single `SourceFileInfo` if `Cardinality` is `single`.
- * `Sources` is an array of `SourceFileInfo`s  if `Cardinality` is `multiple`.
+ * `Sources` is `SourceFileInfo` if `Cardinality` is `single`.
+ * `Sources` is `[]SourceFileInfo`  if `Cardinality` is `multiple`.
  */
 export interface DataSource {
   Label: string;

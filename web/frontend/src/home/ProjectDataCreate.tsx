@@ -57,6 +57,7 @@ import {
 } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
+import type { UUID } from "crypto";
 import {
     Suspense,
     useEffect,
@@ -209,8 +210,8 @@ function string_to_property_value_type(
 }
 
 function parse_form_data_properties(
-    data_id: string,
     fields: [string, FormDataEntryValue][],
+    data_id: string,
 ): Property[] {
     const property_pattern = new RegExp(
         `^data\\[${data_id}\\]\\[property\\]\\[(\\d+)\\]\\[(\\w+)\\](?:\\[(magnitude|unit)\\])?`,
@@ -298,8 +299,8 @@ function parse_form_data_properties(
 }
 
 function parse_form_data_notes(
-    data_id: string,
     fields: [string, FormDataEntryValue][],
+    data_id: string,
 ): Note[] {
     const note_pattern = new RegExp(
         `^data\\[${data_id}\\]\\[note\\]\\[(\\d+)\\]\\[(\\w+)\\]`,
@@ -329,7 +330,7 @@ function parse_form_data_notes(
         }
     }
 
-    const notes = new Array<Note>();
+    const notes = new Array<NoteCreate>();
     for (const [id, note] of note_fields.entries()) {
         if (!note.Content) {
             continue;
@@ -342,7 +343,7 @@ function parse_form_data_notes(
             Timestamp: note.Timestamp,
             Visibility: note.Visibility!,
             Content: note.Content,
-        } satisfies Note);
+        } satisfies NoteCreate);
     }
 
     return notes;
@@ -356,11 +357,11 @@ function parse_form_data_notes(
  * @returns `undefined` if the data should be ignored due to empty fields.
  */
 function parse_form_data(
-    data_id: string,
     fields: [string, FormDataEntryValue][],
-    datum: Datum,
+    data_id: string,
+    dataTypes: DataType[],
     dataTypeSchemas: Record<string, DataSchemaResources>,
-): [string, DataCreate] | undefined {
+): [string, DataIngest] | undefined {
     const e_label = fields.find(
         ([key, _]) => key === `data[${data_id}][label]`,
     );
@@ -392,131 +393,157 @@ function parse_form_data(
         Visibility: VisibilityPrivate,
         Properties: new Array<Property>(),
         Notes: new Array<Note>(),
-        IngestionMethod: ingestion_method,
         Values: {},
-        IngestionScript: ingestion_script,
-        IngestionScriptSources: new Map<string, string>(),
-    } satisfies DataCreate;
+        Sources: {},
+    } satisfies DataIngest;
 
-    datum_info.Properties = parse_form_data_properties(data_id, fields);
-    datum_info.Notes = parse_form_data_notes(data_id, fields);
+    datum_info.Properties = parse_form_data_properties(fields, data_id);
+    datum_info.Notes = parse_form_data_notes(fields, data_id);
 
-    if (datum.ingestion === IngestionManual) {
-        const schema = dataTypeSchemas[datum_info.Type];
-        if (!schema) {
-            throw new Error(
-                `data schema for type ${datum_info.Type} not found`,
-            );
-        }
-
-        let rx_idx_max = -1;
-        const data_store = new Map<string, [number, string][]>();
-        const data_pattern = new RegExp(
-            `^data\\[${data_id}\\]\\[value\\]\\[(\\d+)\\]\\[(\\w+)\\]$`,
-        );
-        for (const [key, field] of fields) {
-            const match = data_pattern.exec(key);
-            if (!match) {
-                continue;
-            }
-
-            const rx_idx = parseInt(match[1]!);
-            const rx_col = match[2]!;
-            const value = field.toString();
-            const col_data = data_store.getOrInsert(rx_col, []);
-            col_data.push([rx_idx, value]);
-            if (rx_idx > rx_idx_max) {
-                rx_idx_max = rx_idx;
-            }
-        }
-
-        let remove_last_value = true;
-        for (const values of data_store.values()) {
-            for (const [idx, value] of values) {
-                if (idx === rx_idx_max && value !== "") {
-                    remove_last_value = false;
-                    break;
-                }
-            }
-        }
-        if (remove_last_value) {
-            for (const values of data_store.values()) {
-                values.length -= 1;
-            }
-        }
-
-        for (const [key, values_store] of data_store.entries()) {
-            const field = schema.DataSchema.Fields.find(
-                (field) => field.Label === key,
-            );
-            if (!field) {
+    const data_type = dataTypes.find((dtype) => dtype.Id === type);
+    switch (data_type.Storage as DataStorage) {
+        case DataStorageInternal:
+            const schema = dataTypeSchemas[datum_info.Type];
+            if (!schema) {
                 throw new Error(
-                    `invalid schema field ${key} in ${schema.DataSchema}`,
+                    `data schema for type ${datum_info.Type} not found`,
                 );
             }
-
-            const values = new Array<any>(values_store.length);
-            switch (field.DType) {
-                case ValueTypeUint:
-                    for (const [idx, value] of values_store) {
-                        const v = parseInt(value);
-                        if (v < 0) {
-                            throw new Error(
-                                `invalid data value ${v} of type ${field.DType}`,
-                            );
-                        }
-
-                        values[idx] = v;
-                    }
-                    break;
-                case ValueTypeInt:
-                    for (const [idx, value] of values_store) {
-                        values[idx] = parseInt(value);
-                    }
-                    break;
-                case ValueTypeFloat:
-                    for (const [idx, value] of values_store) {
-                        values[idx] = parseFloat(value);
-                    }
-                    break;
-                case ValueTypeString:
-                    for (const [idx, value] of values_store) {
-                        values[idx] = value;
-                    }
-                    break;
-
-                case ValueTypeBoolean:
-                case ValueTypeTimestamp:
-                    throw new Error(`TODO: parse data of type ${field?.DType}`);
-                default:
-                    throw new Error(
-                        `invalid data type ${field.DType} from ${schema.DataSchema}`,
-                    );
-            }
-
-            datum_info.Values = { ...datum_info.Values, [key]: values };
-        }
-    } else {
-        for (const source of datum.ingestion.Sources) {
-            const field_key = `data[${data_id}][ingestion_script_source][${source.Id}]`;
-            const e_field = fields.find(([key, _]) => key === field_key);
-            if (source.Required && !e_field) {
-                throw new Error(
-                    `missing ingestion script source ${source.Label}`,
-                );
-            }
-            if (!e_field) {
-                continue;
-            }
-
-            datum_info.IngestionScriptSources.set(
-                source.Id as string,
-                field_key,
+            const values = parse_form_data_internal(
+                fields,
+                data_id,
+                schema.DataSchema.Fields,
             );
-        }
+            datum_info.Values = values;
+            break;
+        case DataStorageExternal:
+            const dtype = data_type as DataTypeExternal;
+            const sources = parse_form_data_external(
+                fields,
+                data_id,
+                dtype.Sources,
+            );
+            datum_info.Sources = sources;
+            break;
     }
 
     return [label, datum_info];
+}
+
+function parse_form_data_internal(
+    fields: [string, FormDataEntryValue][],
+    data_id: string,
+    schema: DataSchemaField[],
+) {
+    let rx_idx_max = -1;
+    const data_store = new Map<string, [number, string][]>();
+    const data_pattern = new RegExp(
+        `^data\\[${data_id}\\]\\[value\\]\\[(\\d+)\\]\\[(\\w+)\\]$`,
+    );
+    for (const [key, field] of fields) {
+        const match = data_pattern.exec(key);
+        if (!match) {
+            continue;
+        }
+
+        const rx_idx = parseInt(match[1]!);
+        const rx_col = match[2]!;
+        const value = field.toString();
+        const col_data = data_store.getOrInsert(rx_col, []);
+        col_data.push([rx_idx, value]);
+        if (rx_idx > rx_idx_max) {
+            rx_idx_max = rx_idx;
+        }
+    }
+
+    let remove_last_value = true;
+    for (const values of data_store.values()) {
+        for (const [idx, value] of values) {
+            if (idx === rx_idx_max && value !== "") {
+                remove_last_value = false;
+                break;
+            }
+        }
+    }
+    if (remove_last_value) {
+        for (const values of data_store.values()) {
+            values.length -= 1;
+        }
+    }
+
+    let values = {};
+    for (const [key, values_store] of data_store.entries()) {
+        const field = schema.find((field) => field.Label === key);
+        if (!field) {
+            throw new Error(`invalid schema field ${key}`);
+        }
+
+        const field_values = new Array<any>(values_store.length);
+        switch (field.DType) {
+            case ValueTypeUint:
+                for (const [idx, value] of values_store) {
+                    const v = parseInt(value);
+                    if (v < 0) {
+                        throw new Error(
+                            `invalid data value ${v} of type ${field.DType}`,
+                        );
+                    }
+
+                    field_values[idx] = v;
+                }
+                break;
+            case ValueTypeInt:
+                for (const [idx, value] of values_store) {
+                    field_values[idx] = parseInt(value);
+                }
+                break;
+            case ValueTypeFloat:
+                for (const [idx, value] of values_store) {
+                    field_values[idx] = parseFloat(value);
+                }
+                break;
+            case ValueTypeString:
+                for (const [idx, value] of values_store) {
+                    field_values[idx] = value;
+                }
+                break;
+
+            case ValueTypeBoolean:
+            case ValueTypeTimestamp:
+                throw new Error(`TODO: parse data of type ${field?.DType}`);
+            default:
+                throw new Error(`invalid data type ${field.DType}`);
+        }
+
+        values = { ...values, [key]: field_values };
+    }
+
+    return values;
+}
+
+// # Returns
+// Object keyed by source id with values of field name(s).
+function parse_form_data_external(
+    fields: [string, FormDataEntryValue][],
+    data_id: string,
+    sources: DataTypeExternalSourceRx[],
+): { [key: string]: string | string[] } {
+    let values = {};
+    for (const source of sources) {
+        const field_key = `data[${data_id}][source][${source.Id}]`;
+        const field = fields.find(([key, _]) => key === field_key);
+        if (source.Required && !field) {
+            throw new Error(`missing data source ${source.Label}`);
+        }
+        if (!field) {
+            continue;
+        }
+
+        const [name, _] = field;
+        values = { ...values, [uuidToString(source.Id)]: name };
+    }
+
+    return values;
 }
 
 interface ProjectDataProps {
@@ -525,9 +552,7 @@ interface ProjectDataProps {
 }
 function ProjectData({ project, dataTypes }: ProjectDataProps) {
     const navigate = useNavigate();
-    const [data, setData] = useState<Datum[]>([
-        { id: 0, ingestion: undefined },
-    ]);
+    const [data, setData] = useState<Datum[]>([{ id: 0 }]);
     const [dataTypeSchemas, setDataTypeSchemas] = useState<
         Record<string, DataSchemaResources>
     >({});
@@ -564,15 +589,15 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
         const form = new FormData(e.target);
         const data_fields = partition_form_data(form);
 
-        const info = new Array<DataCreate>();
+        const info = new Array<DataIngest>();
         const labels = new Array<string>();
+        const files = new Array<[string, File | File[]]>();
         for (const [id, fields] of data_fields.entries()) {
             const idx = parseInt(id);
-            const datum = data.find((datum) => datum.id === idx)!;
             const datum_values = parse_form_data(
-                id,
                 fields,
-                datum,
+                id,
+                dataTypes,
                 dataTypeSchemas,
             );
             if (datum_values === undefined) {
@@ -580,6 +605,22 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
             }
 
             const [label, datum_info] = datum_values;
+            const data_type = dataTypes.find(
+                (dtype) => dtype.Id === datum_info.Type,
+            )!;
+            if (data_type.Storage === DataStorageExternal) {
+                const dtype = data_type as DataTypeExternal;
+                for (const source of dtype.Sources) {
+                    const srcs = datum_info.Sources[uuidToString(source.Id)]!;
+                    switch (source.Cardinality) {
+                        case DataSourceCardinalitySingle:
+                            files.push([srcs, form.getAll(srcs)! as File[]]);
+                            break;
+                        case DataSourceCardinalityMultiple:
+                            break;
+                    }
+                }
+            }
             info.push(datum_info);
             labels.push(label);
         }
@@ -783,7 +824,7 @@ function DatumStorage({
                 </ErrorBoundary>
             );
         case DataStorageExternal:
-            return <DatumStorageExternal />;
+            return <DatumStorageExternal datum={datum} dataType={dataType} />;
     }
 }
 
@@ -1002,8 +1043,52 @@ function InputFieldManual({
     );
 }
 
-function DatumStorageExternal() {
-    return <div>Ext</div>;
+interface DataStorageExternalProps {
+    datum: Datum;
+    dataType: DataTypeExternal;
+}
+function DatumStorageExternal({ datum, dataType }: DataStorageExternalProps) {
+    return (
+        <div>
+            <fieldset>
+                <legend>Sources</legend>
+                <div>
+                    {dataType.Sources.map((source) => (
+                        <DataSource
+                            key={source.Id.toString()}
+                            datum={datum}
+                            source={source}
+                        />
+                    ))}
+                </div>
+            </fieldset>
+        </div>
+    );
+}
+
+interface DataSourceProps {
+    datum: Datum;
+    source: DataTypeExternalSourceRx;
+}
+function DataSource({ datum, source }: DataSourceProps) {
+    return (
+        <div>
+            <label className="flex gap-2" title={source.Description}>
+                <span>{source.Label}</span>
+                <input
+                    type="file"
+                    id={`data[${datum.id}][source][${source.Id}]`}
+                    name={`data[${datum.id}][source][${source.Id}]`}
+                    className="input-basic"
+                    multiple={
+                        source.Cardinality === DataSourceCardinalityMultiple
+                    }
+                    accept={source.MediaTypes?.join(", ")}
+                    required={source.Required}
+                />
+            </label>
+        </div>
+    );
 }
 
 interface PropertyRx {

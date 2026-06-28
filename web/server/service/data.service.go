@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mime"
 	"mime/multipart"
 	"os"
 	"path/filepath"
@@ -110,7 +111,7 @@ type DataTypeExternalSourceRx struct {
 	Required    bool                  `db:"_required"`
 	Cardinality DataSourceCardinality `db:"_cardinality"`
 	Description string                `db:"description"`
-	ExtFilter   []string              `db:"ext_filter"`
+	MediaTypes  []string              `db:"media_types"`
 }
 
 type DataTypeRx struct {
@@ -245,7 +246,7 @@ func (s *DataService) DataTypesAll() ([]DataType, error) {
 		external_ids[idx] = rx.Id
 	}
 	external_query :=
-		`SELECT _id, _data_type, _label, _required, _cardinality, description, ext_filter
+		`SELECT _id, _data_type, _label, _required, _cardinality, description, media_types
 		FROM data_type_source_ WHERE _data_type=ANY($1)`
 	rows, _ = s.db.Conn.Query(s.ctx, external_query, external_ids)
 	external_sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeExternalSourceRx])
@@ -352,7 +353,7 @@ func (s *DataService) DataTypesById(ids []uuid.UUID) ([]DataType, error) {
 		external_ids[idx] = rx.Id
 	}
 	external_query :=
-		`SELECT _id, _data_type, _label, _required, _cardinality, description, ext_filter
+		`SELECT _id, _data_type, _label, _required, _cardinality, description, media_types
 		FROM data_type_source_ WHERE _data_type=ANY($1)`
 	rows, _ = s.db.Conn.Query(s.ctx, external_query, external_ids)
 	external_sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeExternalSourceRx])
@@ -442,13 +443,13 @@ func (s *DataService) dataTypeRxInfo(data_type DataTypeRx) (DataType, error) {
 		data_type_external := DataTypeExternal{
 			Id:          data_type.Id,
 			Creator:     data_type.Creator,
-			Storage:     DataStorageInternal,
+			Storage:     DataStorageExternal,
 			Label:       data_type.Label,
 			Description: data_type.Description,
 			Active:      data_type.Active,
 		}
 		external_query :=
-			`SELECT _id, _data_type, _label, _required, _cardinality, description, ext_filter
+			`SELECT _id, _data_type, _label, _required, _cardinality, description, media_types
 			FROM data_type_source_ WHERE _data_type=$1`
 		rows, _ := s.db.Conn.Query(s.ctx, external_query, data_type.Id)
 		external_sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeExternalSourceRx])
@@ -470,15 +471,19 @@ func (s *DataService) dataTypeRxInfo(data_type DataTypeRx) (DataType, error) {
 
 }
 
-type ExternalSourceCreate struct {
-	Cardinality     DataSourceCardinality
-	Required        bool
-	ExtensionFilter []string
-	Label           string
-	Description     *string
+type DataTypeSourceCreate struct {
+	Cardinality DataSourceCardinality
+	Required    bool
+	MediaTypes  []string
+	Label       string
+	Description *string
 }
 
-func (s *DataService) DataTypeSourcesCreate(tx pgx.Tx, data_type uuid.UUID, sources []ExternalSourceCreate) ([]uuid.UUID, error) {
+func (s *DataService) dataTypeSourcesCreate(
+	tx pgx.Tx,
+	data_type uuid.UUID,
+	sources []DataTypeSourceCreate,
+) ([]uuid.UUID, error) {
 	if len(sources) == 0 {
 		return []uuid.UUID{}, nil
 	}
@@ -486,7 +491,7 @@ func (s *DataService) DataTypeSourcesCreate(tx pgx.Tx, data_type uuid.UUID, sour
 	var query strings.Builder
 	query.WriteString(
 		`INSERT INTO data_type_source_ 
-		(_data_type, _cardinality, _required, extension_filter, label, description)
+		(_data_type, _label, _cardinality, _required, description, media_types)
 		VALUES`,
 	)
 
@@ -495,20 +500,16 @@ func (s *DataService) DataTypeSourcesCreate(tx pgx.Tx, data_type uuid.UUID, sour
 	args := make([]any, len(sources)*fieldsPerRecord+recordOffset)
 	args[0] = data_type
 	for idx, source := range sources {
-		cardinality_idx := idx*fieldsPerRecord + recordOffset
+		label_idx := idx*fieldsPerRecord + recordOffset
+		cardinality_idx := label_idx + 1
 		required_idx := cardinality_idx + 1
-		extension_filter_idx := required_idx + 1
-		label_idx := extension_filter_idx + 1
-		description_idx := label_idx + 1
+		description_idx := required_idx + 1
+		media_types_idx := description_idx + 1
 
+		args[label_idx] = source.Label
 		args[cardinality_idx] = source.Cardinality
 		args[required_idx] = source.Required
-		args[label_idx] = source.Label
-		if len(source.ExtensionFilter) == 0 {
-			args[extension_filter_idx] = nil
-		} else {
-			args[extension_filter_idx] = source.ExtensionFilter
-		}
+		args[media_types_idx] = source.MediaTypes
 		if source.Description == nil {
 			args[description_idx] = nil
 		} else {
@@ -521,11 +522,11 @@ func (s *DataService) DataTypeSourcesCreate(tx pgx.Tx, data_type uuid.UUID, sour
 		fmt.Fprintf(
 			&query,
 			"($1, $%d, $%d, $%d, $%d, $%d)",
+			label_idx+1,
 			cardinality_idx+1,
 			required_idx+1,
-			extension_filter_idx+1,
-			label_idx+1,
 			description_idx+1,
+			media_types_idx+1,
 		)
 	}
 	query.WriteString(" RETURNING _id")
@@ -624,9 +625,7 @@ func (s *DataService) DataTypeCreateExternal(
 	creator uuid.UUID,
 	label string,
 	description *string,
-	sources []ExternalSourceCreate,
-	schema uuid.UUID,
-	recipe *multipart.FileHeader,
+	sources []DataTypeSourceCreate,
 ) error {
 	tx, err := s.db.Conn.Begin(s.ctx)
 	if err != nil {
@@ -635,32 +634,19 @@ func (s *DataService) DataTypeCreateExternal(
 	}
 	defer tx.Rollback(s.ctx)
 
-	fields := []string{"_creator", "label"}
-	value_args := []any{creator, label}
-
-	if description != nil {
-		fields = append(fields, "description")
-		value_args = append(value_args, *description)
-	}
-
-	if schema != uuid.Nil {
-		fields = append(fields, "_schema")
-		value_args = append(value_args, schema)
-	}
-
 	var id uuid.UUID
 	query := fmt.Sprintf(
-		"INSERT INTO data_type_ (%s) VALUES (%s) RETURNING _id",
-		strings.Join(fields, ", "),
-		SqlArgsPlaceholderList(len(value_args)),
+		`INSERT INTO data_type_ (_creator, _storage, label, description) 
+		VALUES ($1, '%s', $2, $3) RETURNING _id`,
+		DataStorageExternal,
 	)
-	err = tx.QueryRow(s.ctx, query, value_args...).Scan(&id)
+	err = tx.QueryRow(s.ctx, query, creator, label, description).Scan(&id)
 	if err != nil {
 		s.logger.With("error", err).Error("could not create data type")
 		return err
 	}
 
-	_, err = s.DataTypeSourcesCreate(tx, id, sources)
+	_, err = s.dataTypeSourcesCreate(tx, id, sources)
 	if err != nil {
 		s.logger.With(
 			"error", err,
@@ -678,9 +664,9 @@ func (s *DataService) DataTypeCreateExternal(
 }
 
 type DataTypeSourceUpdate struct {
-	Id              uuid.UUID
-	Description     string
-	ExtensionFilter []string
+	Id          uuid.UUID
+	Description string
+	MediaTypes  []string
 }
 
 type DataTypeUpdate struct {
@@ -736,9 +722,9 @@ func (s *DataService) DataTypeUpdate(update DataTypeUpdate) error {
 
 func (s *DataService) DataTypeSourceUpdate(tx pgx.Tx, update DataTypeSourceUpdate) error {
 	query :=
-		`UPDATE data_type_source_ SET description=$1, extension_filter=$2 
+		`UPDATE data_type_source_ SET description=$1, media_types=$2 
 		WHERE _id=$3`
-	_, err := tx.Exec(s.ctx, query, update.Description, update.ExtensionFilter, update.Id)
+	_, err := tx.Exec(s.ctx, query, update.Description, update.MediaTypes, update.Id)
 	if err != nil {
 		s.logger.With(
 			"error", err,
@@ -1953,8 +1939,8 @@ type SourceFileInfo struct {
 }
 
 // DataSource is an externally stored data source.
-// `Sources` is a single `SourceFileInfo` if `Cardinality` is `single`.
-// `Sources` is an array of `SourceFileInfo`s  if `Cardinality` is `multiple`.
+// `Sources` is `SourceFileInfo` if `Cardinality` is `single`.
+// `Sources` is `[]SourceFileInfo`  if `Cardinality` is `multiple`.
 type DataSource struct {
 	Label       string
 	Cardinality DataSourceCardinality
@@ -1977,7 +1963,7 @@ func (s *DataService) dataValuesByIdExternalSource(
 			s.label as filename,
 			t._cardinality as cardinality, 
 			t.label as label
-		FROM data_source s JOIN data_type_source_ t
+		FROM data_source_ s JOIN data_type_source_ t
 		WHERE s._data=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, query, data)
 	info, err := pgx.CollectRows(rows, pgx.RowToStructByName[sourceInfo])
@@ -3247,6 +3233,7 @@ func (s *DataService) DataCreate(
 			"error", err,
 			"data types", data_type_ids,
 		).Error("could not get data types")
+		return nil, err
 	}
 
 	tx, err := s.db.Conn.Begin(s.ctx)
@@ -3285,11 +3272,11 @@ func (s *DataService) DataCreate(
 		data_type_idx := slices.IndexFunc(data_types, func(dtype DataType) bool {
 			switch dtype.DataStorage() {
 			case DataStorageExternal:
-				dtext := dtype.(DataTypeExternal)
-				return dtext.Id == datum.Type
+				dt := dtype.(DataTypeExternal)
+				return dt.Id == datum.Type
 			case DataStorageInternal:
-				dtint := dtype.(DataTypeInternal)
-				return dtint.Id == datum.Type
+				dt := dtype.(DataTypeInternal)
+				return dt.Id == datum.Type
 			default:
 				panic("unexpected service.DataStorage")
 			}
@@ -3316,28 +3303,32 @@ func (s *DataService) DataCreate(
 func (s *DataService) dataCreateValues(tx pgx.Tx, data DataCreate, id uuid.UUID, data_type DataType) error {
 	switch data_type.DataStorage() {
 	case DataStorageExternal:
-		dtext := data_type.(DataTypeExternal)
-		return s.dataCreateValuesExternal(tx, data, id, dtext)
+		_, err := s.dataCreateValuesExternal(tx, data, id)
+		return err
 	case DataStorageInternal:
-		dtint := data_type.(DataTypeInternal)
-		return s.dataCreateValuesInternal(tx, data, id, dtint)
+		dt := data_type.(DataTypeInternal)
+		return s.dataCreateValuesInternal(tx, data, id, dt)
 	default:
 		panic("unexpected service.DataStorage")
 	}
 }
 
-func (s *DataService) dataCreateValuesInternal(tx pgx.Tx, data DataCreate, id uuid.UUID, data_type DataTypeInternal) error {
+func (s *DataService) dataCreateValuesInternal(
+	tx pgx.Tx,
+	data DataCreate,
+	id uuid.UUID,
+	data_type DataTypeInternal,
+) error {
+	if data.Values.Storage != DataStorageInternal {
+		panic("values must be internal")
+	}
+
 	schema, err := s.DataSchemaById(data_type.Schema)
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"schema", data_type.Schema,
 		).Error("could not get data schema")
-		return err
-	}
-
-	err = s.dataCreateValidateValuesAsSchema(schema, data.Values)
-	if err != nil {
 		return err
 	}
 
@@ -3357,7 +3348,7 @@ func (s *DataService) dataCreateValuesInternal(tx pgx.Tx, data DataCreate, id uu
 	for idx, field := range schema.Fields {
 		idx_arg := idx + 1
 		fmt.Fprintf(&values_query, ", $%d", idx_arg+1)
-		args[idx_arg] = data.Values[field.Label]
+		args[idx_arg] = data.Values.Values[field.Label]
 	}
 	values_query.WriteString(")")
 	_, err = tx.Exec(s.ctx, values_query.String(), args...)
@@ -3372,7 +3363,104 @@ func (s *DataService) dataCreateValuesInternal(tx pgx.Tx, data DataCreate, id uu
 	return nil
 }
 
-func (s *DataService) dataCreateValidateValuesAsSchema(schema DataSchema, values map[string]any) error {
+func (s *DataService) dataCreateValuesExternal(
+	tx pgx.Tx,
+	data DataCreate,
+	data_id uuid.UUID,
+) ([]uuid.UUID, error) {
+	if data.Values.Storage != DataStorageExternal {
+		panic("invalid data storage")
+	}
+
+	sources := data.Values.Sources
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("sources are empty")
+	}
+
+	const ArgsOffset = 1
+	const ArgsPerRow = 2
+	args_count := ArgsOffset
+	for _, srcs := range sources {
+		args_count += 1
+		switch srcs.Cardinality {
+		case DataSourceCardinalitySingle:
+			args_count += ArgsPerRow
+		case DataSourceCardinalityMultiple:
+			args_count += ArgsPerRow * len(srcs.Sources)
+		default:
+			panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", srcs.Cardinality))
+		}
+	}
+
+	args := make([]any, args_count)
+	args[0] = data_id
+	args_idx := ArgsOffset
+	var query strings.Builder
+	query.WriteString(
+		`INSERT INTO data_source_ (_data, _source, _path, label) VALUES `,
+	)
+	for source_id, srcs := range sources {
+		if args_idx > 1 {
+			query.WriteString(", ")
+		}
+
+		source_idx := args_idx
+		args[source_idx] = source_id
+		args_idx += 1
+		switch srcs.Cardinality {
+		case DataSourceCardinalitySingle:
+			path_idx := args_idx
+			label_idx := path_idx + 1
+
+			fmt.Fprintf(
+				&query,
+				"($1, $%d, $%d, $%d)",
+				source_idx+1,
+				path_idx+1,
+				label_idx+1,
+			)
+
+			args[path_idx] = srcs.Source.Path
+			args[label_idx] = srcs.Source.Filename
+			args_idx += ArgsPerRow
+		case DataSourceCardinalityMultiple:
+			for _, src := range srcs.Sources {
+				path_idx := args_idx
+				label_idx := path_idx + 1
+
+				fmt.Fprintf(
+					&query,
+					"($1, $%d, $%d, $%d)",
+					source_idx+1,
+					path_idx+1,
+					label_idx+1,
+				)
+
+				args[path_idx] = src.Path
+				args[label_idx] = src.Filename
+				args_idx += ArgsPerRow
+			}
+		default:
+			panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", srcs.Cardinality))
+		}
+	}
+	query.WriteString(" RETURNING _id")
+
+	rows, _ := tx.Query(s.ctx, query.String(), args...)
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+			"query", query.String(),
+		).Error("could not create data sources")
+		return nil, err
+	}
+
+	return ids, nil
+}
+
+func (s *DataService) ValidateValuesAsSchema(schema DataSchema, values map[string]any) error {
 	switch schema.Cardinality {
 	case DataSchemaCardinalitySingle:
 		for _, field := range schema.Fields {
@@ -3397,7 +3485,10 @@ func (s *DataService) dataCreateValidateValuesAsSchema(schema DataSchema, values
 			f_values_arr := f_values.([]any)
 			if !field.Nullable {
 				if slices.Contains(f_values_arr, nil) {
-					return fmt.Errorf("null value found in non-nullable field %s", field.Label)
+					return fmt.Errorf(
+						"null value found in non-nullable field %s",
+						field.Label,
+					)
 				}
 			}
 		}
@@ -3408,87 +3499,84 @@ func (s *DataService) dataCreateValidateValuesAsSchema(schema DataSchema, values
 	panic("unreachable")
 }
 
-func (s *DataService) dataCreateValuesExternal(
-	tx pgx.Tx,
-	data DataCreate,
-	id uuid.UUID,
-	data_type DataTypeExternal,
+func (s *DataService) ValidateValuesAsSources(
+	sources []DataTypeExternalSourceRx,
+	values map[uuid.UUID]DataCreateValuesSources,
 ) error {
-	err := s.dataCreateValidateValuesAsSources(data_type.Sources, data.Values)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"data", data,
-		).Error("invalid data")
-		return err
-	}
-
-	panic("TODO")
-
-	return nil
-}
-
-func (s *DataService) dataCreateValidateValuesAsSources(sources []DataTypeExternalSourceRx, values map[string]any) error {
 	for _, src := range sources {
-		value, exists := values[src.Label]
-		if src.Required {
-			if !exists {
-				return fmt.Errorf("`%s` not found", src.Label)
-			}
+		value, exists := values[src.Id]
+		if src.Cardinality != value.Cardinality {
+			return fmt.Errorf("invalid cardinality for `%s`", src.Label)
+		}
+		if src.Required && !exists {
+			return fmt.Errorf("`%s` not found", src.Label)
 		}
 
 		switch src.Cardinality {
 		case DataSourceCardinalityMultiple:
-			files, ok := value.([]string)
-			if !ok {
-				return fmt.Errorf("could not cast `%s` as multiple cardinality data source")
-			}
 			if src.Required {
-				if len(files) == 0 {
+				if len(value.Sources) == 0 {
 					return fmt.Errorf("`%s` not found", src.Label)
 				}
 			}
 
-			if len(src.ExtFilter) > 0 {
-				for _, file := range files {
-					ext := filepath.Ext(file)
+			if len(src.MediaTypes) > 0 {
+				for _, path := range value.Sources {
+					ext := filepath.Ext(path.Path)
 					if ext == "" {
-						return fmt.Errorf("`%s` does not match extension filter of `%s`", file, src.Label)
+						return fmt.Errorf(
+							"`%s` does not match media type filter of `%s`",
+							path,
+							src.Label,
+						)
 					}
 
 					matches := false
-					for _, filter := range src.ExtFilter {
-						if filter == ext[1:] {
+					for _, mtype := range src.MediaTypes {
+						m_matches, err := extensionIsValidForMediaType(ext, mtype)
+						if err != nil {
+							panic(fmt.Sprintf("invalid media type `%s`", mtype))
+						}
+
+						if m_matches {
 							matches = true
 							break
 						}
 					}
 					if !matches {
-						return fmt.Errorf("`%s` does not match extension filter of `%s`", file, src.Label)
+						return fmt.Errorf(
+							"`%s` does not match media type filter of `%s`",
+							path,
+							src.Label,
+						)
 					}
 				}
 			}
 		case DataSourceCardinalitySingle:
-			file, ok := value.(string)
-			if !ok {
-				return fmt.Errorf("could not cast `%s` as single cardinality data source")
-			}
-
-			if len(src.ExtFilter) > 0 {
-				ext := filepath.Ext(file)
+			if len(src.MediaTypes) > 0 {
+				ext := filepath.Ext(value.Source.Path)
 				if ext == "" {
-					return fmt.Errorf("`%s` does not match extension filter of `%s`", file, src.Label)
+					return fmt.Errorf(
+						"`%s` does not match media type filter of `%s`",
+						value.Source,
+						src.Label,
+					)
 				}
 
 				matches := false
-				for _, filter := range src.ExtFilter {
-					if filter == ext[1:] {
+				for _, mtype := range src.MediaTypes {
+					m_matches, err := extensionIsValidForMediaType(ext, mtype)
+					if err != nil {
+						panic(fmt.Sprintf("invalid media type `%s`", mtype))
+					}
+
+					if m_matches {
 						matches = true
 						break
 					}
 				}
 				if !matches {
-					return fmt.Errorf("`%s` does not match extension filter of `%s`", file, src.Label)
+					return fmt.Errorf("`%s` does not match media type filter of `%s`", value.Source, src.Label)
 				}
 			}
 		default:
@@ -3497,6 +3585,26 @@ func (s *DataService) dataCreateValidateValuesAsSources(sources []DataTypeExtern
 	}
 
 	return nil
+}
+
+func extensionIsValidForMediaType(ext string, media_type string) (bool, error) {
+	if ext == media_type {
+		return true, nil
+	}
+
+	valid_exts, err := mime.ExtensionsByType(media_type)
+	fmt.Printf("EXTENSIONS: %s", valid_exts)
+	if err != nil {
+		return false, err
+	}
+
+	for _, valid := range valid_exts {
+		if ext == valid {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 type DataPermissionKey string

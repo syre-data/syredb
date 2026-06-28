@@ -17,6 +17,7 @@ import {
     DbPermissionDataTypeModify,
     type DataType,
     type DataTypeExternal,
+    type DataTypeExternalSourceRx,
     type DataTypeInternal,
 } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -65,31 +66,25 @@ function DataType({ data_type_id }: DataTypeProps) {
         queryKey: [QUERY_KEY_DATA_TYPES],
         queryFn: dataService.dataTypesGetAll,
     });
-    const navigate = useNavigate();
 
-    function close(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button !== MouseButton.Primary) {
-            return;
-        }
-
-        navigate(-1);
-    }
-
-    let content;
     switch (data_type.Storage) {
         case DataStorageInternal:
             return (
-                <DataTypeInternal
-                    dataType={data_type as DataTypeInternal}
-                    dataTypes={data_types}
-                />
+                <div>
+                    <DataTypeCommon dataType={data_type} />
+                    <DataTypeInternal
+                        dataType={data_type as DataTypeInternal}
+                    />
+                </div>
             );
         case DataStorageExternal:
             return (
-                <DataTypeExternal
-                    dataType={data_type as DataTypeExternal}
-                    dataTypes={data_types}
-                />
+                <div>
+                    <DataTypeCommon dataType={data_type} />
+                    <DataTypeExternal
+                        dataType={data_type as DataTypeExternal}
+                    />
+                </div>
             );
         default:
             console.error(`invalid data type storage: ${data_type}`);
@@ -97,18 +92,11 @@ function DataType({ data_type_id }: DataTypeProps) {
     }
 }
 
-interface DataTypeInternalProps {
-    dataType: DataTypeInternal;
-    dataTypes: DataType[];
+interface DataTypeCommonProps {
+    dataType: DataTypeInternal | DataTypeExternal;
 }
-function DataTypeInternal({ dataType, dataTypes }: DataTypeInternalProps) {
-    const { data: data_schema } = useSuspenseQuery({
-        queryKey: [QUERY_KEY_DATA_SCHEMA, dataType.Schema],
-        queryFn: async () =>
-            await dataService.dataSchemaResourcesGet(dataType.Schema),
-    });
+function DataTypeCommon({ dataType }: DataTypeCommonProps) {
     const navigate = useNavigate();
-
     const ctx = useContext(Context);
     const user = ctx.user;
 
@@ -124,10 +112,11 @@ function DataTypeInternal({ dataType, dataTypes }: DataTypeInternalProps) {
         DbPermissionDataTypeModify,
         user.DbPermissions,
     );
+
     return (
         <div>
-            <div className="px-4 py-2 flex justify-between">
-                <div className="flex gap-2">
+            <div className="px-4 pt-2 flex justify-between">
+                <div className="flex gap-2 items-center">
                     <h1>{dataType.Label}</h1>
                     <div>
                         {dataType.Active ? (
@@ -158,6 +147,22 @@ function DataTypeInternal({ dataType, dataTypes }: DataTypeInternalProps) {
                 </div>
             </div>
             <div className="px-4 pt-2">{dataType.Description}</div>
+        </div>
+    );
+}
+
+interface DataTypeInternalProps {
+    dataType: DataTypeInternal;
+}
+function DataTypeInternal({ dataType }: DataTypeInternalProps) {
+    const { data: data_schema } = useSuspenseQuery({
+        queryKey: [QUERY_KEY_DATA_SCHEMA, dataType.Schema],
+        queryFn: async () =>
+            await dataService.dataSchemaResourcesGet(dataType.Schema),
+    });
+
+    return (
+        <div>
             <div className="px-4 pt-2">
                 <Link
                     to={`/data-schema/${dataType.Schema}`}
@@ -178,79 +183,61 @@ function DataTypeInternal({ dataType, dataTypes }: DataTypeInternalProps) {
 
 interface DataTypeExternalProps {
     dataType: DataTypeExternal;
-    dataTypes: DataType[];
 }
-function DataTypeExternal({ dataType, dataTypes }: DataTypeExternalProps) {
-    return <div></div>;
-}
-
-interface DataTypeSourcesProps {
-    sources: DataTypeSourceRecord[];
-}
-function DataTypeSources({ sources }: DataTypeSourcesProps) {
+function DataTypeExternal({ dataType }: DataTypeExternalProps) {
     return (
-        <fieldset className="flex flex-col gap-2">
-            <legend>Sources</legend>
-
+        <div className="px-4">
+            <div>
+                <h2>Sources</h2>
+            </div>
             <ol className="list-decimal px-4">
-                {sources.map((source) => (
-                    <li key={source.Id.toString()}>
-                        <div className="flex flex-col gap-2">
-                            <div title="Label">{source.Label}</div>
-                            <div className="flex gap-2">
-                                <div>
-                                    {source.Required ? (
-                                        <span title="Required">*</span>
-                                    ) : null}
-                                </div>
-                                <div>
-                                    {source.Cardinality ===
-                                    DataSourceCardinalitySingle ? (
-                                        <Icon.File title="Single file source" />
-                                    ) : null}
-                                    {source.Cardinality ===
-                                    DataSourceCardinalityMultiple ? (
-                                        <Icon.Files title="Multiple file source" />
-                                    ) : null}
-                                </div>
-                            </div>
-                            <div>
-                                <label>
-                                    <span className="sr-only">Description</span>
-                                    <textarea
-                                        id={`source[${source.Id}][description]`}
-                                        name={`source[${source.Id}][description]`}
-                                        className="input-basic"
-                                        placeholder="Description"
-                                        defaultValue={source.Description ?? ""}
-                                    ></textarea>
-                                </label>
-                            </div>
-                            <div>
-                                <label title="Comma separated list of accepted extensions (e.g. 'png, jpg')">
-                                    <span className="sr-only">
-                                        Extension filter
-                                    </span>
-                                    <input
-                                        type="text"
-                                        id={`source[${source.Id}][extension_filter]`}
-                                        name={`source[${source.Id}][extension_filter]`}
-                                        className="input-basic"
-                                        placeholder="Extension filter"
-                                        defaultValue={
-                                            source.ExtensionFilter
-                                                ? source.ExtensionFilter.join(
-                                                      ", ",
-                                                  )
-                                                : ""
-                                        }
-                                    />
-                                </label>
-                            </div>
-                        </div>
-                    </li>
+                {dataType.Sources.map((source) => (
+                    <DataTypeSource
+                        key={source.Id.toString()}
+                        source={source}
+                    />
                 ))}
             </ol>
-        </fieldset>
+        </div>
+    );
+}
+
+interface DataTypeSourceProps {
+    source: DataTypeExternalSourceRx;
+}
+function DataTypeSource({ source }: DataTypeSourceProps) {
+    return (
+        <li>
+            <div>
+                <div className="flex items-center">
+                    <div className="flex">
+                        <div title="Label">{source.Label}</div>
+                        <div>
+                            {source.Required ? (
+                                <span title="Required">*</span>
+                            ) : null}
+                        </div>
+                    </div>
+                    <div className="pl-2">
+                        {source.Cardinality === DataSourceCardinalitySingle ? (
+                            <Icon.File title="Single file source" />
+                        ) : null}
+                        {source.Cardinality ===
+                        DataSourceCardinalityMultiple ? (
+                            <Icon.Files title="Multiple file source" />
+                        ) : null}
+                    </div>
+                </div>
+                <div>{source.Description ?? "(no description)"}</div>
+                <div>
+                    Media types
+                    <span className="pl-2">
+                        {source.MediaTypes
+                            ? source.MediaTypes.join(", ")
+                            : "(no media type filter)"}
+                    </span>
+                </div>
+            </div>
+        </li>
     );
 }

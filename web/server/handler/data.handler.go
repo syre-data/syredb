@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -53,6 +54,9 @@ func (h *DataHandler) DataTypeCreate(c *echo.Context) error {
 	case string(service.DataStorageExternal):
 		return h.DataTypeCreateExternal(c)
 	default:
+		c.Logger().With(
+			"storage", storage,
+		).Warn("invalid storage")
 		return c.NoContent(http.StatusBadRequest)
 	}
 }
@@ -109,6 +113,12 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 }
 
 func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
+	type dataTypeCreateExternal struct {
+		Label       string
+		Description string
+		Sources     []service.DataTypeSourceCreate
+	}
+
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	sufficient_permission, err := h.user_service.UserHasPermission(
 		user_id,
@@ -128,43 +138,22 @@ func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
-	label := c.FormValue("label")
-	if len(label) == 0 {
+	var data dataTypeCreateExternal
+	err = c.Bind(&data)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not bind data")
 		return c.NoContent(http.StatusBadRequest)
 	}
 
 	var description *string
-	description_str := c.FormValue("description")
-	if description_str != "" {
-		description = &description_str
+	if len(data.Description) > 0 {
+		description = &data.Description
 	}
 
-	var sources []service.ExternalSourceCreate
-	err = json.Unmarshal([]byte(c.FormValue("sources")), &sources)
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-		).Error("could not parse data type sources")
-		return c.NoContent(http.StatusBadRequest)
-	}
-
-	data_schema := uuid.Nil
-	data_schema_str := c.FormValue("data_schema")
-	if data_schema_str != "" {
-		data_schema, err = uuid.Parse(data_schema_str)
-		if err != nil {
-			c.Logger().With(
-				"error", err,
-				"data schema", data_schema_str,
-			).Error("could not parse data schema to uuid")
-			return c.NoContent(http.StatusBadRequest)
-		}
-	}
-
-	var recipe *multipart.FileHeader
-	recipe, _ = c.FormFile("recipe")
-
-	err = h.data_service.DataTypeCreateExternal(user_id, label, description, sources, data_schema, recipe)
+	err = h.data_service.DataTypeCreateExternal(user_id, data.Label, description, data.Sources)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -1044,6 +1033,7 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 		if data_type_idx < 0 {
 			panic(fmt.Sprintf("invalid data type `%s`", datum.Type))
 		}
+		data_types_by_idx[idx] = data_type_idx
 	}
 
 	source_base_path, err := h.app_service.AppDataDir(service.AppDataDirDataSource)
@@ -1054,7 +1044,16 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	data := make([]service.DataCreate, 0, len(info))
+	form, err := c.MultipartForm()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not cast request body to multipart form")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	source_info := make([]map[uuid.UUID]DataIngestSourceInfo, len(info))
+	data := make([]service.DataCreate, len(info))
 	for idx, datum := range info {
 		data[idx].Type = datum.Type
 		data[idx].Creator = service.DataCreatorUser{
@@ -1066,93 +1065,211 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 		data[idx].Properties = datum.Properties
 		data[idx].Notes = datum.Notes
 
-		switch datum.IngestionMethod {
-		case service.DataIngestionManual:
+		data_type := data_types[data_types_by_idx[idx]]
+		switch data_type.DataStorage() {
+		case service.DataStorageInternal:
+			// TODO: validate values
 			data[idx].Values = service.DataCreateValues{
-				Values: datum.Values,
+				Storage: service.DataStorageInternal,
+				Values:  datum.Values,
 			}
-
-		case service.DataIngestionScript:
-			ingestion_script_idx := slices.IndexFunc(ingestion_scripts, func(s service.IngestionScript) bool {
-				return s.Id == datum.IngestionScript
-			})
-			if ingestion_script_idx < 0 {
-				panic(fmt.Sprintf("invalid ingestion script `%s`", datum.IngestionScript))
-			}
-			ingestion_script := ingestion_scripts[ingestion_script_idx]
-
-			sources := make(map[uuid.UUID]any, len(datum.IngestionScriptSources))
-			for source, name := range datum.IngestionScriptSources {
-				file, err := c.FormFile(name)
-				if err != nil {
-					c.Logger().With(
-						"error", err,
-						"source", source,
-						"file", name,
-					).Error("could not get form file")
-					return c.NoContent(http.StatusBadRequest)
-				}
-
-				sid, err := uuid.Parse(source)
-				if err != nil {
-					c.Logger().With(
-						"error", err,
-						"source", source,
-					).Error("could not parse data source id")
-					return c.NoContent(http.StatusBadRequest)
-				}
-
-				source_idx := slices.IndexFunc(ingestion_script.Sources, func(s service.IngestionScriptSourceRx) bool {
-					return s.Id == sid
+		case service.DataStorageExternal:
+			dtype := data_type.(service.DataTypeExternal)
+			data_source_info := make(map[uuid.UUID]DataIngestSourceInfo)
+			data_sources := make(map[uuid.UUID]service.DataCreateValuesSources, len(datum.Sources))
+			for source_id, field := range datum.Sources {
+				source_idx := slices.IndexFunc(dtype.Sources, func(s service.DataTypeExternalSourceRx) bool {
+					return s.Id == source_id
 				})
 				if source_idx < 0 {
-					panic(fmt.Sprintf("invalid ingestion script source `%s`", sid))
+					panic(fmt.Sprintf("invalid data source `%s`", source_id))
 				}
-				source := ingestion_script.Sources[source_idx]
+				source := dtype.Sources[source_idx]
 
-				f_sources, exists := sources[sid]
 				switch source.Cardinality {
-				case service.DataSourceCardinalityMultiple:
-					if exists {
-						sources[sid] = append(f_sources.([]*multipart.FileHeader), file)
-					} else {
-						sources[sid] = []*multipart.FileHeader{file}
-					}
 				case service.DataSourceCardinalitySingle:
-					if exists {
+					name, ok := field.(string)
+					if !ok {
 						c.Logger().With(
-							"script", ingestion_script.Id,
-							"source", sid,
-						).Warn("multiple sources assigned to cardinality single")
+							"source", source,
+							"field", field,
+						).Warn("invalid source cardinality")
 						return c.NoContent(http.StatusBadRequest)
 					}
 
-					sources[sid] = file
+					file, err := c.FormFile(name)
+					if err != nil {
+						c.Logger().With(
+							"error", err,
+							"source", source,
+							"file", name,
+						).Error("could not get form file")
+						return c.NoContent(http.StatusBadRequest)
+					}
+
+					filename := fmt.Sprintf("%s.%s", rand.Text(), file.Filename)
+					path := filepath.Join(source_base_path, source_id.String(), filename)
+					data_source_info[source_id] = DataIngestSourceInfo{
+						Cardinality: service.DataSourceCardinalitySingle,
+						Files:       file,
+						Paths:       path,
+					}
+					data_sources[source_id] = service.DataCreateValuesSources{
+						Cardinality: service.DataSourceCardinalitySingle,
+						Source: service.SourceFileInfo{
+							Path:     path,
+							Filename: file.Filename,
+						},
+					}
+				case service.DataSourceCardinalityMultiple:
+					name, ok := field.(string)
+					if !ok {
+						c.Logger().With(
+							"source", source,
+							"field", field,
+						).Warn("invalid source cardinality")
+						return c.NoContent(http.StatusBadGateway)
+					}
+
+					files, exists := form.File[name]
+					if !exists {
+						c.Logger().With(
+							"source", source,
+							"file", name,
+						).Error("could not get form file")
+						return c.NoContent(http.StatusBadRequest)
+					}
+
+					source_file_info := make([]service.SourceFileInfo, len(files))
+					paths := make([]string, len(files))
+					for idx, file := range files {
+						filename := fmt.Sprintf("%s.%s", rand.Text(), file.Filename)
+						path := filepath.Join(source_base_path, source_id.String(), filename)
+						paths[idx] = path
+						source_file_info = append(
+							source_file_info,
+							service.SourceFileInfo{
+								Path:     path,
+								Filename: file.Filename,
+							},
+						)
+					}
+
+					data_source_info[source_id] = DataIngestSourceInfo{
+						Cardinality: service.DataSourceCardinalityMultiple,
+						Files:       files,
+						Paths:       paths,
+					}
+					data_sources[source_id] = service.DataCreateValuesSources{
+						Cardinality: service.DataSourceCardinalitySingle,
+						Sources:     source_file_info,
+					}
 				default:
 					panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", source.Cardinality))
 				}
 			}
 
+			source_info[idx] = data_source_info
 			data[idx].Values = service.DataCreateValues{
-				IngestionScript:  datum.IngestionScript,
-				IngestionSources: sources,
+				Storage: service.DataStorageExternal,
+				Sources: data_sources,
+			}
+		default:
+			panic("unexpected service.DataStorage")
+		}
+	}
+
+	schema_ids := make([]uuid.UUID, 0, len(data_types))
+	for _, dtype := range data_types {
+		if dtype.DataStorage() == service.DataStorageInternal {
+			dt := dtype.(service.DataTypeInternal)
+			if !slices.Contains(schema_ids, dt.Schema) {
+				schema_ids = append(schema_ids, dt.Schema)
 			}
 		}
 	}
-
-	dataScriptIngestion := make([]service.DataCreateValues, 0, len(info))
-	for _, datum := range data {
-		if datum.Values.IngestionScript != uuid.Nil {
-			dataScriptIngestion = append(dataScriptIngestion, datum.Values)
-		}
-	}
-
-	err = h.dataIngestValidateIngestionScriptSources(dataScriptIngestion, ingestion_scripts)
+	schemas, err := h.data_service.DataSchemasById(schema_ids)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
-		).Error("could not validate ingestion script sources")
-		return c.NoContent(http.StatusBadRequest)
+			"schemas", schema_ids,
+		).Error("could not get data schemas")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	for idx, datum := range data {
+		data_type := data_types[data_types_by_idx[idx]]
+		switch data_type.DataStorage() {
+		case service.DataStorageExternal:
+			dt := data_type.(service.DataTypeExternal)
+			err = h.data_service.ValidateValuesAsSources(dt.Sources, datum.Values.Sources)
+			if err != nil {
+				c.Logger().With(
+					"error", err,
+				).Warn("invalid data sources")
+				return c.NoContent(http.StatusBadRequest)
+			}
+		case service.DataStorageInternal:
+			dt := data_type.(service.DataTypeInternal)
+			schema_idx := slices.IndexFunc(schemas, func(s service.DataSchema) bool {
+				return s.Id == dt.Schema
+			})
+			if schema_idx < 0 {
+				panic(fmt.Sprintf("invalid data schema `%s` for data type `%s`", dt.Schema, dt.Id))
+			}
+
+			err = h.data_service.ValidateValuesAsSchema(schemas[schema_idx], datum.Values.Values)
+			if err != nil {
+				c.Logger().With(
+					"error", err,
+				).Warn("invalid data schema")
+				return c.NoContent(http.StatusBadRequest)
+			}
+		default:
+			panic("unexpected service.DataStorage")
+		}
+	}
+
+	saved_files := make([]string, 0)
+	for _, s_info := range source_info {
+		if s_info == nil {
+			continue
+		}
+		for key, ds_info := range s_info {
+			switch ds_info.Cardinality {
+			case service.DataSourceCardinalitySingle:
+				file := ds_info.Files.(*multipart.FileHeader)
+				path := ds_info.Paths.(string)
+				err = service.SaveFormFile(file, path)
+				if err != nil {
+					c.Logger().With(
+						"error", err,
+						"source", key,
+					).Error("could nto save file")
+					removeFiles(saved_files, c.Logger())
+					return c.NoContent(http.StatusInternalServerError)
+				}
+				saved_files = append(saved_files, path)
+			case service.DataSourceCardinalityMultiple:
+				files := ds_info.Files.([]*multipart.FileHeader)
+				paths := ds_info.Paths.([]string)
+				for idx, file := range files {
+					path := paths[idx]
+					err = service.SaveFormFile(file, path)
+					if err != nil {
+						c.Logger().With(
+							"error", err,
+							"source", key,
+						).Error("could nto save file")
+						removeFiles(saved_files, c.Logger())
+						return c.NoContent(http.StatusInternalServerError)
+					}
+					saved_files = append(saved_files, path)
+				}
+			default:
+				panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", ds_info.Cardinality))
+			}
+		}
 	}
 
 	data_ids, err := h.data_service.DataCreate(data, user_id)
@@ -1162,6 +1279,7 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 			"user", user_id,
 			"data", info,
 		).Error("could not create data")
+		removeFiles(saved_files, c.Logger())
 		return c.NoContent(http.StatusInternalServerError)
 	}
 

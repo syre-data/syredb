@@ -59,6 +59,7 @@ function DataTypeCreate() {
 
         navigate(-1);
     }
+
     async function create_data_type_storage_internal(
         data: FormData,
         label: string,
@@ -70,7 +71,7 @@ function DataTypeCreate() {
 
         const schema_str = data.get("storage[schema]")!.toString();
         if (!schema_str) {
-            schemaInput.setCustomValidity("Data schema is reuqired");
+            schemaInput.setCustomValidity("Data schema is required");
             return;
         }
         if (data_schemas.findIndex((s) => s.Id === schema_str) < 0) {
@@ -96,8 +97,22 @@ function DataTypeCreate() {
         label: string,
         description: string,
     ) {
-        const sources_input = [];
-        for (const idx in sources) {
+        const sourcePattern = RegExp("^source\\[(\\d+)\\]");
+        const sources_idx: string[] = [];
+        for (const [name, _] of data.entries()) {
+            const matches = sourcePattern.exec(name);
+            if (!matches) {
+                continue;
+            }
+            const idx = matches[1]!;
+            if (!sources_idx.includes(idx)) {
+                sources_idx.push(idx);
+            }
+        }
+        console.debug(sources_idx);
+
+        const sources = [];
+        for (const idx of sources_idx) {
             const key = `source[${idx}]`;
             const label = data.get(`${key}[label]`)!.toString().trim();
             const cardinality_str = data.get(`${key}[cardinality]`)!.toString();
@@ -106,8 +121,8 @@ function DataTypeCreate() {
                 .get(`${key}[description]`)!
                 .toString()
                 .trim();
-            const extension_filter = data
-                .get(`${key}[extension_filter]`)!
+            const media_types = data
+                .get(`${key}[media_types]`)!
                 .toString()
                 .split(",")
                 .map((ext) => ext.trim())
@@ -129,23 +144,17 @@ function DataTypeCreate() {
                     return;
             }
 
-            sources_input.push({
+            sources.push({
                 Cardinality: cardinality,
                 Required: required,
                 Label: label,
                 Description: description,
-                ExtensionFilter: extension_filter,
+                MediaTypes: media_types,
             } satisfies types.ExternalSourceCreate);
         }
 
         dataService
-            .dataTypeCreate(
-                label,
-                sources_input,
-                description,
-                data_schema,
-                recipe,
-            )
+            .dataTypeCreateExternal(label, description, sources)
             .then((resp) => {
                 if (resp.status === StatusCodes.OK) {
                     navigate(-1);
@@ -308,9 +317,10 @@ function StorageInternal({ dataSchemas }: StorageInternalProps) {
                         id={`storage[schema]`}
                         name={`storage[schema]`}
                         className="input-basic"
+                        defaultValue=""
                         required
                     >
-                        <option value="" disabled selected hidden>
+                        <option disabled hidden>
                             Data schema
                         </option>
                         {dataSchemas.map((schema) => (
@@ -489,16 +499,16 @@ function StorageExternal({}: SourcesListProps) {
                                     </fieldset>
                                 </div>
                                 <div>
-                                    <label title="Comma separated list of accepted file extensions (e.g. 'jpg, png, bmp')">
+                                    <label title="Comma separated list of accepted media types (e.g. .jpg, .pdf, text/csv)">
                                         <span className="sr-only">
-                                            Extension filter
+                                            Media types
                                         </span>
                                         <input
                                             type="text"
-                                            id={`source[${idx}][extension_filter]`}
-                                            name={`source[${idx}][extension_filter]`}
+                                            id={`source[${idx}][media_types]`}
+                                            name={`source[${idx}][media_types]`}
                                             className="input-basic"
-                                            placeholder="Extension filter"
+                                            placeholder="Media types"
                                         />
                                     </label>
                                 </div>

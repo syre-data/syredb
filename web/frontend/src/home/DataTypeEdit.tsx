@@ -326,21 +326,17 @@ function DataTypeSources({ sources }: DataTypeSourcesProps) {
                                 </label>
                             </div>
                             <div>
-                                <label title="Comma separated list of accepted extensions (e.g. 'png, jpg')">
-                                    <span className="sr-only">
-                                        Extension filter
-                                    </span>
+                                <label title="Comma separated list of accepted media types (e.g. '.png, .pdf, text/csv')">
+                                    <span className="sr-only">Media types</span>
                                     <input
                                         type="text"
-                                        id={`source[${source.Id}][extension_filter]`}
-                                        name={`source[${source.Id}][extension_filter]`}
+                                        id={`source[${source.Id}][media_types]`}
+                                        name={`source[${source.Id}][media_types]`}
                                         className="input-basic"
-                                        placeholder="Extension filter"
+                                        placeholder="Media type filter"
                                         defaultValue={
-                                            source.ExtensionFilter
-                                                ? source.ExtensionFilter.join(
-                                                      ", ",
-                                                  )
+                                            source.MediaTypes
+                                                ? source.MediaTypes.join(", ")
                                                 : ""
                                         }
                                     />

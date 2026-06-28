@@ -457,12 +457,12 @@ type dataSourceInfo struct {
 	Label       string                        `db:"_label"`
 	Required    bool                          `db:"_required"`
 	Cardinality service.DataSourceCardinality `db:"_cardinality"`
-	ExtFilter   []string                      `db:"ext_filter"`
+	MediaTypes  []string                      `db:"media_types"`
 }
 
 func (d *ScriptDaemon) dataSourcesByTypeId(types []uuid.UUID) ([]dataSourceInfo, error) {
 	query :=
-		`SELECT _id, _data_type, _label, _required, _cardinality, ext_filter 
+		`SELECT _id, _data_type, _label, _required, _cardinality, media_types 
 		FROM data_type_source_ WHERE _data_type=ANY($1)`
 	rows, _ := d.db.Conn.Query(d.ctx, query, types)
 	sources, err := pgx.CollectRows(rows, pgx.RowToStructByName[dataSourceInfo])
@@ -873,6 +873,12 @@ func (d *ScriptDaemon) transformListener(
 	return nil
 }
 
+type dataSource struct {
+	Cardinality service.DataSourceCardinality
+	Single      service.SourceFileInfo
+	Multiple    []service.SourceFileInfo
+}
+
 func (d *ScriptDaemon) transformListenerFnGetData(
 	conn net.Conn,
 	data transformData,
@@ -1054,7 +1060,7 @@ type outputDataSource struct {
 	Label       string                        `json:"label"`
 	Required    bool                          `json:"required"`
 	Cardinality service.DataSourceCardinality `json:"cardinality"`
-	ExtFilter   []string                      `json:"ext_filter"`
+	MediaTypes  []string                      `json:"media_types"`
 }
 
 type transformScriptOutputDataExternal struct {
@@ -1148,7 +1154,7 @@ func (d *ScriptDaemon) createTransformData(
 				Label:       src.Label,
 				Cardinality: src.Cardinality,
 				Required:    src.Required,
-				ExtFilter:   src.ExtFilter,
+				MediaTypes:  src.MediaTypes,
 			}
 		}
 		transform_data.Output = transformScriptOutputDataExternal{

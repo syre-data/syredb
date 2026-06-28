@@ -11,14 +11,14 @@ function dataTypesGetAll(): Promise<types.DataType[]> {
 function dataTypeCreateInternal(
     label: string,
     description: string,
-    schema: Uint8Array<ArrayBufferLike>,
+    schema: uuid.UUIDTypes,
 ): Promise<Response> {
     const params = new URLSearchParams();
     params.set("storage", types.DataStorageInternal);
     const data = {
         label,
         description,
-        schema: uuid.stringify(schema),
+        schema: uuidToString(schema),
     };
 
     return fetch(`/api/data-type?${params}`, {
@@ -31,28 +31,22 @@ function dataTypeCreateInternal(
 
 function dataTypeCreateExternal(
     label: string,
-    sources: types.DataTypeExternalSourceRx[],
-    description?: string,
-    data_schema?: Uint8Array<ArrayBufferLike>,
-    recipe?: File,
+    description: string,
+    sources: types.ExternalSourceCreate[],
 ): Promise<Response> {
-    const data = new FormData();
-    data.set("label", label);
-    data.set("sources", JSON.stringify(sources));
-    if (description) {
-        data.set("description", description);
-    }
-    if (data_schema) {
-        data.set("data_schema", uuid.stringify(data_schema));
-    }
-    if (recipe) {
-        data.set("recipe", recipe);
-    }
+    const params = new URLSearchParams();
+    params.set("storage", types.DataStorageExternal);
+    const data = {
+        label,
+        description,
+        sources,
+    };
 
-    return fetch("/api/data-type", {
+    return fetch(`/api/data-type?${params}`, {
         credentials: "same-origin",
         method: "post",
-        body: data,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
     });
 }
 
@@ -252,7 +246,7 @@ function dataSchemaResourcesGet(
     data_schema_id: uuid.UUIDTypes,
 ): Promise<types.DataSchemaResources> {
     const params = new URLSearchParams();
-    params.append("id", data_schema_id.toString());
+    params.append("id", uuidToString(data_schema_id));
     return fetch(`/api/data-schema?${params}`, {
         credentials: "same-origin",
     }).then(async (resp) => (await resp.json()) as types.DataSchemaResources);
@@ -274,9 +268,9 @@ function dataTypeTransformCreate(data: FormData): Promise<Response> {
 
 function projectDataCreate(
     project: uuid.UUIDTypes,
-    data: types.DataCreate[],
+    data: types.DataIngest[],
     labels: string[],
-    sourceFiles: [string, File][],
+    sourceFiles: [string, File | File[]][],
 ) {
     const params = new URLSearchParams();
     params.set("project", project.toString());
@@ -285,7 +279,13 @@ function projectDataCreate(
     body.set("data", JSON.stringify(data));
     body.set("project_labels", JSON.stringify(labels));
     for (const [key, file] of sourceFiles) {
-        body.set(key, file);
+        if (file instanceof Array) {
+            for (const f of file) {
+                body.append(key, f);
+            }
+        } else {
+            body.set(key, file);
+        }
     }
 
     return fetch(`/api/data?${params}`, {

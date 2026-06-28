@@ -137,7 +137,7 @@ func (h *ApiClientHandler) DataType(c *echo.Context) error {
 		Label       string                        `json:"label"`
 		Required    bool                          `json:"required"`
 		Cardinality service.DataSourceCardinality `json:"cardinality"`
-		ExtFilter   []string                      `json:"ext_filter"`
+		MediaTypes  []string                      `json:"media_types"`
 	}
 
 	data_type_label := c.FormValue("data_type")
@@ -176,7 +176,7 @@ func (h *ApiClientHandler) DataType(c *echo.Context) error {
 				Label:       source.Label,
 				Required:    source.Required,
 				Cardinality: source.Cardinality,
-				ExtFilter:   source.ExtFilter,
+				MediaTypes:  source.MediaTypes,
 			}
 		}
 
