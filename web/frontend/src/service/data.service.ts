@@ -1,6 +1,5 @@
 import { uuidToString } from "@/common";
 import * as types from "@/types";
-import type { IngestionScriptCreateData } from "@/types/handler";
 import * as uuid from "uuid";
 
 function dataTypesGetAll(): Promise<types.DataType[]> {
@@ -273,49 +272,6 @@ function dataTypeTransformCreate(data: FormData): Promise<Response> {
     });
 }
 
-function ingestionScriptsGetAll(): Promise<types.IngestionScript[]> {
-    return fetch("/api/ingestion-scripts", {
-        credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.IngestionScript[]);
-}
-
-function ingestionScriptCreate(
-    script_data: IngestionScriptCreateData,
-    script: File,
-): Promise<Response> {
-    const data = new FormData();
-    data.set("data", JSON.stringify(script_data));
-    data.set("script", script);
-
-    return fetch("/api/ingestion-script", {
-        credentials: "same-origin",
-        method: "post",
-        body: data,
-    });
-}
-
-function ingestionScriptsForDataType(
-    data_type: uuid.UUIDTypes,
-): Promise<types.IngestionScript[]> {
-    const params = new URLSearchParams();
-    params.set("data_type", uuidToString(data_type));
-    return fetch(`/api/ingestion-scripts?${params}`, {
-        credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.IngestionScript[]);
-}
-
-function ingestionScriptResources(
-    id: uuid.UUIDTypes,
-): Promise<types.IngestionScriptResources> {
-    const params = new URLSearchParams();
-    params.set("id", uuidToString(id));
-    return fetch(`/api/ingestion-script/resources?${params}`, {
-        credentials: "same-origin",
-    }).then(
-        async (resp) => (await resp.json()) as types.IngestionScriptResources,
-    );
-}
-
 function projectDataCreate(
     project: uuid.UUIDTypes,
     data: types.DataCreate[],
@@ -405,10 +361,6 @@ export default {
     parseDataFileToSchema,
     dataTypeTransformCreate,
     dataTypeTransformsGetAll,
-    ingestionScriptResources,
-    ingestionScriptsGetAll,
-    ingestionScriptCreate,
-    ingestionScriptsForDataType,
     projectDataCreate,
     orphanedData,
     dataGet,

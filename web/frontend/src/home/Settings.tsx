@@ -67,13 +67,6 @@ function Nav() {
                     </Link>
                 </div>
                 <div>
-                    <Link to="/ingestion-scripts" title="Ingestion scripts">
-                        <button type="button" className="btn-cmd">
-                            <icon.Ingest />
-                        </button>
-                    </Link>
-                </div>
-                <div>
                     <Link
                         to="/data-type-transforms"
                         title="Data type transforms"

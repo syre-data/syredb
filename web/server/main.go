@@ -289,9 +289,6 @@ func register_routes(
 	api.POST("/data-type", data.DataTypeCreate)
 	api.GET("/data-type", data.DataTypeGet)
 	api.PUT("/data-type", data.DataTypeUpdate)
-	api.GET("/ingestion-scripts", data.IngestionScriptsGet)
-	api.POST("/ingestion-script", data.IngestionScriptCreate)
-	api.GET("/ingestion-script/resources", data.IngestionScriptResources)
 	api.GET("/data-type-transforms", data.DataTypeTransformsGetAll)
 	api.POST("/data-type-transform", data.DataTypeTransformCreate)
 	api.GET("/project", project.GetProjectWithUserPermission)
@@ -313,7 +310,6 @@ func register_routes(
 
 	resource.GET("/data", data.DownloadDataValuesSingle)
 	resource.GET("/project/data", data.DownloadProjectDataValuesAll)
-	resource.GET("/ingestion-script", data.IngestionScriptDownload)
 
 	// client libraries
 	e.POST("/api/client/authenticate", api_client.Authenticate)

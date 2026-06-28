@@ -22,7 +22,6 @@ import {
     FaUserGroup,
     FaLocationPin,
 } from "react-icons/fa6";
-import { FcMultipleInputs } from "react-icons/fc";
 import { IoIosLogOut, IoMdHome, IoIosArrowRoundBack } from "react-icons/io";
 import { MdEdit, MdOutlineCategory } from "react-icons/md";
 import { TbColumns3 } from "react-icons/tb";
@@ -50,7 +49,6 @@ export default {
     Function: LuSquareFunction,
     Gear: FaGear,
     Home: IoMdHome,
-    Ingest: FcMultipleInputs,
     LeftArrow: FaArrowLeft,
     LocationPin: FaLocationPin,
     Logout: IoIosLogOut,

@@ -37,8 +37,6 @@ INSERT INTO _db_permission_ (_id, label, description) VALUES
     ('data_schema_modify', 'Modify data schema', 'Modify existing data schema'),
     ('data_type_create', 'Create data types', 'Create new data types'),
     ('data_type_modify', 'Modify data types', 'Modify existing data types'),
-    ('ingestion_script_create', 'Create ingestion script', 'Create ingestion scripts'),
-    ('ingestion_script_modify', 'Modify ingestion script', 'Modify ingestion scripts'),
     ('data_type_transform_create', 'Create data type transform', 'Create new data type transforms'),
     ('data_type_transform_modify', 'Modify data type transforms', 'Modify existing data type transforms'),
     ('project_create', 'Create project', 'Create new projects'),
@@ -154,64 +152,11 @@ CREATE TABLE IF NOT EXISTS data_type_source_ (
     _id UUID DEFAULT uuidv7() PRIMARY KEY,
     _data_type UUID REFERENCES data_type_(_id) NOT NULL,
     _label VARCHAR(128) NOT NULL,
-    _required boolean NOT NULL,
     _cardinality source_cardinality NOT NULL,
+    _required boolean NOT NULL,
     description TEXT,
-    ext_filter VARCHAR(64)[],
+    media_types VARCHAR(64)[],
     UNIQUE (_data_type, _label)
-);
-
-CREATE TABLE IF NOT EXISTS ingestion_script_cmd_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _creator UUID REFERENCES user_(_id) NOT NULL,
-    _path VARCHAR(2048) NOT NULL,
-    _cmd VARCHAR(1024),
-    _args VARCHAR(64)[] DEFAULT array[]::varchar[]
-);
-
-CREATE TABLE IF NOT EXISTS ingestion_script_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _type UUID REFERENCES data_type_(_id) NOT NULL,
-    _creator UUID REFERENCES user_(_id) NOT NULL,
-    cmd UUID REFERENCES ingestion_script_cmd_(_id) NOT NULL,
-    label VARCHAR(128) NOT NULL UNIQUE,
-    description TEXT
-);
-
-CREATE TABLE IF NOT EXISTS ingestion_script_source_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _script UUID REFERENCES ingestion_script_(_id) NOT NULL,
-    _label VARCHAR(128) NOT NULL,
-    _required boolean NOT NULL,
-    _cardinality source_cardinality NOT NULL,
-    description TEXT,
-    ext_filter VARCHAR(64)[],
-    UNIQUE (_script, _label)
-);
-
-CREATE TABLE IF NOT EXISTS data_ingestion_script_source_ (
-    _data UUID REFERENCES data_(_id) NOT NULL,
-    _source UUID REFERENCES ingestion_script_source_(_id) NOT NULL,
-    _path VARCHAR(2048) PRIMARY KEY,
-    _filename VARCHAR(256) NOT NULL
-);
-
-CREATE TYPE ingestion_script_job_status AS ENUM (
-    'pending',
-    'running',
-    'completed',
-    'failed'
-);
-
--- TODO: Add "runs" table that tracks result of each run.
-CREATE TABLE IF NOT EXISTS _ingestion_script_queue_ (
-    _id UUID DEFAULT uuidv7() PRIMARY KEY,
-    _data UUID REFERENCES data_(_id) NOT NULL,
-    _script UUID REFERENCES ingestion_script_(_id) NOT NULL,
-    status ingestion_script_job_status DEFAULT 'pending' NOT NULL,
-    started TIMESTAMP WITH TIME ZONE,
-    finished TIMESTAMP WITH TIME ZONE,
-    error TEXT
 );
 
 CREATE TABLE IF NOT EXISTS data_type_transform_cmd_ (

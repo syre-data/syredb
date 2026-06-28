@@ -4,7 +4,7 @@ import {
     QUERY_KEY_DATA_SCHEMA_RESOURCES,
     QUERY_KEY_DATA_SCHEMAS,
     QUERY_KEY_DATA_TYPES,
-    QUERY_KEY_INGESTION_SCRIPTS_FOR_DATA_TYPE,
+    uuidToString,
 } from "@/common";
 import {
     InputPropertyValue,
@@ -20,11 +20,10 @@ import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import {
     DataCreatorTypeUser,
-    DataIngestionManual,
-    DataIngestionScript,
     DataSchemaCardinalityMultiple,
     DataSchemaCardinalitySingle,
     DataSourceCardinalityMultiple,
+    DataSourceCardinalitySingle,
     DataStorageExternal,
     DataStorageInternal,
     PropertyTypeBool,
@@ -46,10 +45,11 @@ import {
     type DataSchemaField,
     type DataSchemaResources,
     type DataSchemaRx,
+    type DataStorage,
     type DataType,
+    type DataTypeExternal,
+    type DataTypeExternalSourceRx,
     type DataTypeInternal,
-    type IngestionScript,
-    type IngestionScriptSourceRx,
     type Note,
     type Property,
     type PropertyType,
@@ -145,12 +145,8 @@ function ProjectDataCreate({ projectId }: ProjectDataCreateProps) {
     );
 }
 
-const IngestionManual = "manual";
-type IngestionMethod = typeof IngestionManual | IngestionScript;
-
 interface Datum {
     id: number;
-    ingestion: IngestionMethod | undefined;
 }
 
 function partition_form_data(
@@ -387,20 +383,6 @@ function parse_form_data(
         throw new Error(`invalid data type: ${e_type}`);
     }
 
-    let ingestion_method: string;
-    let ingestion_script;
-    switch (datum.ingestion) {
-        case undefined:
-            throw new Error("ingestion method undefined");
-        case IngestionManual:
-            ingestion_method = DataIngestionManual;
-            ingestion_script = NIL as string;
-            break;
-        default:
-            ingestion_method = DataIngestionScript;
-            ingestion_script = datum.ingestion.Id as string;
-    }
-
     const type = e_type[1].toString();
     const timestamp = new Date(e_timestamp[1].toString());
     const datum_info = {
@@ -558,23 +540,12 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
         const id = Math.max(...data.map((datum) => datum.id)) + 1;
         const datum = {
             id,
-            ingestion: undefined,
         };
         setData([...data, datum]);
     }
 
     function remove_datum(id: number) {
         setData(data.filter((datum) => datum.id !== id));
-    }
-
-    function on_change_ingestion(id: number, e: IngestionMethod) {
-        const idx = data.findIndex((d) => d.id === id);
-        if (idx < 0) {
-            throw new Error("invalid data");
-        }
-
-        data[idx]!.ingestion = e;
-        setData([...data]);
     }
 
     function cache_data_type_schema(
@@ -618,27 +589,6 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
             return;
         }
 
-        const files = new Array();
-        for (const datum of info) {
-            if (datum.IngestionMethod !== IngestionManual) {
-                const source_obj: { [key: string]: string } = {};
-                for (const [
-                    key,
-                    field,
-                ] of datum.IngestionScriptSources.entries()) {
-                    const file = form.get(field);
-                    if (file === null) {
-                        throw new Error(`invalid file ${field}`);
-                    }
-                    files.push([field, file]);
-
-                    source_obj[key] = field;
-                }
-
-                datum.IngestionScriptSources = source_obj;
-            }
-        }
-
         await dataService
             .projectDataCreate(project, info, labels, files)
             .then((resp) => {
@@ -663,7 +613,6 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
                             dataTypes={dataTypes}
                             canRemove={data.length > 1}
                             onRemove={remove_datum}
-                            onChangeIngestion={on_change_ingestion}
                             cacheDataTypeSchema={cache_data_type_schema}
                         />
                     ))}
@@ -693,7 +642,6 @@ interface ProjectDataItemProps {
     dataTypes: DataType[];
     canRemove: boolean;
     onRemove: (id: number) => void;
-    onChangeIngestion: (id: number, e: IngestionMethod) => void;
     cacheDataTypeSchema: (
         data_type: UUIDTypes,
         schema: DataSchemaResources,
@@ -704,7 +652,6 @@ function ProjectDataItem({
     dataTypes,
     canRemove,
     onRemove,
-    onChangeIngestion,
     cacheDataTypeSchema,
 }: ProjectDataItemProps) {
     const [dataType, setDataType] = useState<undefined | DataType>(undefined);
@@ -798,7 +745,6 @@ function ProjectDataItem({
                         <DatumStorage
                             datum={datum}
                             dataType={dataType}
-                            onChange={(e) => onChangeIngestion(datum.id, e)}
                             cacheDataTypeSchema={cacheDataTypeSchema}
                         />
                         <DatumProperties datum={datum} />
@@ -813,7 +759,6 @@ function ProjectDataItem({
 interface DatumStorageProps {
     datum: Datum;
     dataType: DataType;
-    onChange: (e: IngestionMethod) => void;
     cacheDataTypeSchema: (
         data_type: UUIDTypes,
         schema: DataSchemaResources,
@@ -822,7 +767,6 @@ interface DatumStorageProps {
 function DatumStorage({
     datum,
     dataType,
-    onChange,
     cacheDataTypeSchema,
 }: DatumStorageProps) {
     switch (dataType.Storage) {
@@ -833,7 +777,6 @@ function DatumStorage({
                         <DatumStorageInternal
                             datum={datum}
                             dataType={dataType}
-                            onChange={onChange}
                             cacheDataTypeSchema={cacheDataTypeSchema}
                         />
                     </Suspense>
@@ -852,7 +795,6 @@ function DatumStorageError({ error }: FallbackProps) {
 interface DatumStorageInternalProps {
     datum: Datum;
     dataType: DataTypeInternal;
-    onChange: (e: IngestionMethod) => void;
     cacheDataTypeSchema: (
         data_type: UUIDTypes,
         schema: DataSchemaResources,
@@ -861,7 +803,6 @@ interface DatumStorageInternalProps {
 function DatumStorageInternal({
     datum,
     dataType,
-    onChange,
     cacheDataTypeSchema,
 }: DatumStorageInternalProps) {
     const { data: schema } = useSuspenseQuery({
@@ -869,145 +810,26 @@ function DatumStorageInternal({
         queryFn: async () =>
             await dataService.dataSchemaResourcesGet(dataType.Schema),
     });
-    const { data: ingestion_scripts } = useSuspenseQuery({
-        queryKey: [QUERY_KEY_INGESTION_SCRIPTS_FOR_DATA_TYPE, dataType.Id],
-        queryFn: async () =>
-            await dataService.ingestionScriptsForDataType(dataType.Id),
-    });
     useEffect(() => {
         cacheDataTypeSchema(dataType.Id, schema);
     }, []);
 
-    const [ingestionComponent, setIngestionComponent] = useState<
-        undefined | JSX.Element
-    >(undefined);
-
-    useEffect(() => {
-        if (datum.ingestion === undefined) {
-            setIngestionComponent(undefined);
-        } else if (datum.ingestion === IngestionManual) {
-            switch (schema.DataSchema.Cardinality) {
-                case DataSchemaCardinalitySingle:
-                    setIngestionComponent(
-                        <DatumStorageInternalSingle
-                            schema={schema.DataSchema.Fields}
-                        />,
-                    );
-                    break;
-                case DataSchemaCardinalityMultiple:
-                    setIngestionComponent(
-                        <DatumStorageInternalMultipleManual
-                            datum={datum}
-                            schema={schema.DataSchema.Fields}
-                        />,
-                    );
-                    break;
-                default:
-                    console.error("invalid data schema cardinality", schema);
-            }
-        } else {
-            setIngestionComponent(
-                <DatumStorageInternalIngestionScript
+    switch (schema.DataSchema.Cardinality) {
+        case DataSchemaCardinalitySingle:
+            return;
+            <DatumStorageInternalSingle schema={schema.DataSchema.Fields} />;
+            break;
+        case DataSchemaCardinalityMultiple:
+            return (
+                <DatumStorageInternalMultipleManual
                     datum={datum}
-                    script={datum.ingestion}
-                />,
+                    schema={schema.DataSchema.Fields}
+                />
             );
-        }
-    }, [datum.ingestion]);
-
-    function set_ingestion(e: ChangeEvent<HTMLSelectElement>) {
-        const value = e.target.value;
-        if (value === IngestionManual) {
-            onChange(IngestionManual);
-        } else {
-            const script = ingestion_scripts.find(
-                (script) => script.Id === value,
-            );
-            if (script === undefined) {
-                console.error("invalid ingestion script", value);
-                return;
-            }
-
-            onChange(script);
-        }
+            break;
+        default:
+            console.error("invalid data schema cardinality", schema);
     }
-
-    return (
-        <>
-            <div>
-                <label>
-                    <span className="sr-only">Ingestion method</span>
-                    <select
-                        className="input-basic"
-                        onChange={set_ingestion}
-                        defaultValue=""
-                        required
-                    >
-                        <option hidden disabled value="">
-                            Ingestion
-                        </option>
-                        <option value={IngestionManual}>(Manual)</option>
-                        {ingestion_scripts.map((script) => (
-                            <option
-                                key={script.Id.toString()}
-                                value={script.Id.toString()}
-                            >
-                                {script.Label}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-            </div>
-            {ingestionComponent}
-        </>
-    );
-}
-
-interface DatumStorageInternalIngestionScriptProps {
-    datum: Datum;
-    script: IngestionScript;
-}
-function DatumStorageInternalIngestionScript({
-    datum,
-    script,
-}: DatumStorageInternalIngestionScriptProps) {
-    return (
-        <fieldset>
-            <legend className="pb-2">Sources</legend>
-            {script.Sources.map((source) => (
-                <IngestionScriptSource
-                    key={source.Id.toString()}
-                    datum={datum}
-                    source={source}
-                />
-            ))}
-        </fieldset>
-    );
-}
-
-interface IngestionScriptSourceProps {
-    datum: Datum;
-    source: IngestionScriptSourceRx;
-}
-function IngestionScriptSource({ datum, source }: IngestionScriptSourceProps) {
-    return (
-        <div>
-            <label className="flex gap-2" title={source.Description}>
-                <span>{source.Label}</span>
-                <input
-                    type="file"
-                    id={`data[${datum.id}][ingestion_script_source][${source.Id}]`}
-                    name={`data[${datum.id}][ingestion_script_source][${source.Id}]`}
-                    className="input-basic"
-                    multiple={
-                        source.Cardinality === DataSourceCardinalityMultiple
-                    }
-                    accept={source.ExtFilter?.join(", ")}
-                    required={source.Required}
-                />
-            </label>
-        </div>
-    );
 }
 
 interface DatumStorageInternalSingleProps {

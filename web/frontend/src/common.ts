@@ -9,10 +9,6 @@ export const QUERY_KEY_DATA_SCHEMA = "data_schema";
 export const QUERY_KEY_DATA_SCHEMA_RESOURCES = "data_schema_resources";
 export const QUERY_KEY_DATA_TYPES = "data_types";
 export const QUERY_KEY_DATA_TYPE = "data_type";
-export const QUERY_KEY_INGESTION_SCRIPTS = "ingestion_scripts";
-export const QUERY_KEY_INGESTION_SCRIPTS_FOR_DATA_TYPE =
-    "ingestion_scripts_for_data_type";
-export const QUERY_KEY_INGESTION_SCRIPT = "ingestion_script";
 export const QUERY_KEY_DATA_TYPE_TRANSFORMS = "data_type_transforms";
 export const QUERY_KEY_USER_PROJECTS = "user_projects";
 export const QUERY_KEY_PROJECT_RESOURCES = "project_resources";
@@ -61,10 +57,6 @@ export function db_permission_id_string_to_variant(
             return types.DbPermissionDataTypeCreate;
         case "data_type_modify":
             return types.DbPermissionDataTypeModify;
-        case "ingestion_script_create":
-            return types.DbPermissionIngestionScriptCreate;
-        case "ingestion_script_modify":
-            return types.DbPermissionIngestionScriptModify;
         case "transform_create":
             return types.DbPermissionTransformCreate;
         case "transform_modify":

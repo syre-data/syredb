@@ -345,16 +345,16 @@ func (h *ApiClientHandler) dataCreateInternal(
 	}
 
 	create := service.DataCreate{
-		Type:                   data.Id,
-		Creator:                creator,
-		Timestamp:              data.Timestamp,
-		Visibility:             data.Visibility,
-		Properties:             properties,
-		Notes:                  notes,
-		IngestionMethod:        service.DataIngestionManual,
-		Values:                 values,
-		IngestionScript:        uuid.Nil,
-		IngestionScriptSources: nil,
+		Type:       data.Id,
+		Creator:    creator,
+		Timestamp:  data.Timestamp,
+		Visibility: data.Visibility,
+		Properties: properties,
+		Notes:      notes,
+		Values: service.DataCreateValues{
+			Storage: service.DataStorageInternal,
+			Values:  values,
+		},
 	}
 	_, err := h.data_service.DataCreate([]service.DataCreate{create}, user)
 	if err != nil {

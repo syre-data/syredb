@@ -23,10 +23,9 @@ export const AppDataKeyAccountName = "app:account:name";
 export const AppDataKeyAccountLogo = "app:account:logo";
 export const AppDataKeyDataPath = "app:data:path";
 export type AppDataKey = typeof AppDataKeyEmailUrl | typeof AppDataKeyEmailUsername | typeof AppDataKeyEmailPassword | typeof AppDataKeyEmailFrom | typeof AppDataKeyAccountName | typeof AppDataKeyAccountLogo | typeof AppDataKeyDataPath;
-export const AppDataDirIngestionScript = "ingestion";
-export const AppDataDirIngestionScriptSource = "ingestion_source";
 export const AppDataDirTransform = "transform";
-export type AppDataDir = typeof AppDataDirIngestionScript | typeof AppDataDirIngestionScriptSource | typeof AppDataDirTransform;
+export const AppDataDirDataSource = "data_source";
+export type AppDataDir = typeof AppDataDirTransform | typeof AppDataDirDataSource;
 
 //////////
 // source: common.go
@@ -201,49 +200,6 @@ export interface InvalidDataTypeError {
   Value: string;
   DType: ValueType;
 }
-export interface IngestionScriptRx {
-  Id: uuid.UUIDTypes;
-  Type: uuid.UUIDTypes;
-  Creator: uuid.UUIDTypes;
-  Cmd: uuid.UUIDTypes;
-  Label: string;
-  Description: string;
-}
-export interface IngestionScriptCmdRx {
-  Id: uuid.UUIDTypes;
-  Creator: uuid.UUIDTypes;
-  Path: string;
-  Cmd: string;
-  Args: string[];
-}
-export interface IngestionScriptSourceRx {
-  Id: uuid.UUIDTypes;
-  Script: uuid.UUIDTypes;
-  Label: string;
-  Required: boolean;
-  Cardinality: DataSourceCardinality;
-  Description: string;
-  ExtFilter: string[];
-}
-export interface IngestionScript {
-  Id: uuid.UUIDTypes;
-  Type: uuid.UUIDTypes;
-  Creator: uuid.UUIDTypes;
-  Label: string;
-  Description: string;
-  Cmd: IngestionScriptCmdRx;
-  Sources: IngestionScriptSourceRx[];
-}
-export interface IngestionScriptCreate {
-  Type: uuid.UUIDTypes;
-  Creator: uuid.UUIDTypes;
-  Label: string;
-  Description: string;
-  Path: string;
-  Cmd: string;
-  Args: string[];
-  Sources: ExternalSourceCreate[];
-}
 export const DATA_ORIGIN_WEB_CLIENT_LABEL = "__web_client__";
 export interface DataOriginRx {
   Id: uuid.UUIDTypes;
@@ -340,13 +296,6 @@ export interface Note {
   Visibility: Visibility;
   Content: string;
 }
-export type DataIngestionMethod = string;
-export const DataIngestionManual: DataIngestionMethod = "manual";
-export const DataIngestionScript: DataIngestionMethod = "script";
-/**
- * `Values` is only valid if `IngestionMethod` is `manual`.
- * `IngestionScript` and `IngestionScriptSources` are only valid if `IngestionMethod` is `script`.
- */
 export interface DataCreate {
   Type: uuid.UUIDTypes;
   Creator: DataCreatorUser;
@@ -357,27 +306,27 @@ export interface DataCreate {
   Values: DataCreateValues;
 }
 /**
- * If data is being processed via ingestion script
- * `Values` are the paths
- * Otherwise, if data type has internal storage,
- * `Values` should be values matching the data's type schema,
- * or if external storage should be teh data's type sources.
+ * `Values` is only valid if `Storage` is internal.
+ * `Sources` is only valid if `Storage` is external.
  */
 export interface DataCreateValues {
-  IngestionScript: uuid.UUIDTypes;
+  Storage: DataStorage;
   Values: { [key: string]: any};
+  Sources: { [key: uuid.UUIDTypes]: DataCreateValuesSources};
 }
+export interface DataCreateValuesSources {
+  Cardinality: DataSourceCardinality;
+  Source: SourceFileInfo;
+  Sources: SourceFileInfo[];
+}
+export const ArgsOffset = 1;
+export const ArgsPerRow = 2;
 export const DataPermissionKeyOwner = "owner";
 export const DataPermissionKeyRead = "read";
 export const DataPermissionKeyNoteCreate = "note_create";
 export const DataPermissionKeyPropertiesModify = "properties_modify";
 export type DataPermissionKey = typeof DataPermissionKeyOwner | typeof DataPermissionKeyRead | typeof DataPermissionKeyNoteCreate | typeof DataPermissionKeyPropertiesModify;
 export const FIELDS = 3;
-export interface IngestionScriptSource {
-  Source: uuid.UUIDTypes;
-  Path: string;
-  Filename: string;
-}
 export interface DataWithOrigin {
   Data: DataRx;
   Origin: uuid.UUIDTypes;
@@ -535,8 +484,6 @@ export const DbPermissionDataSchemaCreate = "data_schema_create";
 export const DbPermissionDataSchemaModify = "data_schema_modify";
 export const DbPermissionDataTypeCreate = "data_type_create";
 export const DbPermissionDataTypeModify = "data_type_modify";
-export const DbPermissionIngestionScriptCreate = "ingestion_script_create";
-export const DbPermissionIngestionScriptModify = "ingestion_script_modify";
 export const DbPermissionTransformCreate = "transform_create";
 export const DbPermissionTransformModify = "transform_modify";
 export const DbPermissionProjectCreate = "project_create";
@@ -544,7 +491,7 @@ export const DbPermissionDataCreate = "data_create";
 export const DbPermissionDataReadAll = "data_read_all";
 export const DbPermissionDataOriginCreate = "data_origin_create";
 export const DbPermissionDataOriginModify = "data_origin_modify";
-export type DbPermission = typeof DbPermissionOwner | typeof DbPermissionUserCreate | typeof DbPermissionUserModify | typeof DbPermissionDataSchemaCreate | typeof DbPermissionDataSchemaModify | typeof DbPermissionDataTypeCreate | typeof DbPermissionDataTypeModify | typeof DbPermissionIngestionScriptCreate | typeof DbPermissionIngestionScriptModify | typeof DbPermissionTransformCreate | typeof DbPermissionTransformModify | typeof DbPermissionProjectCreate | typeof DbPermissionDataCreate | typeof DbPermissionDataReadAll | typeof DbPermissionDataOriginCreate | typeof DbPermissionDataOriginModify;
+export type DbPermission = typeof DbPermissionOwner | typeof DbPermissionUserCreate | typeof DbPermissionUserModify | typeof DbPermissionDataSchemaCreate | typeof DbPermissionDataSchemaModify | typeof DbPermissionDataTypeCreate | typeof DbPermissionDataTypeModify | typeof DbPermissionTransformCreate | typeof DbPermissionTransformModify | typeof DbPermissionProjectCreate | typeof DbPermissionDataCreate | typeof DbPermissionDataReadAll | typeof DbPermissionDataOriginCreate | typeof DbPermissionDataOriginModify;
 export const AccountStatusActive = "active";
 export const AccountStatusDeactivated = "deactivated";
 export type AccountStatus = typeof AccountStatusActive | typeof AccountStatusDeactivated;

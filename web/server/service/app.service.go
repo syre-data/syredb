@@ -166,9 +166,8 @@ func (s *AppService) AppData(key AppDataKey) (string, error) {
 type AppDataDir string
 
 const (
-	AppDataDirIngestionScript       AppDataDir = "ingestion"
-	AppDataDirIngestionScriptSource AppDataDir = "ingestion_source"
-	AppDataDirTransform             AppDataDir = "transform"
+	AppDataDirTransform  AppDataDir = "transform"
+	AppDataDirDataSource AppDataDir = "data_source"
 )
 
 // AppDataDir gets the path to the associated data directiory.

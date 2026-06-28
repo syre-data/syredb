@@ -13,14 +13,6 @@ export const StaticFilePrefix = "public";
 // source: data.handler.go
 
 export interface DataHandler {}
-export interface IngestionScriptCreateData {
-    Type: uuid.UUIDTypes;
-    Label: string;
-    Description: string;
-    Cmd: string;
-    Args: string[];
-    Sources: any /* service.ExternalSourceCreate */[];
-}
 
 //////////
 // source: project.handler.go

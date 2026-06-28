@@ -347,221 +347,6 @@ func (h *DataHandler) DataSchemaUpdate(c *echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (h *DataHandler) IngestionScriptsGet(c *echo.Context) error {
-	data_type := c.QueryParam("data_type")
-	if data_type == "" {
-		scripts, err := h.data_service.IngestionScriptsGetAll()
-		if err != nil {
-			c.Logger().With("error", err).Error("could not get ingestion scripts")
-			return c.NoContent(http.StatusInternalServerError)
-		}
-
-		return c.JSON(http.StatusOK, scripts)
-	} else {
-		data_type_id, err := uuid.Parse(data_type)
-		if err != nil {
-			c.Logger().With(
-				"error", err,
-				"data type", data_type,
-			).Error("could not parse data type")
-			return c.NoContent(http.StatusBadRequest)
-		}
-
-		scripts, err := h.data_service.IngestionScriptsGetForDataType(data_type_id)
-		if err != nil {
-			c.Logger().With("error", err).Error("could not get ingestion scripts")
-			return c.NoContent(http.StatusInternalServerError)
-		}
-
-		return c.JSON(http.StatusOK, scripts)
-
-	}
-}
-
-type IngestionScriptResources struct {
-	Script    service.IngestionScript
-	DataType  service.DataType
-	CmdScript string
-}
-
-func (h *DataHandler) IngestionScriptResources(c *echo.Context) error {
-	id, err := uuid.Parse(c.QueryParam("id"))
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-		).Error("could not parse id")
-		return c.NoContent(http.StatusBadRequest)
-	}
-
-	script, err := h.data_service.IngestionScriptGet(id)
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"script", id,
-		).Error("could not get ingestion script")
-		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	data_type, err := h.data_service.DataTypeById(script.Type)
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"script", id,
-			"type", script.Type,
-		).Error("could not get data type")
-		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	cmd_script, err := os.ReadFile(script.Cmd.Path)
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"script", id,
-			"path", script.Cmd.Path,
-		).Error("could not read cmd script file")
-		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	resources := IngestionScriptResources{
-		Script:    script,
-		DataType:  data_type,
-		CmdScript: string(cmd_script),
-	}
-	return c.JSON(http.StatusOK, resources)
-}
-
-type IngestionScriptCreateData struct {
-	Type        uuid.UUID
-	Label       string
-	Description string
-	Cmd         string
-	Args        []string
-	Sources     []service.ExternalSourceCreate
-}
-
-func (h *DataHandler) IngestionScriptCreate(c *echo.Context) error {
-	user_id := c.Get(UserIdKey).(uuid.UUID)
-	has_permission, err := h.user_service.UserHasPermission(
-		user_id,
-		service.DbPermissionIngestionScriptCreate,
-	)
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"user", user_id,
-		).Error("could not get user role")
-		return c.NoContent(http.StatusInternalServerError)
-	}
-	if !has_permission {
-		c.Logger().With(
-			"user", user_id,
-		).Debug("insufficient permissions to create ingestion script")
-		return c.NoContent(http.StatusUnauthorized)
-	}
-
-	var data IngestionScriptCreateData
-	err = json.Unmarshal([]byte(c.FormValue("data")), &data)
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"data", c.FormValue("data"),
-		).Error("could not parse data")
-		return c.NoContent(http.StatusBadRequest)
-	}
-
-	file, err := c.FormFile("script")
-	if err != nil {
-		c.Logger().With("user", user_id).Error("invalid ingestion script file")
-		return c.NoContent(http.StatusBadRequest)
-	}
-
-	root_dir, err := h.app_service.AppDataDir(service.AppDataDirIngestionScript)
-	if err != nil {
-		c.Logger().Error("could not get app data dir")
-		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	filename := fmt.Sprintf("%s.%s", rand.Text(), file.Filename)
-	cmd, err := ingestion_script_command_from_file_ext(filepath.Ext(filename))
-	if err != nil {
-		c.Logger().With("error", err, "file name", filename).Error("invalid filename extension")
-		return c.NoContent(http.StatusBadRequest)
-	}
-
-	path := filepath.Join(root_dir, filename)
-	script := service.IngestionScriptCreate{
-		Type:        data.Type,
-		Creator:     user_id,
-		Label:       data.Label,
-		Description: data.Description,
-		Path:        path,
-		Cmd:         cmd,
-		Args:        []string{},
-		Sources:     data.Sources,
-	}
-	h.data_service.IngestionScriptCreate(script, file)
-
-	return nil
-
-}
-
-func ingestion_script_command_from_file_ext(ext string) (string, error) {
-	switch ext {
-	case ".py":
-		return "python", nil
-	default:
-		return "", errors.New("unknown file type")
-	}
-}
-
-func (h *DataHandler) IngestionScriptDownload(c *echo.Context) error {
-	user_id := c.Get(UserIdKey).(uuid.UUID)
-	script_id, err := uuid.Parse(c.QueryParam("id"))
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"user", user_id,
-			"id", c.QueryParam("id"),
-		).Warn("could not parse id")
-		return c.NoContent(http.StatusBadRequest)
-	}
-
-	script, err := h.data_service.IngestionScriptGet(script_id)
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"user", user_id,
-			"script", script_id,
-		).Warn("could not get ingestion script")
-		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	buf, err := os.ReadFile(script.Cmd.Path)
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"script", script.Id,
-			"path", script.Cmd.Path,
-		).Warn("could not read ingestion script file")
-		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	filename := fmt.Sprintf(
-		"%s.%s",
-		script.Label,
-		"py", // TODO: If allow other languages, adapt extension
-	)
-	c.Response().Header().Set(
-		echo.HeaderContentDisposition,
-		fmt.Sprintf(`attachment; filename="%s"`, filename),
-	)
-	return c.Blob(
-		http.StatusOK,
-		"application/octet-stream",
-		buf,
-	)
-}
-
 func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	data_id, err := uuid.Parse(c.QueryParam("id"))
@@ -1110,18 +895,28 @@ func data_type_transform_command_from_file_ext(ext string) (string, error) {
 	}
 }
 
+// # Notes
+// + `Values` is only valid for internal storage.
+// `Sources` is only valid for external storage.
+// If source is single cardinality value is `string`,
+// If multiple cardinality it is `[]string`
+// with each string being the name of the file.
 type DataIngest struct {
-	Type                   uuid.UUID
-	Creator                uuid.UUID
-	Origin                 uuid.UUID
-	Timestamp              time.Time
-	Visibility             service.Visibility
-	Properties             []service.Property
-	Notes                  []service.Note
-	IngestionMethod        service.DataIngestionMethod
-	Values                 map[string]any    // only valid for ingestion method manual
-	IngestionScript        uuid.UUID         // only valid for ingestion method script
-	IngestionScriptSources map[string]string // only valid for ingestion method script
+	Type       uuid.UUID
+	Creator    uuid.UUID
+	Origin     uuid.UUID
+	Timestamp  time.Time
+	Visibility service.Visibility
+	Properties []service.Property
+	Notes      []service.Note
+	Values     map[string]any
+	Sources    map[uuid.UUID]any
+}
+
+type DataIngestSourceInfo struct {
+	Cardinality service.DataSourceCardinality
+	Files       any
+	Paths       any
 }
 
 func (h *DataHandler) DataIngest(c *echo.Context) error {
@@ -1219,23 +1014,43 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 	}
 
 	data_type_ids := make([]uuid.UUID, 0, len(info))
-	ingestion_script_ids := make([]uuid.UUID, 0, len(info))
 	for _, datum := range info {
 		if !slices.Contains(data_type_ids, datum.Type) {
 			data_type_ids = append(data_type_ids, datum.Type)
 		}
-		if datum.IngestionMethod == service.DataIngestionScript &&
-			!slices.Contains(ingestion_script_ids, datum.IngestionScript) {
-			ingestion_script_ids = append(ingestion_script_ids, datum.IngestionScript)
-		}
 	}
-
-	ingestion_scripts, err := h.data_service.IngestionScriptsById(ingestion_script_ids)
+	data_types, err := h.data_service.DataTypesById(data_type_ids)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
-			"data types", ingestion_script_ids,
-		).Error("could not get ingestion scripts")
+			"data types", data_type_ids,
+		).Error("could not get data types")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	data_types_by_idx := make([]int, len(info))
+	for idx, datum := range info {
+		data_type_idx := slices.IndexFunc(data_types, func(dtype service.DataType) bool {
+			switch dtype.DataStorage() {
+			case service.DataStorageExternal:
+				dt := dtype.(service.DataTypeExternal)
+				return dt.Id == datum.Type
+			case service.DataStorageInternal:
+				dt := dtype.(service.DataTypeInternal)
+				return dt.Id == datum.Type
+			default:
+				panic("unexpected service.DataStorage")
+			}
+		})
+		if data_type_idx < 0 {
+			panic(fmt.Sprintf("invalid data type `%s`", datum.Type))
+		}
+	}
+
+	source_base_path, err := h.app_service.AppDataDir(service.AppDataDirDataSource)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Warn("could not get data source path")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
@@ -1378,32 +1193,16 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-// Validates ingestion values against expected sources.
-//
-// # Panics
-// + If an ingestion script is not present
-// + If a value is not valid for ingestion (i.e. `IngestionScript` is nil)
-func (h *DataHandler) dataIngestValidateIngestionScriptSources(
-	values []service.DataCreateValues,
-	ingestion_scripts []service.IngestionScript,
-) error {
-	for _, value := range values {
-		script_idx := slices.IndexFunc(ingestion_scripts, func(script service.IngestionScript) bool {
-			return script.Id == value.IngestionScript
-		})
-		script := ingestion_scripts[script_idx]
-
-		for _, src := range script.Sources {
-			_, exists := value.IngestionSources[src.Id]
-			if src.Required {
-				if !exists {
-					return errors.New("data is missing required ingestion script source")
-				}
-			}
+func removeFiles(paths []string, logger *slog.Logger) {
+	for _, path := range paths {
+		err := os.Remove(path)
+		if err != nil {
+			logger.With(
+				"error", err,
+				"file", path,
+			).Error("could not remove file")
 		}
 	}
-
-	return nil
 }
 
 func (h *DataHandler) OrphanedData(c *echo.Context) error {
