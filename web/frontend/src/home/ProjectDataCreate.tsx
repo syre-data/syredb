@@ -1,8 +1,6 @@
 import {
     MouseButton,
-    QUERY_KEY_DATA_SCHEMA,
     QUERY_KEY_DATA_SCHEMA_RESOURCES,
-    QUERY_KEY_DATA_SCHEMAS,
     QUERY_KEY_DATA_TYPES,
     uuidToString,
 } from "@/common";
@@ -40,11 +38,8 @@ import {
     ValueTypeTimestamp,
     ValueTypeUint,
     VisibilityPrivate,
-    type DataCreate,
-    type DataSchema,
     type DataSchemaField,
     type DataSchemaResources,
-    type DataSchemaRx,
     type DataStorage,
     type DataType,
     type DataTypeExternal,
@@ -53,24 +48,20 @@ import {
     type Note,
     type Property,
     type PropertyType,
-    type ValueType,
 } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
-import type { UUID } from "crypto";
 import {
     Suspense,
     useEffect,
     useState,
     type ChangeEvent,
-    type Dispatch,
-    type JSX,
     type MouseEvent,
     type SubmitEvent,
 } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { redirect, useNavigate, useParams } from "react-router";
-import { NIL, parse as uuidParse, stringify, type UUIDTypes } from "uuid";
+import { type UUIDTypes } from "uuid";
 
 function datetime_for_input(datetime: Date): string {
     const yyyy = datetime.getFullYear();
@@ -98,7 +89,7 @@ export default function () {
     );
 }
 
-function ProjectDataCreateError({ error, resetErrorBoundary }: FallbackProps) {
+function ProjectDataCreateError({ resetErrorBoundary }: FallbackProps) {
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}
@@ -536,6 +527,7 @@ function parse_form_data_external(
             throw new Error(`missing data source ${source.Label}`);
         }
         if (!field) {
+            console.debug(`field ${field_key} ignored`);
             continue;
         }
 
@@ -614,9 +606,10 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
                     const srcs = datum_info.Sources[uuidToString(source.Id)]!;
                     switch (source.Cardinality) {
                         case DataSourceCardinalitySingle:
-                            files.push([srcs, form.getAll(srcs)! as File[]]);
+                            files.push([srcs, form.get(srcs)! as File]);
                             break;
                         case DataSourceCardinalityMultiple:
+                            files.push([srcs, form.getAll(srcs)! as File[]]);
                             break;
                     }
                 }
@@ -1052,7 +1045,7 @@ function DatumStorageExternal({ datum, dataType }: DataStorageExternalProps) {
         <div>
             <fieldset>
                 <legend>Sources</legend>
-                <div>
+                <div className="flex flex-col gap-2">
                     {dataType.Sources.map((source) => (
                         <DataSource
                             key={source.Id.toString()}
@@ -1071,9 +1064,22 @@ interface DataSourceProps {
     source: DataTypeExternalSourceRx;
 }
 function DataSource({ datum, source }: DataSourceProps) {
+    let cardinality_icon;
+    switch (source.Cardinality) {
+        case DataSchemaCardinalitySingle:
+            cardinality_icon = <Icon.File />;
+            break;
+        case DataSchemaCardinalityMultiple:
+            cardinality_icon = <Icon.Files />;
+            break;
+    }
+
     return (
         <div>
-            <label className="flex gap-2" title={source.Description}>
+            <label
+                className="flex gap-2 items-center"
+                title={source.Description}
+            >
                 <span>{source.Label}</span>
                 <input
                     type="file"
@@ -1086,6 +1092,7 @@ function DataSource({ datum, source }: DataSourceProps) {
                     accept={source.MediaTypes?.join(", ")}
                     required={source.Required}
                 />
+                <span>{cardinality_icon}</span>
             </label>
         </div>
     );

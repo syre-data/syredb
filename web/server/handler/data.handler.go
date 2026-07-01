@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"syredb/database"
 	"syredb/service"
 	"time"
@@ -409,11 +410,11 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 	} else {
 		switch data_type.DataStorage() {
 		case service.DataStorageExternal:
-			data_type_ext := data_type.(service.DataTypeExternal)
-			data_type_label = data_type_ext.Label
+			dt := data_type.(service.DataTypeExternal)
+			data_type_label = dt.Label
 		case service.DataStorageInternal:
-			data_type_int := data_type.(service.DataTypeInternal)
-			data_type_label = data_type_int.Label
+			dt := data_type.(service.DataTypeInternal)
+			data_type_label = dt.Label
 		default:
 			panic("unexpected service.DataStorage")
 		}
@@ -430,76 +431,90 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 
 	switch values.Storage {
 	case service.DataStorageExternal:
-		ext_values := values.Values.([]service.DataSource)
-		return h.downloadDataValuesSingleExternal(c, data_id, ext_values)
+		vals := values.Values.([]service.DataSource)
+		return h.downloadDataValuesSingleExternal(
+			c,
+			project_id,
+			data_id,
+			vals,
+			data_type_label,
+			data_rx.Timestamp,
+		)
 	case service.DataStorageInternal:
-		var filename string
-		if project_id == uuid.Nil {
-			if data_type_label != "" {
-				filename = fmt.Sprintf(
-					"%s.%s.csv",
-					sanitizeStringForFilename(data_type_label),
-					formatTimeForFilename(data_rx.Timestamp),
-				)
-			} else {
-				filename = fmt.Sprintf("%s.csv", data_id)
-			}
-		} else {
-			project, project_err := h.project_service.ProjectById(project_id)
-			if project_err != nil {
-				c.Logger().With(
-					"error", project_err,
-					"project", project_id,
-					"data", data_id,
-				).Error("could not get project data membership")
-			}
-
-			membership, membership_err := h.project_service.DataMembership(project_id, data_id)
-			if membership_err != nil {
-				c.Logger().With(
-					"error", membership_err,
-					"project", project_id,
-					"data", data_id,
-				).Error("could not get project data membership")
-
-				filename = fmt.Sprintf("%s.csv", data_id)
-			}
-
-			if project_err == nil && membership_err == nil {
-				filename = fmt.Sprintf(
-					"%s.%s.csv",
-					sanitizeStringForFilename(project.Label),
-					sanitizeStringForFilename(*membership.Label),
-				)
-			} else if membership_err != nil && membership.Label != nil {
-				filename = fmt.Sprintf(
-					"%s.csv",
-					sanitizeStringForFilename(*membership.Label),
-				)
-			} else if data_type_label != "" {
-				filename = fmt.Sprintf(
-					"%s.%s.csv",
-					sanitizeStringForFilename(data_type_label),
-					formatTimeForFilename(data_rx.Timestamp),
-				)
-			} else {
-				filename = fmt.Sprintf("%s.csv", data_id)
-			}
-		}
-
-		int_values := values.Values.([]service.SchemaFieldValues)
-		return h.downloadDataValuesSingleInternal(c, data_id, filename, int_values)
+		filename := h.downloadDataValuesInternalFilename(
+			c.Logger(),
+			project_id,
+			data_id,
+			data_type_label,
+			data_rx.Timestamp,
+		)
+		vals := values.Values.([]service.SchemaFieldValues)
+		return h.downloadDataValuesSingleInternal(c, data_id, filename, vals)
 	default:
 		panic(fmt.Sprintf("unexpected service.DataStorage: %#v", values.Storage))
 	}
 }
 
-func (h *DataHandler) downloadDataValuesSingleExternal(
-	c *echo.Context,
+func (h *DataHandler) downloadDataValuesInternalFilename(
+	logger *slog.Logger,
+	project_id uuid.UUID,
 	data_id uuid.UUID,
-	values []service.DataSource,
-) error {
-	panic("TODO: download externally stored data")
+	data_type_label string,
+	timestamp time.Time,
+) string {
+	if project_id == uuid.Nil {
+		if data_type_label != "" {
+			return fmt.Sprintf(
+				"%s.%s.csv",
+				sanitizeStringForFilename(data_type_label),
+				formatTimeForFilename(timestamp),
+			)
+		} else {
+			return fmt.Sprintf("%s.csv", data_id)
+		}
+	}
+
+	project, project_err := h.project_service.ProjectById(project_id)
+	if project_err != nil {
+		logger.With(
+			"error", project_err,
+			"project", project_id,
+			"data", data_id,
+		).Error("could not get project data membership")
+	}
+
+	membership, membership_err := h.project_service.DataMembership(project_id, data_id)
+	if membership_err != nil {
+		logger.With(
+			"error", membership_err,
+			"project", project_id,
+			"data", data_id,
+		).Error("could not get project data membership")
+
+		return fmt.Sprintf("%s.csv", data_id)
+	}
+
+	if project_err == nil && membership_err == nil {
+		return fmt.Sprintf(
+			"%s.%s.csv",
+			sanitizeStringForFilename(project.Label),
+			sanitizeStringForFilename(*membership.Label),
+		)
+	} else if membership_err != nil && membership.Label != nil {
+		return fmt.Sprintf(
+			"%s.csv",
+			sanitizeStringForFilename(*membership.Label),
+		)
+	} else if data_type_label != "" {
+		return fmt.Sprintf(
+			"%s.%s.csv",
+			sanitizeStringForFilename(data_type_label),
+			formatTimeForFilename(timestamp),
+		)
+	} else {
+		return fmt.Sprintf("%s.csv", data_id)
+	}
+
 }
 
 func (h *DataHandler) downloadDataValuesSingleInternal(
@@ -533,6 +548,288 @@ func (h *DataHandler) downloadDataValuesSingleInternal(
 		"text/csv; charset=utf-8",
 		[]byte(data),
 	)
+}
+
+func (h *DataHandler) downloadDataValuesSingleExternal(
+	c *echo.Context,
+	project_id uuid.UUID,
+	data_id uuid.UUID,
+	values []service.DataSource,
+	data_type_label string,
+	timestamp time.Time,
+) error {
+	if len(values) == 0 {
+		panic("no data sources")
+	}
+
+	var project *service.Project
+	var membership *service.ProjectDataMembershipRx
+	if project_id != uuid.Nil {
+		project_rx, err := h.project_service.ProjectById(project_id)
+		if err == nil {
+			project = &project_rx
+		} else {
+			c.Logger().With(
+				"error", err,
+				"project", project_id,
+				"data", data_id,
+			).Error("could not get project data membership")
+		}
+
+		membership_rx, err := h.project_service.DataMembership(project_id, data_id)
+		if err == nil {
+			membership = &membership_rx
+		} else {
+			c.Logger().With(
+				"error", err,
+				"project", project_id,
+				"data", data_id,
+			).Error("could not get project data membership")
+		}
+	}
+
+	if len(values) == 1 {
+		value := values[0]
+		if value.Cardinality == service.DataSourceCardinalitySingle {
+			src := value.Source.(service.SourceFileInfo)
+			data, err := os.ReadFile(src.Path)
+			if err != nil {
+				c.Logger().With(
+					"error", err,
+					"file", src.Path,
+				).Error("could not read file")
+				return c.NoContent(http.StatusInternalServerError)
+			}
+
+			var project_label string
+			if project != nil {
+				project_label = project.Label
+			}
+			var project_data_label string
+			if membership != nil {
+				project_data_label = *membership.Label
+			}
+			filename := downloadDataValuesExternalIndividualFilename(
+				project_label,
+				project_data_label,
+				data_type_label,
+				timestamp,
+				filepath.Ext(src.Filename),
+			)
+			c.Response().Header().Set(
+				echo.HeaderContentDisposition,
+				fmt.Sprintf(`attachment; filename="%s"`, filename),
+			)
+			return c.Blob(
+				http.StatusOK,
+				"application/octect-stream; charset=utf-8",
+				[]byte(data),
+			)
+		}
+	}
+
+	tmpfile, err := os.CreateTemp("", "")
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not create temporary data file")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	defer tmpfile.Close()
+
+	archive := zip.NewWriter(tmpfile)
+	defer archive.Close()
+
+	if len(values) == 1 {
+		srcs := values[0].Source.([]service.SourceFileInfo)
+		for idx, src := range srcs {
+			ext := filepath.Ext(src.Filename)
+			filename := strconv.Itoa(idx) + ext
+			err = copyFileToZipArchive(
+				c.Logger(),
+				archive,
+				src.Path,
+				filename,
+			)
+			if err != nil {
+				return c.NoContent(http.StatusInternalServerError)
+			}
+		}
+	} else {
+		for _, val := range values {
+			switch val.Cardinality {
+			case service.DataSourceCardinalitySingle:
+				src := val.Source.(service.SourceFileInfo)
+				ext := filepath.Ext(src.Filename)
+				filename := val.Label + ext
+				err = copyFileToZipArchive(
+					c.Logger(),
+					archive,
+					src.Path,
+					filename,
+				)
+				if err != nil {
+					return c.NoContent(http.StatusInternalServerError)
+				}
+			case service.DataSourceCardinalityMultiple:
+				srcs := val.Source.([]service.SourceFileInfo)
+				for idx, src := range srcs {
+					ext := filepath.Ext(src.Filename)
+					filename := filepath.Join(val.Label, strconv.Itoa(idx)+ext)
+					err = copyFileToZipArchive(
+						c.Logger(),
+						archive,
+						src.Path,
+						filename,
+					)
+					if err != nil {
+						return c.NoContent(http.StatusInternalServerError)
+					}
+				}
+			default:
+				panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", val.Cardinality))
+			}
+		}
+	}
+
+	archive_name := "data.zip"
+	if project != nil && membership != nil && membership.Label != nil {
+		archive_name = fmt.Sprintf(
+			"%s.%s.zip",
+			sanitizeStringForFilename(project.Label),
+			sanitizeStringForFilename(*membership.Label),
+		)
+	} else if project != nil {
+		archive_name = fmt.Sprintf(
+			"%s.%s.zip",
+			sanitizeStringForFilename(project.Label),
+			formatTimeForFilename(timestamp),
+		)
+	} else {
+		archive_name = fmt.Sprintf(
+			"%s.data.zip",
+			formatTimeForFilename(timestamp),
+		)
+	}
+
+	err = archive.Close()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"project", project_id,
+		).Error("could not close archive")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	stat, err := tmpfile.Stat()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"project", project_id,
+		).Error("could not stat archive")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	buf := make([]byte, stat.Size())
+	_, err = tmpfile.ReadAt(buf, 0)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"project", project_id,
+		).Error("could not read archive file")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	c.Response().Header().Set(
+		echo.HeaderContentDisposition,
+		fmt.Sprintf(`attachment; filename="%s"`, archive_name),
+	)
+	return c.Blob(
+		http.StatusOK,
+		"application/zip; charset=utf-8",
+		buf,
+	)
+}
+
+func copyFileToZipArchive(
+	logger *slog.Logger,
+	archive *zip.Writer,
+	path string,
+	filename string,
+) error {
+	f, err := archive.Create(filename)
+	if err != nil {
+		logger.With(
+			"error", err,
+		).Error("zip archive could not create file")
+		return err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		logger.With(
+			"error", err,
+			"file", path,
+		).Error("could not read file")
+		return err
+	}
+
+	_, err = f.Write(data)
+	if err != nil {
+		logger.With(
+			"error", err,
+			"file", path,
+		).Error("could not write data to archive file")
+		return err
+	}
+
+	return nil
+}
+
+// `ext` is the file extension including the dot.
+func downloadDataValuesExternalIndividualFilename(
+	project_label string,
+	project_data_label string,
+	data_type_label string,
+	timestamp time.Time,
+	ext string,
+) string {
+	if data_type_label == "" {
+		panic("empty data type label")
+	}
+
+	if project_label != "" && project_data_label != "" {
+		return fmt.Sprintf(
+			"%s.%s%s",
+			sanitizeStringForFilename(project_label),
+			sanitizeStringForFilename(project_data_label),
+			ext,
+		)
+	} else if project_label != "" && project_data_label == "" {
+		return fmt.Sprintf(
+			"%s.%s.%s%s",
+			sanitizeStringForFilename(project_label),
+			sanitizeStringForFilename(data_type_label),
+			formatTimeForFilename(timestamp),
+			ext,
+		)
+	} else if project_label == "" && project_data_label != "" {
+		return fmt.Sprintf(
+			"%s.%s.%s%s",
+			sanitizeStringForFilename(data_type_label),
+			formatTimeForFilename(timestamp),
+			ext,
+		)
+	} else if project_label == "" && project_data_label == "" {
+		return fmt.Sprintf(
+			"%s.%s%s",
+			sanitizeStringForFilename(data_type_label),
+			formatTimeForFilename(timestamp),
+			ext,
+		)
+	}
+
+	panic("unreachable")
 }
 
 func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
@@ -624,6 +921,7 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 	for idx, d := range filtered {
 		filtered_ids[idx] = d.Data.Id
 	}
+
 	values, err := h.data_service.DataValuesByIds(filtered_ids)
 	if err != nil {
 		c.Logger().With(
@@ -638,12 +936,68 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 			data_type_ids = append(data_type_ids, d.Data.Type)
 		}
 	}
-	data_types, err := h.data_service.DataTypesById(data_type_ids)
-	if err != nil {
+	data_types, data_types_err := h.data_service.DataTypesById(data_type_ids)
+	if data_types_err != nil {
 		c.Logger().With(
-			"error", err,
+			"error", data_types_err,
 			"data types", data_type_ids,
 		).Error("could not get data types")
+	}
+
+	if len(filtered_ids) == 1 {
+		data_id := filtered_ids[0]
+		value := values[0]
+
+		data_idx := slices.IndexFunc(data, func(d service.ProjectDataWithMembership) bool {
+			return d.Data.Id == data_id
+		})
+		if data_idx < 0 {
+			c.Logger().With(
+				"data", data_id,
+			).Error("invalid data")
+			return c.NoContent(http.StatusInternalServerError)
+		}
+		timestamp := data[data_idx].Data.Timestamp
+
+		var data_type_label string
+		if data_types_err == nil {
+			data_type := data_types[0]
+			switch data_type.DataStorage() {
+			case service.DataStorageExternal:
+				dt := data_type.(service.DataTypeExternal)
+				data_type_label = dt.Label
+			case service.DataStorageInternal:
+				dt := data_type.(service.DataTypeInternal)
+				data_type_label = dt.Label
+			default:
+				panic("unexpected service.DataStorage")
+			}
+		}
+
+		switch value.Storage {
+		case service.DataStorageExternal:
+			vals := value.Values.([]service.DataSource)
+			return h.downloadDataValuesSingleExternal(
+				c,
+				project_id,
+				data_id,
+				vals,
+				data_type_label,
+				timestamp,
+			)
+		case service.DataStorageInternal:
+			filename := h.downloadDataValuesInternalFilename(
+				c.Logger(),
+				project_id,
+				data_id,
+				data_type_label,
+				timestamp,
+			)
+			vals := value.Values.([]service.SchemaFieldValues)
+			return h.downloadDataValuesSingleInternal(c, data_id, filename, vals)
+		default:
+			panic(fmt.Sprintf("unexpected service.DataStorage: %#v", value.Storage))
+		}
 	}
 
 	archive := zip.NewWriter(tmpfile)
@@ -770,7 +1124,7 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 	)
 	return c.Blob(
 		http.StatusOK,
-		"text/csv; charset=utf-8",
+		"application/zip; charset=utf-8",
 		buf,
 	)
 }
@@ -1140,7 +1494,7 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 						return c.NoContent(http.StatusBadRequest)
 					}
 
-					source_file_info := make([]service.SourceFileInfo, len(files))
+					source_file_info := make([]service.SourceFileInfo, 0, len(files))
 					paths := make([]string, len(files))
 					for idx, file := range files {
 						filename := fmt.Sprintf("%s.%s", rand.Text(), file.Filename)
@@ -1161,7 +1515,7 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 						Paths:       paths,
 					}
 					data_sources[source_id] = service.DataCreateValuesSources{
-						Cardinality: service.DataSourceCardinalitySingle,
+						Cardinality: service.DataSourceCardinalityMultiple,
 						Sources:     source_file_info,
 					}
 				default:

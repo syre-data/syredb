@@ -794,3 +794,21 @@ func (s *ProjectService) DataMembership(project uuid.UUID, data uuid.UUID) (Proj
 
 	return membership, nil
 }
+
+func (s *ProjectService) DataMemberships(project uuid.UUID, data []uuid.UUID) ([]ProjectDataMembershipRx, error) {
+	query :=
+		`SELECT _project, _data, _creator, label FROM project_data_membership_
+		WHERE _project=$1 AND _data=ANY($2)`
+	rows, _ := s.db.Conn.Query(s.ctx, query, project, data)
+	memberships, err := pgx.CollectRows(rows, pgx.RowToStructByName[ProjectDataMembershipRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"project", project,
+			"data", data,
+		).Error("could not get project data memberships")
+		return nil, err
+	}
+
+	return memberships, nil
+}

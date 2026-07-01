@@ -1962,9 +1962,9 @@ func (s *DataService) dataValuesByIdExternalSource(
 			s._path as path, 
 			s.label as filename,
 			t._cardinality as cardinality, 
-			t.label as label
+			t._label as label
 		FROM data_source_ s JOIN data_type_source_ t
-		WHERE s._data=$1`
+		ON s._source=t._id WHERE s._data=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, query, data)
 	info, err := pgx.CollectRows(rows, pgx.RowToStructByName[sourceInfo])
 	if err != nil {
@@ -3400,7 +3400,7 @@ func (s *DataService) dataCreateValuesExternal(
 		`INSERT INTO data_source_ (_data, _source, _path, label) VALUES `,
 	)
 	for source_id, srcs := range sources {
-		if args_idx > 1 {
+		if args_idx > ArgsOffset {
 			query.WriteString(", ")
 		}
 
@@ -3424,7 +3424,11 @@ func (s *DataService) dataCreateValuesExternal(
 			args[label_idx] = srcs.Source.Filename
 			args_idx += ArgsPerRow
 		case DataSourceCardinalityMultiple:
-			for _, src := range srcs.Sources {
+			for src_idx, src := range srcs.Sources {
+				if src_idx > 0 {
+					query.WriteString(", ")
+				}
+
 				path_idx := args_idx
 				label_idx := path_idx + 1
 
@@ -3520,64 +3524,30 @@ func (s *DataService) ValidateValuesAsSources(
 				}
 			}
 
-			if len(src.MediaTypes) > 0 {
-				for _, path := range value.Sources {
-					ext := filepath.Ext(path.Path)
-					if ext == "" {
-						return fmt.Errorf(
-							"`%s` does not match media type filter of `%s`",
-							path,
-							src.Label,
-						)
-					}
-
-					matches := false
-					for _, mtype := range src.MediaTypes {
-						m_matches, err := extensionIsValidForMediaType(ext, mtype)
-						if err != nil {
-							panic(fmt.Sprintf("invalid media type `%s`", mtype))
-						}
-
-						if m_matches {
-							matches = true
-							break
-						}
-					}
-					if !matches {
-						return fmt.Errorf(
-							"`%s` does not match media type filter of `%s`",
-							path,
-							src.Label,
-						)
-					}
+			for _, path := range value.Sources {
+				valid, err := fileMatchesMediaTypes(path.Filename, src.MediaTypes)
+				if err != nil {
+					panic(fmt.Sprintf("invalid media type in `%s`", src.MediaTypes))
 				}
-			}
-		case DataSourceCardinalitySingle:
-			if len(src.MediaTypes) > 0 {
-				ext := filepath.Ext(value.Source.Path)
-				if ext == "" {
+				if !valid {
 					return fmt.Errorf(
 						"`%s` does not match media type filter of `%s`",
 						value.Source,
 						src.Label,
 					)
 				}
-
-				matches := false
-				for _, mtype := range src.MediaTypes {
-					m_matches, err := extensionIsValidForMediaType(ext, mtype)
-					if err != nil {
-						panic(fmt.Sprintf("invalid media type `%s`", mtype))
-					}
-
-					if m_matches {
-						matches = true
-						break
-					}
-				}
-				if !matches {
-					return fmt.Errorf("`%s` does not match media type filter of `%s`", value.Source, src.Label)
-				}
+			}
+		case DataSourceCardinalitySingle:
+			valid, err := fileMatchesMediaTypes(value.Source.Filename, src.MediaTypes)
+			if err != nil {
+				panic(fmt.Sprintf("invalid media type in `%s`", src.MediaTypes))
+			}
+			if !valid {
+				return fmt.Errorf(
+					"`%s` does not match media type filter of `%s`",
+					value.Source,
+					src.Label,
+				)
 			}
 		default:
 			panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", src.Cardinality))
@@ -3585,6 +3555,30 @@ func (s *DataService) ValidateValuesAsSources(
 	}
 
 	return nil
+}
+
+func fileMatchesMediaTypes(file string, media_types []string) (bool, error) {
+	if len(media_types) == 0 {
+		return true, nil
+	}
+
+	ext := filepath.Ext(file)
+	if ext == "" {
+		return false, nil
+	}
+
+	for _, mtype := range media_types {
+		m_matches, err := extensionIsValidForMediaType(ext, mtype)
+		if err != nil {
+			return false, err
+		}
+
+		if m_matches {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func extensionIsValidForMediaType(ext string, media_type string) (bool, error) {
