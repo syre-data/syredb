@@ -18,6 +18,7 @@ export const QUERY_KEY_ORPHANED_DATA = "orphaned_data";
 export const QUERY_KEY_DATA = "data";
 export const QUERY_KEY_DATA_ORIGINS = "data_origins";
 export const QUERY_KEY_DATA_ORIGIN = "data_origin";
+export const QUERY_KEY_DATA_VALUES = "data_values";
 
 export interface BackendError {
     message: string;

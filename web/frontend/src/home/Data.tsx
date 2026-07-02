@@ -1,15 +1,33 @@
-import { MouseButton, QUERY_KEY_DATA, QUERY_KEY_USER_PROJECTS } from "@/common";
+import {
+    MouseButton,
+    QUERY_KEY_DATA,
+    QUERY_KEY_DATA_VALUES,
+    QUERY_KEY_USER_PROJECTS,
+    uuidToString,
+} from "@/common";
 import { Loading, SuspenseError } from "@/components";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
-import type {
-    DataProjectResources,
-    DataRx,
-    DataType,
-    Note,
-    Property,
-    User,
+import {
+    DataSchemaCardinalityMultiple,
+    DataSchemaCardinalitySingle,
+    DataStorageExternal,
+    DataStorageInternal,
+    ValueTypeBoolean,
+    ValueTypeFloat,
+    ValueTypeInt,
+    ValueTypeString,
+    ValueTypeTimestamp,
+    ValueTypeUint,
+    type DataProjectResources,
+    type DataRx,
+    type DataSchemaCardinality,
+    type DataType,
+    type Note,
+    type Property,
+    type SchemaFieldValues,
+    type User,
 } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
@@ -140,6 +158,11 @@ function Data({ data_id }: DataProps) {
                     <ProjectsEmpty />
                 )}
             </div>
+            <ErrorBoundary FallbackComponent={ValuesError}>
+                <Suspense fallback={<ValuesLoading />}>
+                    <DataValues data={data_id} />
+                </Suspense>
+            </ErrorBoundary>
         </div>
     );
 }
@@ -253,8 +276,9 @@ function AddProject({
                         id="add-project"
                         name="add-project"
                         className="input-basic"
+                        defaultValue=""
                     >
-                        <option disabled hidden selected>
+                        <option value="" disabled hidden>
                             Choose a project
                         </option>
                         {projects
@@ -347,5 +371,147 @@ function ProjectItem({ resources }: ProjectItemProps) {
                 </div>
             </td>
         </tr>
+    );
+}
+
+function ValuesError({ error, resetErrorBoundary }: FallbackProps) {
+    return (
+        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
+            Could not load data values
+        </SuspenseError>
+    );
+}
+
+function ValuesLoading() {
+    return <div>Loading values</div>;
+}
+
+interface DataValuesProps {
+    data: UUIDTypes;
+}
+function DataValues({ data }: DataValuesProps) {
+    const { data: values } = useSuspenseQuery({
+        queryKey: [QUERY_KEY_DATA_VALUES, data],
+        queryFn: async () => await dataService.dataValues(data),
+    });
+
+    console.debug(values); // REMOVE
+    let component;
+    switch (values.Storage) {
+        case DataStorageInternal:
+            component = (
+                <DataValuesInternal
+                    cardinality={values.Values[0].Cardinality}
+                    values={values.Values}
+                />
+            );
+            break;
+        case DataStorageExternal:
+            component = <DataValuesInternal sources={values.Sources} />;
+            break;
+    }
+
+    return (
+        <div className="pt-2">
+            <h2 className="px-4">Values</h2>
+            {component}
+        </div>
+    );
+}
+
+interface DataValuesInternalProps {
+    cardinality: DataSchemaCardinality;
+    values: any;
+}
+function DataValuesInternal({ cardinality, values }: DataValuesInternalProps) {
+    switch (cardinality) {
+        case DataSchemaCardinalitySingle:
+            return <DataValuesInternalSingle values={values} />;
+        case DataSchemaCardinalityMultiple:
+            return <DataValuesInternalMultiple values={values} />;
+    }
+}
+
+interface DataValuesInternalSingleProps {
+    values: any;
+}
+function DataValuesInternalSingle({ values }: DataValuesInternalSingleProps) {
+    return <div>TODO</div>;
+}
+
+interface DataValuesInternalMultipleProps {
+    values: SchemaFieldValues[];
+}
+function DataValuesInternalMultiple({
+    values,
+}: DataValuesInternalMultipleProps) {
+    const rx_cnt = values[0]!.Values.length;
+    const col_cnt = values.length;
+    const records = new Array<Array<any>>(rx_cnt);
+    for (let idx = 0; idx < rx_cnt; idx++) {
+        records[idx] = new Array(col_cnt);
+    }
+    for (let vdx = 0; vdx < col_cnt; vdx++) {
+        for (let idx = 0; idx < rx_cnt; idx++) {
+            records[idx]![vdx] = values[vdx]!.Values[idx];
+        }
+    }
+
+    const is_numeric = new Array<boolean>(col_cnt);
+    for (let idx = 0; idx < col_cnt; idx++) {
+        switch (values[idx]!.DType) {
+            case ValueTypeFloat:
+            case ValueTypeInt:
+            case ValueTypeUint:
+                is_numeric[idx] = true;
+                break;
+            case ValueTypeBoolean:
+            case ValueTypeString:
+            case ValueTypeTimestamp:
+                is_numeric[idx] = false;
+                break;
+        }
+    }
+
+    return (
+        <table>
+            <thead>
+                <tr>
+                    <th></th>
+                    {values.map((col) => (
+                        <th className="px-2">{col.Label}</th>
+                    ))}
+                </tr>
+                <tr>
+                    <th></th>
+                    {values.map((col) => (
+                        <th className="px-2">{col.DType}</th>
+                    ))}
+                </tr>
+            </thead>
+            <tbody>
+                {records.map((rx, idx) => (
+                    <tr
+                        key={idx}
+                        className="hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                        <th className="pl-4 pr-2">{idx + 1}.</th>
+                        {rx.map((vx, vdx) => {
+                            return (
+                                <td
+                                    key={vdx}
+                                    className={classNames({
+                                        "px-2": true,
+                                        "text-right": is_numeric[vdx],
+                                    })}
+                                >
+                                    {vx}
+                                </td>
+                            );
+                        })}
+                    </tr>
+                ))}
+            </tbody>
+        </table>
     );
 }

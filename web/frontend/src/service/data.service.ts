@@ -327,7 +327,7 @@ function dataOriginById(
 }
 
 function dataOriginCreate(origin: types.DataOriginCreate): Promise<Response> {
-    return fetch(`/api/data-origin`, {
+    return fetch("/api/data-origin", {
         credentials: "same-origin",
         method: "post",
         headers: { "Content-Type": "application/json" },
@@ -336,12 +336,20 @@ function dataOriginCreate(origin: types.DataOriginCreate): Promise<Response> {
 }
 
 function dataOriginUpdate(update: types.DataOriginRx): Promise<Response> {
-    return fetch(`/api/data-origin`, {
+    return fetch("/api/data-origin", {
         credentials: "same-origin",
         method: "put",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(update),
     });
+}
+
+function dataValues(data: uuid.UUIDTypes): Promise<any> {
+    const params = new URLSearchParams();
+    params.set("id", uuidToString(data));
+    return fetch(`/api/data/values?${params}`, {
+        credentials: "same-origin",
+    }).then(async (resp) => await resp.json());
 }
 
 export default {
@@ -368,4 +376,5 @@ export default {
     dataOriginById,
     dataOriginCreate,
     dataOriginUpdate,
+    dataValues,
 };

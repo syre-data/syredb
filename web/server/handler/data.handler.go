@@ -84,7 +84,7 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insuffiecient permission to create raw data type")
+		).Error("insufficient permission to create raw data type")
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
@@ -135,7 +135,7 @@ func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insuffiecient permission to create raw data type")
+		).Error("insufficient permission to create raw data type")
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
@@ -1908,7 +1908,7 @@ func (h *DataHandler) DataOriginCreate(c *echo.Context) error {
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insuffiecient permission to create data origin")
+		).Error("insufficient permission to create data origin")
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
@@ -1977,7 +1977,7 @@ func (h *DataHandler) DataOriginUpdate(c *echo.Context) error {
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insuffiecient permission to create data origin")
+		).Error("insufficient permission to create data origin")
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
@@ -2003,4 +2003,51 @@ func (h *DataHandler) DataOriginUpdate(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+func (h *DataHandler) DataValues(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	data_id_str := c.QueryParam("id")
+	if data_id_str == "" {
+		c.Logger().With("user", user_id).Warn("data id not present")
+		return c.NoContent(http.StatusBadRequest)
+	}
+	data_id, err := uuid.Parse(data_id_str)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data id", data_id_str,
+		).Warn("invalid data id")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	permissions, err := h.data_service.DataUserPermission(user_id, data_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+			"user", user_id,
+		).Error("could not get user data permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	has_permission := slices.Contains(permissions, service.DataUserPermissionReadValues) ||
+		slices.Contains(permissions, service.DataUserPermissionOwner)
+	if !has_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Error("insufficient permission to create data origin")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	values, err := h.data_service.DataValuesById(data_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+		).Error("could not get data values")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.JSON(http.StatusOK, values)
 }
