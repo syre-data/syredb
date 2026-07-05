@@ -310,6 +310,7 @@ func register_routes(
 	resource.Use(api_middleware.UserIdFromSessionToken)
 
 	resource.GET("/data", data.DownloadDataValuesSingle)
+	resource.GET("/data/source", data.DownloadDataSource)
 	resource.GET("/project/data", data.DownloadProjectDataValuesAll)
 
 	// client libraries

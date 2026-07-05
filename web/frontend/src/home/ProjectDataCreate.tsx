@@ -629,7 +629,6 @@ function ProjectData({ project, dataTypes }: ProjectDataProps) {
                 if (resp.ok) {
                     navigate(-1);
                 }
-                console.debug(resp); // REMOVE
             });
     }
 

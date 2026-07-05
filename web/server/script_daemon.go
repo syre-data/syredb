@@ -1305,7 +1305,7 @@ func (d *ScriptDaemon) createTransformDataValues(
 }
 
 func (d *ScriptDaemon) createTransformDataFileCsv(fields []service.SchemaFieldValues) (*os.File, error) {
-	out, err := d.data_service.StoredDataToCsv(fields)
+	out, err := d.data_service.InternalValuesToCsv(fields)
 	if err != nil {
 		return nil, err
 	}

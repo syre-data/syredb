@@ -89,7 +89,7 @@ function downloadProjectDataAll(
 
 function downloadDataSingle(data: uuid.UUIDTypes): Promise<Response> {
     const params = new URLSearchParams();
-    params.append("id", data.toString());
+    params.append("id", uuidToString(data));
     return fetch(`/resource/data?${params}`, {
         credentials: "same-origin",
     });
@@ -103,12 +103,30 @@ function downloadDataMultiple(
     throw new Error("not yet implemented");
 }
 
-function downloadDataSchemaSampleDataAll(
-    schema: uuid.UUIDTypes,
-    project: uuid.UUIDTypes,
-    hierarchy: types.SaveDataHierarchy[],
+function downloadDataSource(
+    data: uuid.UUIDTypes,
+    source: string,
 ): Promise<Response> {
-    throw new Error("not yet implemented");
+    const params = new URLSearchParams();
+    params.append("data", uuidToString(data));
+    params.append("source", source);
+    return fetch(`/resource/data/source?${params}`, {
+        credentials: "same-origin",
+    });
+}
+
+function downloadDataSourceIndex(
+    data: uuid.UUIDTypes,
+    source: string,
+    index: number,
+): Promise<Response> {
+    const params = new URLSearchParams();
+    params.append("data", uuidToString(data));
+    params.append("source", source);
+    params.append("index", index.toString());
+    return fetch(`/resource/data/source?${params}`, {
+        credentials: "same-origin",
+    });
 }
 
 function dataSchemaCreate(schema: types.DataSchemaCreate): Promise<Response> {
@@ -365,7 +383,8 @@ export default {
     downloadProjectDataAll,
     downloadDataSingle,
     downloadDataMultiple,
-    downloadDataSchemaSampleDataAll,
+    downloadDataSource,
+    downloadDataSourceIndex,
     parseDataFileToSchema,
     dataTypeTransformCreate,
     dataTypeTransformsGetAll,

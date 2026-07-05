@@ -225,6 +225,8 @@ export interface DataValues {
 export interface SourceFileInfo {
   Path: string;
   Filename: string;
+  Label: string;
+  Index: number /* uint */;
 }
 /**
  * DataSource is an externally stored data source.
@@ -320,7 +322,8 @@ export interface DataCreateValuesSources {
   Sources: SourceFileInfo[];
 }
 export const ArgsOffset = 1;
-export const ArgsPerRow = 2;
+export const ArgsPerRowSingle = 2;
+export const ArgsPerRowMultiple = 3;
 export const DataPermissionKeyOwner = "owner";
 export const DataPermissionKeyRead = "read";
 export const DataPermissionKeyNoteCreate = "note_create";

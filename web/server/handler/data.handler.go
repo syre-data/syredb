@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"syredb/database"
 	"syredb/service"
 	"time"
@@ -514,7 +515,6 @@ func (h *DataHandler) downloadDataValuesInternalFilename(
 	} else {
 		return fmt.Sprintf("%s.csv", data_id)
 	}
-
 }
 
 func (h *DataHandler) downloadDataValuesSingleInternal(
@@ -530,7 +530,7 @@ func (h *DataHandler) downloadDataValuesSingleInternal(
 		panic("invalid data schema")
 	}
 
-	data, err := h.data_service.StoredDataToCsv(fields)
+	data, err := h.data_service.InternalValuesToCsv(fields)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -622,7 +622,7 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 			)
 			return c.Blob(
 				http.StatusOK,
-				"application/octect-stream; charset=utf-8",
+				"application/octet-stream",
 				[]byte(data),
 			)
 		}
@@ -749,41 +749,6 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 		"application/zip; charset=utf-8",
 		buf,
 	)
-}
-
-func copyFileToZipArchive(
-	logger *slog.Logger,
-	archive *zip.Writer,
-	path string,
-	filename string,
-) error {
-	f, err := archive.Create(filename)
-	if err != nil {
-		logger.With(
-			"error", err,
-		).Error("zip archive could not create file")
-		return err
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		logger.With(
-			"error", err,
-			"file", path,
-		).Error("could not read file")
-		return err
-	}
-
-	_, err = f.Write(data)
-	if err != nil {
-		logger.With(
-			"error", err,
-			"file", path,
-		).Error("could not write data to archive file")
-		return err
-	}
-
-	return nil
 }
 
 // `ext` is the file extension including the dot.
@@ -1040,7 +1005,7 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 		case service.DataStorageInternal:
 			data_type := data_types[type_idx].(service.DataTypeInternal)
 			fields := vals.Values.([]service.SchemaFieldValues)
-			csv, err := h.data_service.StoredDataToCsv(fields)
+			csv, err := h.data_service.InternalValuesToCsv(fields)
 			if err != nil {
 				c.Logger().With(
 					"error", err,
@@ -1129,22 +1094,463 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 	)
 }
 
-func sanitizeStringForFilename(s string) string {
-	invalid := regexp.MustCompile(`[^\w\d\s\.\-_]`)
-	sanitized := invalid.ReplaceAllString(s, "_")
-	return string(sanitized)
+func (h *DataHandler) DownloadDataSource(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	data_id, err := uuid.Parse(c.QueryParam("data"))
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data", c.QueryParam("data"),
+		).Warn("could not parse id")
+		return c.NoContent(http.StatusBadRequest)
+	}
+	source_label := c.QueryParam("source")
+	if source_label == "" {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Warn("source not present")
+		return c.NoContent(http.StatusBadRequest)
+	}
+	index := -1
+	index_str := c.QueryParam("index")
+	if index_str != "" {
+		index_val, err := strconv.Atoi(index_str)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"index", index_str,
+			).Warn("invalid index")
+			return c.NoContent(http.StatusBadRequest)
+		}
+		if index_val < 0 {
+			c.Logger().With(
+				"error", err,
+				"index", index_val,
+			).Warn("invalid index")
+			return c.NoContent(http.StatusBadRequest)
+		}
+		index = index_val
+	}
+
+	var project_id uuid.UUID
+	project_id_str := c.QueryParam("project")
+	if project_id_str != "" {
+		project_id, err = uuid.Parse(project_id_str)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"project", project_id_str,
+			).Warn("could not parse project id")
+			return c.NoContent(http.StatusBadRequest)
+		}
+	}
+
+	data_rx, err := h.data_service.DataById(data_id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return c.NoContent(http.StatusNotFound)
+		}
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	if data_rx.Visibility != service.VisibilityPublic {
+		permissions, err := h.data_service.DataUserPermissions(
+			user_id,
+			[]uuid.UUID{data_id},
+		)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"data", data_id,
+				"user", user_id,
+			).Error("could not get data user permissions")
+			return c.NoContent(http.StatusInternalServerError)
+		}
+		if permissions[0].Data != data_id {
+			c.Logger().With(
+				"user", user_id,
+				"data", data_id,
+				"permissions", permissions,
+			).Error("invalid data user permissions")
+			panic("invalid data user permissions")
+		}
+		user_permissions := permissions[0].Permissions
+		if len(user_permissions) == 0 {
+			c.Logger().With(
+				"data", data_id,
+				"user", user_id,
+			).Warn("insufficient permissions")
+			return c.NoContent(http.StatusUnauthorized)
+		}
+	}
+
+	data_source, err := h.data_service.DataSourceByLabel(data_id, source_label)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+		).Error("could not get data values")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	var data_type_label string
+	data_type, err := h.data_service.DataTypeById(data_rx.Type)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_rx,
+		).Error("could not get data type")
+	} else {
+		switch data_type.DataStorage() {
+		case service.DataStorageExternal:
+			dt := data_type.(service.DataTypeExternal)
+			data_type_label = dt.Label
+		case service.DataStorageInternal:
+			dt := data_type.(service.DataTypeInternal)
+			data_type_label = dt.Label
+		default:
+			panic("unexpected service.DataStorage")
+		}
+	}
+
+	var project *service.Project
+	var membership *service.ProjectDataMembershipRx
+	if project_id != uuid.Nil {
+		project_rx, err := h.project_service.ProjectById(project_id)
+		if err == nil {
+			project = &project_rx
+		} else {
+			c.Logger().With(
+				"error", err,
+				"project", project_id,
+				"data", data_id,
+			).Error("could not get project data membership")
+		}
+
+		membership_rx, err := h.project_service.DataMembership(project_id, data_id)
+		if err == nil {
+			membership = &membership_rx
+		} else {
+			c.Logger().With(
+				"error", err,
+				"project", project_id,
+				"data", data_id,
+			).Error("could not get project data membership")
+		}
+	}
+
+	var project_label string
+	if project != nil {
+		project_label = project.Label
+	}
+	var project_data_label string
+	if membership != nil {
+		project_data_label = *membership.Label
+	}
+	switch data_source.Cardinality {
+	case service.DataSourceCardinalitySingle:
+		src := data_source.Source.(service.SourceFileInfo)
+		return h.downloadDataSourceSingle(
+			c,
+			src,
+			project_label,
+			project_data_label,
+			data_type_label,
+			data_rx.Timestamp,
+			source_label,
+		)
+	case service.DataSourceCardinalityMultiple:
+		srcs := data_source.Source.([]service.SourceFileInfo)
+		if len(srcs) == 1 {
+			return h.downloadDataSourceSingle(
+				c,
+				srcs[0],
+				project_label,
+				project_data_label,
+				data_type_label,
+				data_rx.Timestamp,
+				source_label,
+			)
+		} else if index > -1 {
+			src_idx := slices.IndexFunc(srcs, func(src service.SourceFileInfo) bool {
+				return src.Index == uint(index)
+			})
+			if src_idx < 0 {
+				c.Logger().With(
+					"data", data_id,
+					"sources", srcs,
+					"index", index,
+				).Error("source with index not found")
+				return c.NoContent(http.StatusBadRequest)
+			}
+
+			return h.downloadDataSourceSingle(
+				c,
+				srcs[src_idx],
+				project_label,
+				project_data_label,
+				data_type_label,
+				data_rx.Timestamp,
+				source_label,
+			)
+		} else {
+			return h.downloadDataSourceMultiple(
+				c,
+				srcs,
+				project_label,
+				project_data_label,
+				data_type_label,
+				data_rx.Timestamp,
+				source_label,
+			)
+		}
+	default:
+		panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", data_source.Cardinality))
+	}
 }
 
-func formatTimeForFilename(t time.Time) string {
-	return fmt.Sprintf(
-		"%d-%02d-%02d-%02d-%02d-%02d",
-		t.Year(),
-		t.Month(),
-		t.Day(),
-		t.Hour(),
-		t.Minute(),
-		t.Second(),
+func (h *DataHandler) downloadDataSourceSingle(
+	c *echo.Context,
+	src service.SourceFileInfo,
+	project_label string,
+	project_data_label string,
+	data_type_label string,
+	timestamp time.Time,
+	source_label string,
+) error {
+	data, err := os.ReadFile(src.Path)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"file", src.Path,
+		).Error("could not read file")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	filename := downloadDataSourceSingleFilename(
+		project_label,
+		project_data_label,
+		data_type_label,
+		timestamp,
+		source_label,
+		src.Label,
+		filepath.Ext(src.Filename),
 	)
+	c.Response().Header().Set(
+		echo.HeaderContentDisposition,
+		fmt.Sprintf(`attachment; filename="%s"`, filename),
+	)
+	return c.Blob(
+		http.StatusOK,
+		"application/octet-stream",
+		data,
+	)
+}
+
+func (h *DataHandler) downloadDataSourceMultiple(
+	c *echo.Context,
+	srcs []service.SourceFileInfo,
+	project_label string,
+	project_data_label string,
+	data_type_label string,
+	timestamp time.Time,
+	source_label string,
+) error {
+	tmpfile, err := os.CreateTemp("", "")
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not create temporary data file")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	defer tmpfile.Close()
+
+	archive := zip.NewWriter(tmpfile)
+	defer archive.Close()
+
+	for _, src := range srcs {
+		idx := src.Index + 1
+		filename := fmt.Sprintf(
+			"%d.%s",
+			idx,
+			src.Filename,
+		)
+		if src.Label == "" {
+			ext := filepath.Ext(src.Filename)
+			filename = fmt.Sprintf(
+				"%d.%s%s",
+				idx,
+				src.Label,
+				ext,
+			)
+		}
+
+		err = copyFileToZipArchive(
+			c.Logger(),
+			archive,
+			src.Path,
+			filename,
+		)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"source", src,
+			).Error("could not write file to archive")
+			return c.NoContent(http.StatusInternalServerError)
+		}
+	}
+
+	err = archive.Close()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not close archive")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	stat, err := tmpfile.Stat()
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not stat archive")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	buf := make([]byte, stat.Size())
+	_, err = tmpfile.ReadAt(buf, 0)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+		).Error("could not read archive file")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	filename := downloadDataSourceMultipleArchiveName(
+		project_label,
+		project_data_label,
+		data_type_label,
+		timestamp,
+		source_label,
+	)
+	c.Response().Header().Set(
+		echo.HeaderContentDisposition,
+		fmt.Sprintf(`attachment; filename="%s"`, filename),
+	)
+	return c.Blob(
+		http.StatusOK,
+		"application/octet-stream",
+		buf,
+	)
+}
+
+func downloadDataSourceSingleFilename(
+	project_label string,
+	project_data_label string,
+	data_type_label string,
+	timestamp time.Time,
+	source_label string,
+	file_label string,
+	ext string,
+) string {
+	if data_type_label == "" {
+		panic("empty data type label")
+	}
+	if source_label == "" {
+		panic("empty source label")
+	}
+
+	dataname := ext
+	if file_label != "" {
+		dataname = "." + sanitizeStringForFilename(file_label)
+	}
+	if !strings.HasSuffix(file_label, ext) {
+		dataname += ext
+	}
+
+	if project_label != "" && project_data_label != "" {
+		return fmt.Sprintf(
+			"%s.%s.%s%s",
+			sanitizeStringForFilename(project_label),
+			sanitizeStringForFilename(project_data_label),
+			sanitizeStringForFilename(source_label),
+			dataname,
+		)
+	} else if project_label == "" && project_data_label != "" {
+		return fmt.Sprintf(
+			"%s.%s%s",
+			sanitizeStringForFilename(project_data_label),
+			sanitizeStringForFilename(source_label),
+			dataname,
+		)
+	} else if project_label != "" && project_data_label == "" {
+		return fmt.Sprintf(
+			"%s.%s.%s.%s%s",
+			sanitizeStringForFilename(project_label),
+			sanitizeStringForFilename(data_type_label),
+			formatTimeForFilename(timestamp),
+			sanitizeStringForFilename(source_label),
+			dataname,
+		)
+	} else if project_label == "" && project_data_label == "" {
+		return fmt.Sprintf(
+			"%s.%s.%s%s",
+			sanitizeStringForFilename(data_type_label),
+			formatTimeForFilename(timestamp),
+			sanitizeStringForFilename(source_label),
+			dataname,
+		)
+	}
+
+	panic("unreachable")
+}
+
+func downloadDataSourceMultipleArchiveName(
+	project_label string,
+	project_data_label string,
+	data_type_label string,
+	timestamp time.Time,
+	source_label string,
+) string {
+	if data_type_label == "" {
+		panic("empty data type label")
+	}
+	if source_label == "" {
+		panic("empty source label")
+	}
+
+	if project_label != "" && project_data_label != "" {
+		return fmt.Sprintf(
+			"%s.%s.%s.zip",
+			sanitizeStringForFilename(project_label),
+			sanitizeStringForFilename(project_data_label),
+			sanitizeStringForFilename(source_label),
+		)
+	} else if project_label == "" && project_data_label != "" {
+		return fmt.Sprintf(
+			"%s.%s.zip",
+			sanitizeStringForFilename(project_data_label),
+			sanitizeStringForFilename(source_label),
+		)
+	} else if project_label != "" && project_data_label == "" {
+		return fmt.Sprintf(
+			"%s.%s.%s.%s.zip",
+			sanitizeStringForFilename(project_label),
+			sanitizeStringForFilename(data_type_label),
+			formatTimeForFilename(timestamp),
+			sanitizeStringForFilename(source_label),
+		)
+	} else if project_label == "" && project_data_label == "" {
+		return fmt.Sprintf(
+			"%s.%s.%s.zip",
+			sanitizeStringForFilename(data_type_label),
+			formatTimeForFilename(timestamp),
+			sanitizeStringForFilename(source_label),
+		)
+	}
+
+	panic("unreachable")
 }
 
 func (h *DataHandler) DataTypeTransformsGetAll(c *echo.Context) error {
@@ -1473,6 +1879,8 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 						Source: service.SourceFileInfo{
 							Path:     path,
 							Filename: file.Filename,
+							Label:    file.Filename,
+							Index:    0,
 						},
 					}
 				case service.DataSourceCardinalityMultiple:
@@ -1505,6 +1913,8 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 							service.SourceFileInfo{
 								Path:     path,
 								Filename: file.Filename,
+								Label:    file.Filename,
+								Index:    uint(idx),
 							},
 						)
 					}
@@ -1663,18 +2073,6 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
-}
-
-func removeFiles(paths []string, logger *slog.Logger) {
-	for _, path := range paths {
-		err := os.Remove(path)
-		if err != nil {
-			logger.With(
-				"error", err,
-				"file", path,
-			).Error("could not remove file")
-		}
-	}
 }
 
 func (h *DataHandler) OrphanedData(c *echo.Context) error {
@@ -2049,5 +2447,89 @@ func (h *DataHandler) DataValues(c *echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
+	if values.Storage == service.DataStorageExternal {
+		srcs := values.Values.([]service.DataSource)
+		for idx, src := range srcs {
+			switch src.Cardinality {
+			case service.DataSourceCardinalityMultiple:
+				info := src.Source.([]service.SourceFileInfo)
+				for idx := range info {
+					info[idx].Path = ""
+				}
+			case service.DataSourceCardinalitySingle:
+				info := src.Source.(service.SourceFileInfo)
+				info.Path = ""
+				srcs[idx].Source = info
+			default:
+				panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", src.Cardinality))
+			}
+		}
+	}
+
 	return c.JSON(http.StatusOK, values)
+}
+
+func sanitizeStringForFilename(s string) string {
+	invalid := regexp.MustCompile(`[^\w\d\s\.\-_]`)
+	sanitized := invalid.ReplaceAllString(s, "_")
+	return string(sanitized)
+}
+
+func formatTimeForFilename(t time.Time) string {
+	return fmt.Sprintf(
+		"%d-%02d-%02d-%02d-%02d-%02d",
+		t.Year(),
+		t.Month(),
+		t.Day(),
+		t.Hour(),
+		t.Minute(),
+		t.Second(),
+	)
+}
+
+func copyFileToZipArchive(
+	logger *slog.Logger,
+	archive *zip.Writer,
+	path string,
+	filename string,
+) error {
+	f, err := archive.Create(filename)
+	if err != nil {
+		logger.With(
+			"error", err,
+		).Error("zip archive could not create file")
+		return err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		logger.With(
+			"error", err,
+			"file", path,
+		).Error("could not read file")
+		return err
+	}
+
+	_, err = f.Write(data)
+	if err != nil {
+		logger.With(
+			"error", err,
+			"file", path,
+		).Error("could not write data to archive file")
+		return err
+	}
+
+	return nil
+}
+
+func removeFiles(paths []string, logger *slog.Logger) {
+	for _, path := range paths {
+		err := os.Remove(path)
+		if err != nil {
+			logger.With(
+				"error", err,
+				"file", path,
+			).Error("could not remove file")
+		}
+	}
 }

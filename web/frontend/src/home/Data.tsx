@@ -12,6 +12,8 @@ import projectService from "@/service/project.service";
 import {
     DataSchemaCardinalityMultiple,
     DataSchemaCardinalitySingle,
+    DataSourceCardinalityMultiple,
+    DataSourceCardinalitySingle,
     DataStorageExternal,
     DataStorageInternal,
     ValueTypeBoolean,
@@ -23,6 +25,7 @@ import {
     type DataProjectResources,
     type DataRx,
     type DataSchemaCardinality,
+    type DataSource,
     type DataType,
     type Note,
     type Property,
@@ -395,10 +398,11 @@ function DataValues({ data }: DataValuesProps) {
         queryFn: async () => await dataService.dataValues(data),
     });
 
-    console.debug(values); // REMOVE
     let component;
+    let title;
     switch (values.Storage) {
         case DataStorageInternal:
+            title = "Values";
             component = (
                 <DataValuesInternal
                     cardinality={values.Values[0].Cardinality}
@@ -407,13 +411,28 @@ function DataValues({ data }: DataValuesProps) {
             );
             break;
         case DataStorageExternal:
-            component = <DataValuesInternal sources={values.Sources} />;
+            title = "Sources";
+            component = (
+                <DataValuesExternal data_id={data} sources={values.Values} />
+            );
             break;
     }
 
+    const params = new URLSearchParams();
+    params.append("id", uuidToString(data));
+    const download = `/resource/data?${params}`;
     return (
         <div className="pt-2">
-            <h2 className="px-4">Values</h2>
+            <div className="px-4 flex gap-2 group">
+                <h2>{title}</h2>
+                <div className="invisible group-hover:visible">
+                    <a href={download}>
+                        <button type="button" className="btn-cmd">
+                            <Icon.Download />
+                        </button>
+                    </a>
+                </div>
+            </div>
             {component}
         </div>
     );
@@ -513,5 +532,132 @@ function DataValuesInternalMultiple({
                 ))}
             </tbody>
         </table>
+    );
+}
+
+interface DataValuesExternalProps {
+    data_id: UUIDTypes;
+    sources: DataSource[];
+}
+function DataValuesExternal({ data_id, sources }: DataValuesExternalProps) {
+    return (
+        <div>
+            {sources.map((source) => (
+                <DataValuesExternalSource
+                    key={source.Label}
+                    data_id={data_id}
+                    source={source}
+                />
+            ))}
+        </div>
+    );
+}
+
+interface DataValuesExternalSourceProps {
+    data_id: UUIDTypes;
+    source: DataSource;
+}
+function DataValuesExternalSource({
+    data_id,
+    source,
+}: DataValuesExternalSourceProps) {
+    switch (source.Cardinality) {
+        case DataSourceCardinalitySingle:
+            return (
+                <DataValuesExternalSourceSingle
+                    data_id={data_id}
+                    source={source}
+                />
+            );
+        case DataSourceCardinalityMultiple:
+            return (
+                <DataValuesExternalSourceMultiple
+                    data_id={data_id}
+                    source={source}
+                />
+            );
+    }
+}
+
+interface DataValuesExternalSourceSingleProps {
+    data_id: UUIDTypes;
+    source: DataSource;
+}
+function DataValuesExternalSourceSingle({
+    data_id,
+    source,
+}: DataValuesExternalSourceSingleProps) {
+    const params = new URLSearchParams();
+    params.append("data", uuidToString(data_id));
+    params.append("source", source.Label);
+    const download = `/resource/data/source?${params}`;
+
+    return (
+        <div className="px-4 flex gap-2 group">
+            <div title="Source">{source.Label}</div>
+            <div className="invisible group-hover:visible">
+                <a href={download} title="Download">
+                    <button type="button" className="btn-cmd">
+                        <Icon.Download />
+                    </button>
+                </a>
+            </div>
+        </div>
+    );
+}
+
+interface DataValuesExternalSourceMultipleProps {
+    data_id: UUIDTypes;
+    source: DataSource;
+}
+function DataValuesExternalSourceMultiple({
+    data_id,
+    source,
+}: DataValuesExternalSourceMultipleProps) {
+    const params = new URLSearchParams();
+    params.append("data", uuidToString(data_id));
+    params.append("source", source.Label);
+    const download = `/resource/data/source?${params}`;
+
+    return (
+        <div>
+            <div className="px-4 flex gap-2 group">
+                <div title="Source">{source.Label}</div>
+                <div className="invisible group-hover:visible">
+                    <a href={download} title="Download">
+                        <button type="button" className="btn-cmd">
+                            <Icon.Download />
+                        </button>
+                    </a>
+                </div>
+            </div>
+            <ol className="list-decimal list-inside">
+                {source.Source.sort((src) => src.Index).map((src, idx) => {
+                    const params = new URLSearchParams();
+                    params.append("data", uuidToString(data_id));
+                    params.append("source", src.Label);
+                    params.append("index", src.Index);
+                    const download = `/resource/data/source?${params}`;
+
+                    return (
+                        <li key={src.Index.toString()} className="px-4">
+                            <div className="group/item inline-flex gap-2">
+                                <div>{src.Label}</div>
+                                <div className="invisible group-hover/item:visible">
+                                    <a href={download} title="Download">
+                                        <button
+                                            type="button"
+                                            className="btn-cmd"
+                                        >
+                                            <Icon.Download />
+                                        </button>
+                                    </a>
+                                </div>
+                            </div>
+                        </li>
+                    );
+                })}
+            </ol>
+        </div>
     );
 }

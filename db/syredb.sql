@@ -264,7 +264,9 @@ CREATE TABLE IF NOT EXISTS data_source_ (
     _data UUID REFERENCES data_(_id) NOT NULL,
     _source UUID REFERENCES data_type_source_(_id) NOT NULL,
     _path VARCHAR(2048) NOT NULL UNIQUE,
-    label VARCHAR(256) -- filename
+    _filename VARCHAR(512) NOT NULL,
+    index INT DEFAULT 0 NOT NULL,
+    label VARCHAR(256)
 );
 
 CREATE TYPE data_type_transform_job_status AS ENUM (
