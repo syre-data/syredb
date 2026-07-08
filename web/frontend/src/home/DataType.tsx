@@ -29,7 +29,7 @@ export default function () {
     const navigate = useNavigate();
     const { data_type_id } = useParams();
     if (data_type_id === undefined) {
-        console.log("data type id not present");
+        console.debug("data type id not present");
         navigate(-1);
         return;
     }
@@ -43,7 +43,7 @@ export default function () {
     );
 }
 
-function DataTypeError({ resetErrorBoundary, error }: FallbackProps) {
+function DataTypeError({ resetErrorBoundary }: FallbackProps) {
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}
@@ -117,12 +117,18 @@ function DataTypeCommon({ dataType }: DataTypeCommonProps) {
         <div>
             <div className="px-4 pt-2 flex justify-between">
                 <div className="flex gap-2 items-center">
-                    <h1>{dataType.Label}</h1>
+                    <h1 className="title">{dataType.Label}</h1>
                     <div>
                         {dataType.Active ? (
-                            <Icon.CircleCheck />
+                            <Icon.CircleCheck
+                                title="Active"
+                                className=" text-syre-green-700 dark:text-syre-green-500"
+                            />
                         ) : (
-                            <Icon.CircleX />
+                            <Icon.CircleX
+                                title="Inactive"
+                                className="text-syre-grey-400 dark:text-syre-grey-600"
+                            />
                         )}
                     </div>
                     <div>
@@ -186,9 +192,9 @@ interface DataTypeExternalProps {
 }
 function DataTypeExternal({ dataType }: DataTypeExternalProps) {
     return (
-        <div className="px-4">
-            <div>
-                <h2>Sources</h2>
+        <div className="px-4 pt-2">
+            <div className="pb-2">
+                <h2 className="text-lg">Sources</h2>
             </div>
             <ol className="list-decimal px-4">
                 {dataType.Sources.map((source) => (
@@ -207,11 +213,13 @@ interface DataTypeSourceProps {
 }
 function DataTypeSource({ source }: DataTypeSourceProps) {
     return (
-        <li>
+        <li className="pb-2">
             <div>
                 <div className="flex items-center">
                     <div className="flex">
-                        <div title="Label">{source.Label}</div>
+                        <div title="Label" className="font-semibold">
+                            {source.Label}
+                        </div>
                         <div>
                             {source.Required ? (
                                 <span title="Required">*</span>

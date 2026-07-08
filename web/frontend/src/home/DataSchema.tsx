@@ -75,9 +75,9 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
     );
     return (
         <div>
-            <div className="pt-2 px-4 flex justify-between">
-                <div className="flex gap-2">
-                    <h1 className="text-xl">{data_schema.Label}</h1>
+            <div className="pt-2 px-4 flex items-center justify-between">
+                <div className="flex gap-2 items-center">
+                    <h1 className="title">{data_schema.Label}</h1>
                     <div>
                         {canModifySchema ? (
                             <Link to={`/data-schema/${data_schema_id}/edit`}>
@@ -99,7 +99,7 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
                 </div>
             </div>
             <div className="pt-2 px-4">{data_schema.Description}</div>
-            <div className="pt-4 px-4">
+            <div className="pt-4 px-4 flex gap-2">
                 <h2>Cardinality</h2>
                 <div>{data_schema.Cardinality}</div>
             </div>

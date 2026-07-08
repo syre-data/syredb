@@ -81,7 +81,7 @@ function DataOrigin({ originId }: DataOriginProps) {
         <div>
             <div className="px-4 pt-2 flex justify-between">
                 <div>
-                    <h1>Data origin</h1>
+                    <h1 className="title">Data origin</h1>
                 </div>
                 <div>
                     <button
@@ -97,20 +97,34 @@ function DataOrigin({ originId }: DataOriginProps) {
                 <form onSubmit={update}>
                     <div className="flex flex-col gap-2">
                         <div className="flex flex-col gap-2">
-                            <div>
-                                <label>
-                                    <span className="sr-only">Label</span>
-                                    <input
-                                        type="text"
-                                        id="label"
-                                        name="label"
-                                        className="input-basic"
-                                        defaultValue={origin.Label}
-                                        placeholder="Label"
-                                        minLength={1}
-                                        required
-                                    />
-                                </label>
+                            <div className="flex gap-2 justify-between w-96">
+                                <div>
+                                    <label>
+                                        <span className="sr-only">Label</span>
+                                        <input
+                                            type="text"
+                                            id="label"
+                                            name="label"
+                                            className="input-basic w-72"
+                                            defaultValue={origin.Label}
+                                            placeholder="Label"
+                                            minLength={1}
+                                            required
+                                        />
+                                    </label>
+                                </div>
+                                <div>
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            id="active"
+                                            name="active"
+                                            className="input-basic"
+                                            defaultChecked={origin.Active}
+                                        />
+                                        <span className="pl-2">Active</span>
+                                    </label>
+                                </div>
                             </div>
                             <div>
                                 <label>
@@ -118,24 +132,11 @@ function DataOrigin({ originId }: DataOriginProps) {
                                     <textarea
                                         id="description"
                                         name="description"
-                                        className="input-basic"
+                                        className="input-basic w-96"
                                         defaultValue={origin.Description}
                                         placeholder="Description"
                                         rows={5}
-                                        cols={40}
                                     />
-                                </label>
-                            </div>
-                            <div>
-                                <label>
-                                    <input
-                                        type="checkbox"
-                                        id="active"
-                                        name="active"
-                                        className="input-basic"
-                                        defaultChecked={origin.Active}
-                                    />
-                                    <span className="pl-2">Active</span>
                                 </label>
                             </div>
                         </div>

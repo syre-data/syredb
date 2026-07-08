@@ -11,6 +11,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import * as common from "../common";
 import classNames from "classnames";
 import { Context } from "@/AppStateContext";
+import { TbReceiptYen } from "react-icons/tb";
 
 export default function Users() {
     const navigate = useNavigate();
@@ -97,26 +98,19 @@ function UserList() {
     });
 
     return (
-        <ul className="grid grid-cols-[repeat(3,min-content)_auto] gap-x-4">
-            {usersOptimistic.map((user) => (
-                <li
-                    key={user.Id.toString()}
-                    className={classNames({
-                        "group/user-row col-span-full grid grid-cols-subgrid \
-                      hover:bg-gray-100 dark:hover:bg-gray-900": true,
-                        "text-gray-600": user.AccountStatus != "active",
-                        "dark:text-gray-400": user.AccountStatus != "active",
-                    })}
-                >
+        <table className="table-std">
+            <tbody>
+                {usersOptimistic.map((user) => (
                     <UserItem
+                        key={user.Id.toString()}
                         user={user}
                         editing={editing}
                         setEditing={setEditing}
                         setUsersOptimistic={setUsersOptimistic}
                     />
-                </li>
-            ))}
-        </ul>
+                ))}
+            </tbody>
+        </table>
     );
 }
 
@@ -128,16 +122,26 @@ interface UserItemProps {
 }
 function UserItem({ user }: UserItemProps) {
     return (
-        <div className="contents">
-            <div className="col-1 pl-4">{user.Email}</div>
-            <div className="col-2 whitespace-nowrap">{user.Name}</div>
-            <div className="col-3 pr-4 invisible group-hover/user-row:visible">
-                <Link to={`/user/${user.Id}`}>
-                    <button type="button" className="btn-cmd">
-                        <icon.Eye />
-                    </button>
-                </Link>
-            </div>
-        </div>
+        <tr
+            className={classNames({
+                group: true,
+                "text-gray-600": user.AccountStatus != "active",
+                "dark:text-gray-400": user.AccountStatus != "active",
+            })}
+        >
+            <td className="whitespace-nowrap font-semibold w-0">
+                {user.Email}
+            </td>
+            <td className="whitespace-nowrap w-0">{user.Name}</td>
+            <td>
+                <div className="invisible group-hover:visible">
+                    <Link to={`/user/${user.Id}`}>
+                        <button type="button" className="btn-cmd">
+                            <icon.Eye />
+                        </button>
+                    </Link>
+                </div>
+            </td>
+        </tr>
     );
 }

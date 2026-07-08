@@ -65,8 +65,8 @@ function DataTypeTransforms() {
     return (
         <div>
             <div className="flex justify-between px-4 pt-2">
-                <div className="flex gap-2">
-                    <h2 className="text-lg">Data type transforms</h2>
+                <div className="flex gap-2 items-center">
+                    <h1 className="title">Data type transforms</h1>
                     <div>
                         {canCreateTransform ? (
                             <Link to="/data-type-transform/create">
@@ -117,15 +117,17 @@ function DataTypeTransformsContent({
     });
 
     return (
-        <ul className="px-4 grid grid-cols-[repeat(2,min-content)]">
-            {transforms.map((transform) => (
-                <DataTypeTransformItem
-                    key={transform.Id.toString()}
-                    transform={transform}
-                    dataTypes={data_types}
-                />
-            ))}
-        </ul>
+        <table className="table-std">
+            <tbody>
+                {transforms.map((transform) => (
+                    <DataTypeTransformItem
+                        key={transform.Id.toString()}
+                        transform={transform}
+                        dataTypes={data_types}
+                    />
+                ))}
+            </tbody>
+        </table>
     );
 }
 
@@ -153,13 +155,17 @@ function DataTypeTransformItem({
     const source = dataTypes[source_idx];
     const destination = dataTypes[destination_idx];
     return (
-        <li className="col-span-full grid grid-cols-subgrid">
-            <div className="col-1 whitespace-nowrap">{transform.Label}</div>
-            <div className="col-2 flex gap-2 items-center">
-                <span className="whitespace-nowrap">{source.Label}</span>
-                <Icon.ArrowRight className="inline" />
-                <span className="whitespace-nowrap">{destination.Label}</span>
-            </div>
-        </li>
+        <tr>
+            <td className="whitespace-nowrap w-0">{transform.Label}</td>
+            <td>
+                <div className="flex gap-2 items-center">
+                    <span className="whitespace-nowrap">{source.Label}</span>
+                    <Icon.ArrowRight className="inline" />
+                    <span className="whitespace-nowrap">
+                        {destination.Label}
+                    </span>
+                </div>
+            </td>
+        </tr>
     );
 }

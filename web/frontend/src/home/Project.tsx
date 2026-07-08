@@ -1,6 +1,7 @@
 import {
     MouseButton,
     QUERY_KEY_PROJECT_RESOURCES,
+    timestampToString,
     uuidToString,
 } from "@/common";
 import { Loading, SuspenseError } from "@/components";
@@ -59,7 +60,7 @@ function Project({ projectId }: ProjectProps) {
     return (
         <div>
             <div className="px-4 pt-2 flex justify-between">
-                <h2 className="text-lg">{resources.Project.Label}</h2>
+                <h1 className="title">{resources.Project.Label}</h1>
                 <div>
                     <div>
                         <Link to="/">
@@ -93,8 +94,8 @@ function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
 
     return (
         <div>
-            <div className="px-4 flex gap-2 group">
-                <h3 className="text-lg">Data</h3>
+            <div className="px-4 flex gap-2 items-center group">
+                <h2 className="text-xl">Data</h2>
                 <div className="flex gap-2">
                     <div>
                         <Link to={`/project/${projectId}/data/create`}>
@@ -158,50 +159,52 @@ function ProjectDataList({
     }
 
     return (
-        <ul className="grid gap-2 grid-cols-[repeat(5,min-content)]">
-            {data.map((datum, idx) => {
-                const parent_id = parents.get(datum.Id);
-                let parent: ProjectData | undefined = undefined;
-                let parent_label = undefined;
-                if (parent_id) {
-                    const parent_idx = data.findIndex(
-                        (datum) => datum.Id === parent_id,
-                    )!;
-                    parent = data[parent_idx]!;
-                    if (parent.Label) {
-                        const matching_label = data.findIndex(
-                            (datum) =>
-                                datum.Label === parent.Label &&
-                                datum.Id !== parent.Id,
-                        );
-                        if (matching_label < 0) {
-                            parent_label = parent.Label;
+        <table className="table-std">
+            <tbody>
+                {data.map((datum, idx) => {
+                    const parent_id = parents.get(datum.Id);
+                    let parent: ProjectData | undefined = undefined;
+                    let parent_label = undefined;
+                    if (parent_id) {
+                        const parent_idx = data.findIndex(
+                            (datum) => datum.Id === parent_id,
+                        )!;
+                        parent = data[parent_idx]!;
+                        if (parent.Label) {
+                            const matching_label = data.findIndex(
+                                (datum) =>
+                                    datum.Label === parent.Label &&
+                                    datum.Id !== parent.Id,
+                            );
+                            if (matching_label < 0) {
+                                parent_label = parent.Label;
+                            } else {
+                                parent_label = `${parent.Label} (${parent_idx})`;
+                            }
                         } else {
-                            parent_label = `${parent.Label} (${parent_idx})`;
+                            parent_label = parent_idx.toString();
                         }
-                    } else {
-                        parent_label = parent_idx.toString();
                     }
-                }
 
-                const type = types.find((type) => type.Id === datum.Type);
-                if (!type) {
-                    console.error(`could not get data type ${datum.Type}`);
-                }
+                    const type = types.find((type) => type.Id === datum.Type);
+                    if (!type) {
+                        console.error(`could not get data type ${datum.Type}`);
+                    }
 
-                return (
-                    <ProjectDataItem
-                        key={datum.Id.toString()}
-                        index={idx}
-                        projectId={projectId}
-                        data={datum}
-                        type={type}
-                        parent={parent}
-                        parentLabel={parent_label}
-                    />
-                );
-            })}
-        </ul>
+                    return (
+                        <ProjectDataItem
+                            key={datum.Id.toString()}
+                            index={idx}
+                            projectId={projectId}
+                            data={datum}
+                            type={type}
+                            parent={parent}
+                            parentLabel={parent_label}
+                        />
+                    );
+                })}
+            </tbody>
+        </table>
     );
 }
 
@@ -279,42 +282,36 @@ function ProjectDataItem({
     params.append("project", uuidToString(projectId));
     const download = `/resource/data?${params}`;
     return (
-        <li
-            id={`data-${data.Id}`}
-            className="px-4 grid grid-cols-subgrid col-span-full group"
-            data-id={data.Id}
-        >
-            <div className="grid grid-cols-subgrid col-span-full">
-                <div className="col-1">{index + 1}.</div>
-                <div className="col-2 text-nowrap">{type.Label}</div>
-                <div className="col-3">
-                    {data.Label ? (
-                        <>
-                            <span className="text-nowrap pr-2">
-                                {data.Label}
-                            </span>
-                            <span className="text-gray-500">
-                                ({data.Timestamp.toString()})
-                            </span>
-                        </>
-                    ) : (
-                        data.Timestamp.toString()
-                    )}
-                </div>
-                <div>
-                    {parentLabel ? (
-                        <span
-                            className="text-nowrap pl-2 text-gray-500 cursor-pointer"
-                            onMouseEnter={(e) => highlight_parent(e, true)}
-                            onMouseLeave={(e) => highlight_parent(e, false)}
-                            onMouseDown={goto_parent}
-                            title="Parent data"
-                        >
-                            (<Icon.ArrowReturn className="inline" />{" "}
-                            {parentLabel})
+        <tr id={`data-${data.Id}`} data-id={data.Id} className="group">
+            <td className="text-nowrap  font-semibold w-0">{type.Label}</td>
+            <td className="text-nowrap w-0 group/label">
+                {data.Label ? (
+                    <>
+                        <span className="pr-2 font-semibold">{data.Label}</span>
+                        <span className="text-gray-500 invisible group-hover/label:visible">
+                            ({timestampToString(new Date(data.Timestamp))})
                         </span>
-                    ) : null}
-                </div>
+                    </>
+                ) : (
+                    <span className="font-semibold">
+                        {timestampToString(new Date(data.Timestamp))}
+                    </span>
+                )}
+            </td>
+            <td className="w-0">
+                {parentLabel ? (
+                    <span
+                        className="text-nowrap text-gray-500 cursor-pointer"
+                        onMouseEnter={(e) => highlight_parent(e, true)}
+                        onMouseLeave={(e) => highlight_parent(e, false)}
+                        onMouseDown={goto_parent}
+                        title="Parent data"
+                    >
+                        (<Icon.ArrowReturn className="inline" /> {parentLabel})
+                    </span>
+                ) : null}
+            </td>
+            <td>
                 <div className="flex gap-1 invisible group-hover:visible">
                     <div>
                         {/* TODO: Check permissions */}
@@ -346,7 +343,7 @@ function ProjectDataItem({
                         </a>
                     </div>
                 </div>
-            </div>
-        </li>
+            </td>
+        </tr>
     );
 }

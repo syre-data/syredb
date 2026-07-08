@@ -1,20 +1,12 @@
-import { Suspense, useContext } from "react";
-import type { MouseEvent } from "react";
 import icon from "../icon";
-import { MouseButton, QUERY_KEY_USER } from "../common";
-import * as appStateCtx from "../AppStateContext";
-import { useNavigate, Link } from "react-router";
-import auth_service from "@/service/auth.service";
-import { ErrorBoundary } from "react-error-boundary";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import type { DbPermission } from "@/types";
+import { Link } from "react-router";
 
 export default function () {
     return (
         <div className="flex">
             <Nav />
             <div>
-                <h2 className="pt-2 px-2 font-bold text-2xl">Settings</h2>
+                <h1 className="pt-2 px-4 title">Settings</h1>
             </div>
         </div>
     );

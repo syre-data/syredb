@@ -44,11 +44,14 @@ function DataOrigins() {
     return (
         <div>
             <div className="px-4 pt-2 flex justify-between">
-                <div className="flex gap-2">
-                    <h1>Data origins</h1>
-                    <div>
-                        <Link to="/data-origin/create">
-                            <button type="button" className="btn-cmd">
+                <div className="flex gap-2 items-center">
+                    <h1 className="title">Data origins</h1>
+                    <div className="h-full">
+                        <Link to="/data-origin/create" className="align-middle">
+                            <button
+                                type="button"
+                                className="btn-cmd align-middle"
+                            >
                                 <Icon.Plus />
                             </button>
                         </Link>
@@ -64,8 +67,8 @@ function DataOrigins() {
                     </button>
                 </div>
             </div>
-            <div className="px-4 pt-2">
-                <table>
+            <div className="pt-2">
+                <table className="table-std">
                     <tbody>
                         {origins.map((origin) => (
                             <tr
@@ -75,12 +78,15 @@ function DataOrigins() {
                                     "gray-600 dark:gray-300": !origin.Active,
                                 })}
                             >
-                                <td>{origin.Label}</td>
+                                <td className="font-semibold text-nowrap w-0">
+                                    {origin.Label}
+                                </td>
                                 <td>{origin.Description}</td>
                                 <td>
                                     <div className="invisible group-hover:visible">
                                         <Link
                                             to={`/data-origin/${origin.Id}/edit`}
+                                            title="Edit"
                                         >
                                             <button
                                                 type="button"

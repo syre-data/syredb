@@ -121,7 +121,7 @@ function DataType({ data_type_id }: DataTypeProps) {
         <div>
             <div className="flex justify-between px-4 pt-2">
                 <div>
-                    <h2 className="text-lg">Edit data type</h2>
+                    <h1 className="title">Edit data type</h1>
                 </div>
                 <div>
                     <button
@@ -280,7 +280,7 @@ interface DataTypeExternalProps {
     dataTypes: DataType[];
 }
 function DataTypeExternal({ dataType, dataTypes }: DataTypeExternalProps) {
-    return <div></div>;
+    return <div>TODO</div>;
 }
 
 interface DataTypeSourcesProps {

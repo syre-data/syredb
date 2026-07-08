@@ -140,3 +140,13 @@ export function uuidToString(id: UUIDTypes): string {
         return stringify(id);
     }
 }
+
+export function timestampToString(date: Date): string {
+    const y = String(date.getUTCFullYear()).padStart(4, "0");
+    const mo = String(date.getMonth()).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    const h = String(date.getHours()).padStart(2, "0");
+    const m = String(date.getMinutes()).padStart(2, "0");
+    const s = String(date.getSeconds()).padStart(2, "0");
+    return `${y}-${mo}-${d} ${h}:${m}:${s}`;
+}

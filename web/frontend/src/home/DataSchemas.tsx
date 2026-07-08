@@ -64,9 +64,9 @@ function DataSchemas() {
     );
     return (
         <div>
-            <div className="flex justify-between">
-                <div className="flex gap-2 items-center px-4">
-                    <h3 className="text-lg font-bold">Data schemas</h3>
+            <div className="pt-2 px-4 flex justify-between">
+                <div className="flex gap-2 items-center">
+                    <h1 className="title">Data schemas</h1>
                     <div>
                         {canCreateSchema ? (
                             <Link to="/data-schema/create">
@@ -122,27 +122,28 @@ interface DataSchemasContentProps {
 }
 function DataSchemasContent({ data_schemas }: DataSchemasContentProps) {
     return (
-        <ul className="grid gap-2 grid-cols-[repeat(4,min-content)]">
-            {data_schemas.map((schema, index) => (
-                <DataSchemaListItem
-                    key={schema.Id.toString()}
-                    index={index}
-                    schema={schema}
-                />
-            ))}
-        </ul>
+        <table className="table-std">
+            <tbody>
+                {data_schemas.map((schema, index) => (
+                    <DataSchemaItem
+                        key={schema.Id.toString()}
+                        index={index}
+                        schema={schema}
+                    />
+                ))}
+            </tbody>
+        </table>
     );
 }
 
-interface DataSchemaListItemProps {
+interface DataSchemaItemProps {
     index: number;
     schema: DataSchema;
 }
-function DataSchemaListItem({ index, schema }: DataSchemaListItemProps) {
-    const ROW_SPAN = 2;
+function DataSchemaItem({ index, schema }: DataSchemaItemProps) {
     const [expanded, setExpanded] = useState(false);
 
-    function toggle_expand(e: MouseEvent<HTMLDivElement>) {
+    function toggle_expand(e: MouseEvent<HTMLTableCellElement>) {
         if (e.button !== common.MouseButton.Primary) {
             return;
         }
@@ -152,57 +153,87 @@ function DataSchemaListItem({ index, schema }: DataSchemaListItemProps) {
 
     const description = schema.Description ?? "(no description)";
     return (
-        <li className="px-2 grid col-span-full grid-cols-subgrid group/schema-row">
-            <div
-                className="grid grid-cols-subgrid col-span-2"
-                onMouseDown={toggle_expand}
-            >
-                <div
-                    className={classNames({
-                        "col-1 row-1": true,
-                        "invisible hover:visible group-hover/schema-row:visible":
-                            !expanded,
-                    })}
-                >
-                    <button
-                        type="button"
-                        className={classNames({
-                            "btn-cmd transition-[rotate]": true,
-                            "-rotate-90": !expanded,
-                        })}
-                    >
-                        <Icon.CaretDown />
-                    </button>
-                </div>
-                <div className="row-1 col-2 whitespace-nowrap cursor-pointer">
-                    {schema.Label}
-                </div>
-            </div>
-            <div className="row-1 col-3 whitespace-nowrap">{description}</div>
-            <div className="row-1 col-4 invisible group-hover/schema-row:visible">
-                <Link to={`/data-schema/${schema.Id}`}>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        title="Edit data schema"
-                    >
-                        <Icon.Eye />
-                    </button>
-                </Link>
-            </div>
-            <div
+        <>
+            <tr
                 className={classNames({
-                    "row-2 col-start-2 -col-end-1 overflow-hidden whitespace-nowrap flex gap-2 transition-[height]": true,
-                    "h-0": !expanded,
+                    group: true,
                 })}
             >
-                {schema.Fields.map((col, idx) => (
-                    <div key={col.Label} title={col.Description}>
-                        <span>{col.Label}</span> <span>({col.DType})</span>
-                        {idx === schema.Fields.length - 1 ? "" : " | "}
+                <td
+                    className={classNames({
+                        "w-0": true,
+                        "border-b-0!": expanded,
+                    })}
+                    onMouseDown={toggle_expand}
+                >
+                    <div
+                        className={classNames({
+                            "invisible group-hover:visible": !expanded,
+                        })}
+                    >
+                        <button
+                            type="button"
+                            className={classNames({
+                                "btn-cmd transition-[rotate]": true,
+                                "-rotate-90": !expanded,
+                            })}
+                        >
+                            <Icon.CaretDown />
+                        </button>
                     </div>
-                ))}
-            </div>
-        </li>
+                </td>
+                <td
+                    className={classNames({
+                        "whitespace-nowrap cursor-pointer font-semibold w-0": true,
+                        "border-b-0!": expanded,
+                    })}
+                    onMouseDown={toggle_expand}
+                >
+                    {schema.Label}
+                </td>
+                <td
+                    className={classNames({
+                        "border-b-0!": expanded,
+                    })}
+                >
+                    {description}
+                </td>
+                <td
+                    className={classNames({
+                        "border-b-0!": expanded,
+                    })}
+                >
+                    <Link to={`/data-schema/${schema.Id}`}>
+                        <button
+                            type="button"
+                            className="btn-cmd"
+                            title="Edit data schema"
+                        >
+                            <Icon.Eye />
+                        </button>
+                    </Link>
+                </td>
+            </tr>
+            <tr
+                className={classNames({
+                    "overflow-hidden": true,
+                    collapse: !expanded,
+                })}
+            >
+                <td></td>
+                <td colSpan={3}>
+                    {schema.Fields.map((col, idx) => (
+                        <div
+                            key={col.Label}
+                            className="inline"
+                            title={col.Description}
+                        >
+                            <span>{col.Label}</span> <span>({col.DType})</span>
+                            {idx === schema.Fields.length - 1 ? "" : " | "}
+                        </div>
+                    ))}
+                </td>
+            </tr>
+        </>
     );
 }

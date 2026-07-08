@@ -1,4 +1,4 @@
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import * as common from "@/common";
 import data_service from "@/service/data.service";
 import {
@@ -6,19 +6,11 @@ import {
     type FallbackProps as ErrorBoundaryProps,
 } from "react-error-boundary";
 import { Loading, SuspenseError } from "@/components";
-import {
-    Suspense,
-    useContext,
-    useState,
-    type MouseEvent,
-    type SubmitEvent,
-} from "react";
+import { Suspense, useContext, type MouseEvent } from "react";
 import * as types from "@/types";
 import icon from "@/icon";
-import { StatusCodes } from "http-status-codes";
 import classNames from "classnames";
 import { Link, useNavigate } from "react-router";
-import * as uuid from "uuid";
 import { Context } from "@/AppStateContext";
 
 export default function () {
@@ -73,8 +65,8 @@ function DataTypes() {
     return (
         <div>
             <div className="px-4 pt-2 flex justify-between">
-                <div className="flex gap-2">
-                    <h2 className="text-lg">Data types</h2>
+                <div className="flex gap-2 items-center">
+                    <h1 className="title">Data types</h1>
                     <div>
                         {canCreateType ? (
                             <Link to="/data-type/create">
@@ -122,37 +114,43 @@ interface DataTypesContentProps {
 }
 function DataTypesContent({ data_types }: DataTypesContentProps) {
     return (
-        <ul className="grid grid-cols-[repeat(4,min-content)] gap-2">
-            {data_types.map((type) => (
-                <DataTypeListItem key={type.Id.toString()} data_type={type} />
-            ))}
-        </ul>
+        <table className="table-std">
+            <tbody>
+                {data_types.map((type) => (
+                    <DataTypeItem key={type.Id.toString()} data_type={type} />
+                ))}
+            </tbody>
+        </table>
     );
 }
 
-interface DataTypeListItemProps {
+interface DataTypeItemProps {
     data_type: types.DataType;
 }
-function DataTypeListItem({ data_type }: DataTypeListItemProps) {
+function DataTypeItem({ data_type }: DataTypeItemProps) {
     return (
-        <li
+        <tr
             className={classNames({
-                "px-4 col-span-full grid grid-cols-subgrid group": true,
+                group: true,
                 "text-gray-600 dark:text-gray-400": !data_type.Active,
             })}
         >
-            <div className="col-1 whitespace-nowrap">{data_type.Label}</div>
-            <div className="col-2 whitespace-nowrap">
-                {data_type.Description}
-            </div>
-            <div className="col-3 whitespace-nowrap">
+            <td className="whitespace-nowrap w-0">{data_type.Label}</td>
+            <td className="whitespace-nowrap w-0">
                 {data_type.Storage === types.DataStorageInternal ? (
-                    <icon.DataSchema title="Internal storage" />
+                    <icon.DataSchema
+                        className="inline-block"
+                        title="Internal storage"
+                    />
                 ) : (
-                    <icon.Files title="External storage" />
+                    <icon.Files
+                        className="inline-block"
+                        title="External storage"
+                    />
                 )}
-            </div>
-            <div className="col-4">
+            </td>
+            <td className="">{data_type.Description}</td>
+            <td>
                 <Link
                     to={`/data-type/${data_type.Id}`}
                     className="invisible group-hover:visible"
@@ -161,7 +159,7 @@ function DataTypeListItem({ data_type }: DataTypeListItemProps) {
                         <icon.Eye />
                     </button>
                 </Link>
-            </div>
-        </li>
+            </td>
+        </tr>
     );
 }
