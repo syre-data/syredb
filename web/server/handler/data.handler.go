@@ -1001,7 +1001,109 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 
 		switch vals.Storage {
 		case service.DataStorageExternal:
-			panic("todo")
+			data_type := data_types[type_idx].(service.DataTypeExternal)
+			sources := vals.Values.([]service.DataSource)
+			if len(sources) == 0 {
+				panic("invalid data sources")
+			}
+			if len(sources) == 1 {
+				src := sources[0]
+				if src.Cardinality == service.DataSourceCardinalitySingle {
+					info := src.Source.(service.SourceFileInfo)
+
+					var filename string
+					if vdata.ProjectLabel != nil && *vdata.ProjectLabel != "" {
+						filename = sanitizeStringForFilename(*vdata.ProjectLabel)
+					} else {
+						filename = fmt.Sprintf(
+							"%s.%s",
+							data_type.Label,
+							formatTimeForFilename(vdata.Data.Timestamp),
+						)
+						if info.Label != "" {
+							filename = sanitizeStringForFilename(info.Label)
+						}
+					}
+
+					ext := filepath.Ext(info.Filename)
+					if ext != "" && !strings.HasSuffix(filename, ext) {
+						filename += ext
+					}
+					err := copyFileToZipArchive(c.Logger(), archive, info.Path, filename)
+					if err != nil {
+						c.Logger().With(
+							"error", err,
+							"data", vals.Data,
+						).Error("zip archive could not create file")
+						return c.NoContent(http.StatusInternalServerError)
+					}
+
+					continue
+				}
+			}
+
+			var data_name string
+			if vdata.ProjectLabel != nil && *vdata.ProjectLabel != "" {
+				data_name = sanitizeStringForFilename(*vdata.ProjectLabel)
+			} else {
+				data_name = fmt.Sprintf(
+					"%s.%s",
+					data_type.Label,
+					formatTimeForFilename(vdata.Data.Timestamp),
+				)
+			}
+
+			for _, src := range sources {
+				var filename string
+				switch src.Cardinality {
+				case service.DataSourceCardinalitySingle:
+					info := src.Source.(service.SourceFileInfo)
+					filename = fmt.Sprintf(
+						"%s/%s",
+						data_name,
+						src.Label,
+					)
+
+					ext := filepath.Ext(info.Filename)
+					if ext != "" && !strings.HasSuffix(filename, ext) {
+						filename += ext
+					}
+					err := copyFileToZipArchive(c.Logger(), archive, info.Path, filename)
+					if err != nil {
+						c.Logger().With(
+							"error", err,
+							"source", src,
+						).Error("zip archive could not create file")
+						return c.NoContent(http.StatusInternalServerError)
+					}
+				case service.DataSourceCardinalityMultiple:
+					infos := src.Source.([]service.SourceFileInfo)
+					for _, info := range infos {
+						filename = fmt.Sprintf(
+							"%s/%s.%d",
+							data_name,
+							src.Label,
+							info.Index,
+						)
+
+						ext := filepath.Ext(info.Filename)
+						if ext != "" {
+							filename += ext
+						}
+						err := copyFileToZipArchive(c.Logger(), archive, info.Path, filename)
+						if err != nil {
+							c.Logger().With(
+								"error", err,
+								"data", vals.Data,
+							).Error("zip archive could not create file")
+							return c.NoContent(http.StatusInternalServerError)
+						}
+					}
+				default:
+					panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", src.Cardinality))
+				}
+			}
+
 		case service.DataStorageInternal:
 			data_type := data_types[type_idx].(service.DataTypeInternal)
 			fields := vals.Values.([]service.SchemaFieldValues)
@@ -1026,15 +1128,7 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 				)
 			}
 
-			f, err := archive.Create(filename)
-			if err != nil {
-				c.Logger().With(
-					"error", err,
-					"data", vals.Data,
-				).Error("zip archive could not create file")
-				return c.NoContent(http.StatusInternalServerError)
-			}
-			_, err = f.Write([]byte(csv))
+			err = writeBytesToZipArchive(c.Logger(), archive, []byte(csv), filename)
 			if err != nil {
 				c.Logger().With(
 					"error", err,
@@ -2515,6 +2609,30 @@ func copyFileToZipArchive(
 		logger.With(
 			"error", err,
 			"file", path,
+		).Error("could not write data to archive file")
+		return err
+	}
+
+	return nil
+}
+
+func writeBytesToZipArchive(
+	logger *slog.Logger,
+	archive *zip.Writer,
+	data []byte,
+	filename string,
+) error {
+	f, err := archive.Create(filename)
+	if err != nil {
+		logger.With(
+			"error", err,
+		).Error("zip archive could not create file")
+		return err
+	}
+	_, err = f.Write(data)
+	if err != nil {
+		logger.With(
+			"error", err,
 		).Error("could not write data to archive file")
 		return err
 	}

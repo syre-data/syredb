@@ -1941,8 +1941,8 @@ type SourceFileInfo struct {
 }
 
 // DataSource is an externally stored data source.
-// `Sources` is `SourceFileInfo` if `Cardinality` is `single`.
-// `Sources` is `[]SourceFileInfo`  if `Cardinality` is `multiple`.
+// `Sources` is `SourceFileInfo` if `Cardinality` is `single` or
+// `[]SourceFileInfo` if `Cardinality` is `multiple`.
 type DataSource struct {
 	Label       string
 	Cardinality DataSourceCardinality

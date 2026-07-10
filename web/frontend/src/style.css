@@ -23,16 +23,16 @@
   --color-secondary-800: #2b2e33;
   --color-secondary-900: #181a1e;
 
-  --color-grey-50: #f3f4f7;
-  --color-grey-100: #e1e3e6;
-  --color-grey-200: #c4c7cc;
-  --color-grey-300: #a6aab3;
-  --color-grey-400: #898e99;
-  --color-grey-500: #6b7280;
-  --color-grey-600: #565b66;
-  --color-grey-700: #40444d;
-  --color-grey-800: #2b2e33;
-  --color-grey-900: #181a1e;
+  --color-syre-grey-50: #f3f4f7;
+  --color-syre-grey-100: #e1e3e6;
+  --color-syre-grey-200: #c4c7cc;
+  --color-syre-grey-300: #a6aab3;
+  --color-syre-grey-400: #898e99;
+  --color-syre-grey-500: #6b7280;
+  --color-syre-grey-600: #565b66;
+  --color-syre-grey-700: #40444d;
+  --color-syre-grey-800: #2b2e33;
+  --color-syre-grey-900: #181a1e;
 
   --color-syre-red-50: #ffe9e1;
   --color-syre-red-100: #ffc1ab;
@@ -92,6 +92,10 @@
 
 .btn-cmd:hover {
   @apply bg-primary-300 border-primary-400 dark:bg-primary-700 dark:border-primary-600;
+}
+
+.btn-cmd:hover:disabled {
+  @apply bg-syre-grey-300 border-syre-grey-400 dark:bg-syre-grey-700 dark:border-syre-grey-600
 }
 
 @utility btn-submit {
