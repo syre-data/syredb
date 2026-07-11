@@ -110,7 +110,8 @@
   @apply w-full;
 }
 
-.table-std tr td {
+.table-std tbody td,
+.table-std tbody th {
   @apply px-4 py-2 align-top
   border-b border-b-secondary-100 dark:border-b-secondary-700;
 }

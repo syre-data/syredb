@@ -1,21 +1,42 @@
 import {
     MouseButton,
+    QUERY_KEY_DATA_PREVIEW,
     QUERY_KEY_PROJECT_RESOURCES,
     timestampToString,
     uuidToString,
 } from "@/common";
 import { Loading, SuspenseError } from "@/components";
 import Icon from "@/icon";
+import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
 import {
+    DataSchemaCardinalityMultiple,
+    DataSchemaCardinalitySingle,
+    DataSourceCardinalityMultiple,
+    DataSourceCardinalitySingle,
     DataStorageExternal,
     DataStorageInternal,
+    type DataSource,
+    type DataStorage,
     type DataType,
+    type DataValuesPreviewInternal,
+    type DataValuesPreviewInternalMultiple,
     type ProjectData,
+    type SchemaFieldValues,
+    type SourceFileInfo,
 } from "@/types";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, type MouseEvent } from "react";
+import { useDismiss, useFloating, useInteractions } from "@floating-ui/react";
+import {
+    QueryClient,
+    useQuery,
+    useQueryClient,
+    useSuspenseQuery,
+} from "@tanstack/react-query";
+import classNames from "classnames";
+import type { types } from "node:util";
+import React, { Suspense, useState, type MouseEvent, type Ref } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
+import { data } from "react-router";
 import { Link, redirect, useParams } from "react-router";
 import * as uuid from "uuid";
 
@@ -235,6 +256,19 @@ function ProjectDataItem({
     parent,
     parentLabel,
 }: ProjectDataItemProps) {
+    const queryClient = useQueryClient();
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const { refs, floatingStyles, context } = useFloating({
+        placement: "right-start",
+
+        open: previewOpen,
+        onOpenChange: setPreviewOpen,
+    });
+    const dismissPreview = useDismiss(context);
+    const { getReferenceProps, getFloatingProps } = useInteractions([
+        dismissPreview,
+    ]);
+
     function highlight_parent(e: MouseEvent<HTMLElement>, active: boolean) {
         const HIGHLIGHT_CLASS = ["bg-gray-200", "dark:bg-gray-800"];
 
@@ -259,12 +293,19 @@ function ProjectDataItem({
         parent_elm.scrollIntoView();
     }
 
+    async function fetch_preview() {
+        queryClient.prefetchQuery({
+            queryKey: [QUERY_KEY_DATA_PREVIEW, data.Id],
+            queryFn: async () => await dataService.dataPreview(data.Id),
+        });
+    }
+
     function open_preview(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
             return;
         }
 
-        console.error("TODO");
+        setPreviewOpen(true);
     }
 
     const date = new Date(data.Timestamp);
@@ -322,8 +363,13 @@ function ProjectDataItem({
                     </span>
                 ) : null}
             </td>
-            <td>
-                <div className="flex gap-1 invisible group-hover:visible">
+            <td className="w-0" ref={refs.setReference} {...getReferenceProps}>
+                <div
+                    className={classNames({
+                        "flex gap-1": true,
+                        "invisible group-hover:visible": !previewOpen,
+                    })}
+                >
                     <div>
                         {/* TODO: Check permissions */}
                         <Link to={`/data/${data.Id}?project=${projectId}`}>
@@ -341,6 +387,8 @@ function ProjectDataItem({
                             type="button"
                             className="btn-cmd"
                             title="Preview"
+                            onFocus={fetch_preview}
+                            onMouseEnter={fetch_preview}
                             onMouseDown={open_preview}
                         >
                             <Icon.Eye />
@@ -355,6 +403,290 @@ function ProjectDataItem({
                     </div>
                 </div>
             </td>
+            <td>
+                {previewOpen ? (
+                    <DataPreview
+                        ref={refs.setFloating}
+                        style={floatingStyles}
+                        floatingProps={getFloatingProps}
+                        data_id={data.Id}
+                        storage={type.Storage}
+                        setPreviewOpen={setPreviewOpen}
+                    />
+                ) : null}
+            </td>
         </tr>
+    );
+}
+
+interface DataPreviewProps {
+    ref: Ref<HTMLDivElement>;
+    style: React.CSSProperties;
+    floatingProps: (
+        userProps?: React.HTMLProps<HTMLElement>,
+    ) => Record<string, unknown>;
+    data_id: uuid.UUIDTypes;
+    storage: DataStorage;
+    setPreviewOpen: React.Dispatch<React.SetStateAction<boolean>>;
+}
+function DataPreview({
+    ref,
+    style,
+    floatingProps,
+    data_id,
+    storage,
+    setPreviewOpen,
+}: DataPreviewProps) {
+    return (
+        <ErrorBoundary FallbackComponent={DataPreviewError}>
+            <Suspense fallback={<Loading />}>
+                <DataPreviewInner
+                    ref={ref}
+                    style={style}
+                    floatingProps={floatingProps}
+                    data_id={data_id}
+                    storage={storage}
+                    setPreviewOpen={setPreviewOpen}
+                />
+            </Suspense>
+        </ErrorBoundary>
+    );
+}
+
+function DataPreviewError({ error, resetErrorBoundary }: FallbackProps) {
+    return (
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="text-center pt-4"
+        >
+            <div>Could not load data preview</div>
+        </SuspenseError>
+    );
+}
+
+interface DataPreviewInnerProps {
+    ref: Ref<HTMLDivElement>;
+    style: React.CSSProperties;
+    floatingProps: (
+        userProps?: React.HTMLProps<HTMLElement>,
+    ) => Record<string, unknown>;
+    data_id: uuid.UUIDTypes;
+    storage: DataStorage;
+    setPreviewOpen: React.Dispatch<React.SetStateAction<boolean>>;
+}
+function DataPreviewInner({
+    ref,
+    style,
+    floatingProps,
+    data_id,
+}: DataPreviewInnerProps) {
+    const { data: preview } = useSuspenseQuery({
+        queryKey: [QUERY_KEY_DATA_PREVIEW, data_id],
+        queryFn: async () => await dataService.dataPreview(data_id),
+    });
+
+    let previewComponent;
+    switch (preview.Storage) {
+        case DataStorageExternal:
+            previewComponent = (
+                <DataPreviewExternal data={data_id} sources={preview.Preview} />
+            );
+            break;
+        case DataStorageInternal:
+            const values = preview.Preview as DataValuesPreviewInternal;
+            switch (values.Cardinality) {
+                case DataSchemaCardinalitySingle:
+                    previewComponent = (
+                        <DataPreviewInternalSingle fields={values.Values} />
+                    );
+                    break;
+                case DataSchemaCardinalityMultiple:
+                    previewComponent = (
+                        <DataPreviewInternalMultiple preview={values.Values} />
+                    );
+                    break;
+            }
+            break;
+    }
+
+    const className =
+        "bg-white dark:bg-syre-grey-900 border-2 border-secondary-700 dark:border-secondary-400 rounded";
+    return (
+        <div ref={ref} style={style} className={className} {...floatingProps}>
+            {previewComponent}
+        </div>
+    );
+}
+
+interface DataPreviewExternalProps {
+    data: uuid.UUIDTypes;
+    sources: DataSource[];
+}
+function DataPreviewExternal({ data, sources }: DataPreviewExternalProps) {
+    function downloadUrl(source: string, index?: number): string {
+        const params = new URLSearchParams();
+        params.append("data", uuidToString(data));
+        params.append("source", source);
+        if (index !== undefined) {
+            console.debug(index);
+            params.append("index", index.toString());
+        }
+
+        return `/resource/data/source?${params}`;
+    }
+
+    return (
+        <ul className="overflow-hidden scroll-auto">
+            {sources.map((source) => {
+                switch (source.Cardinality) {
+                    case DataSourceCardinalitySingle:
+                        return (
+                            <li
+                                key={source.Label}
+                                className="px-2 group/source"
+                            >
+                                <div className="flex gap-2">
+                                    <div>{source.Label}</div>
+                                    <div className="invisible group-hover/source:visible">
+                                        <a href={downloadUrl(source.Label)}>
+                                            <button
+                                                type="button"
+                                                className="btn-cmd align-middle"
+                                            >
+                                                <Icon.Download />
+                                            </button>
+                                        </a>
+                                    </div>
+                                </div>
+                            </li>
+                        );
+                    case DataSourceCardinalityMultiple:
+                        const srcs = source.Source as SourceFileInfo[];
+                        srcs.sort((src, other) => src.Index - other.Index);
+                        return (
+                            <li key={source.Label} className="px-2">
+                                <div className="flex gap-2 group/source">
+                                    <div>{source.Label}</div>
+                                    <div className="invisible group-hover/source:visible">
+                                        <a href={downloadUrl(source.Label)}>
+                                            <button
+                                                type="button"
+                                                className="btn-cmd align-middle"
+                                            >
+                                                <Icon.Download />
+                                            </button>
+                                        </a>
+                                    </div>
+                                </div>
+                                <ol className="list-decimal list-inside">
+                                    {srcs.map((src) => {
+                                        return (
+                                            <li
+                                                key={src.Index.toString()}
+                                                className="px-2 group/source-item"
+                                            >
+                                                <div className="inline-flex gap-2">
+                                                    <div>{src.Label}</div>
+                                                    <div className="invisible group-hover/source-item:visible">
+                                                        <a
+                                                            href={downloadUrl(
+                                                                source.Label,
+                                                                src.Index,
+                                                            )}
+                                                        >
+                                                            <button
+                                                                type="button"
+                                                                className="btn-cmd align-middle"
+                                                            >
+                                                                <Icon.Download />
+                                                            </button>
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
+                                </ol>
+                            </li>
+                        );
+                }
+            })}
+        </ul>
+    );
+}
+
+interface DataPreviewInternalSingleProps {
+    fields: SchemaFieldValues[];
+}
+function DataPreviewInternalSingle({ fields }: DataPreviewInternalSingleProps) {
+    return (
+        <div className="overflow-hidden scroll-auto">
+            <table>
+                <tbody>
+                    {fields.map((field) => {
+                        return (
+                            <tr key={field.Label}>
+                                <th>{field.Label}</th>
+                                <td>{field.DType}</td>
+                                <td>{field.Values}</td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+interface DataPreviewInternalMultipleProps {
+    preview: DataValuesPreviewInternalMultiple;
+}
+function DataPreviewInternalMultiple({
+    preview,
+}: DataPreviewInternalMultipleProps) {
+    const fields = preview.Values;
+    fields.sort((field, other) => field.Label.localeCompare(other.Label));
+    const values = new Array(preview.RecordCount);
+    for (let idx = 0; idx < preview.RecordCount; idx++) {
+        values[idx] = new Array(fields.length);
+        for (const [fdx, field] of fields.entries()) {
+            values[idx][fdx] = field.Values[fdx];
+        }
+    }
+
+    return (
+        <div>
+            <div className="overflow-hidden scroll-auto">
+                <table>
+                    <thead>
+                        <tr>
+                            <th></th>
+                            {fields.map((field) => (
+                                <th key={field.Label}>{field.Label}</th>
+                            ))}
+                        </tr>
+                        <tr>
+                            <th></th>
+                            {fields.map((field) => (
+                                <th key={field.Label}>{field.DType}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {values.map((rx, idx) => {
+                            return (
+                                <tr key={idx.toString()}>
+                                    <th>{idx + 1}</th>
+                                    {rx.map((value, jdx) => {
+                                        return <td key={jdx}>{value}</td>;
+                                    })}
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+            <div className="p-2">{preview.RecordCount} rows total</div>
+        </div>
     );
 }

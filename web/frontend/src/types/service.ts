@@ -214,8 +214,8 @@ export interface DataOriginCreate {
 }
 /**
  * DataValues represents the actual data stored.
- * Values is []SchemaFieldValues if Storage is `internal`.
- * Values is a []DataSource if Storage is `external`.
+ * Values is `[]SchemaFieldValues` if `Storage“ is `internal`,
+ * `[]DataSource“ if `external`.
  */
 export interface DataValues {
   Data: uuid.UUIDTypes;
@@ -237,6 +237,26 @@ export interface DataSource {
   Label: string;
   Cardinality: DataSourceCardinality;
   Source: any;
+}
+/**
+ * `Values` is `[]SchemaFieldValues` with all the data if `Cardinality` is single,
+ * `DataValuesPreviewInternalMultiple` if multiple.
+ */
+export interface DataValuesPreviewInternal {
+  Cardinality: DataSchemaCardinality;
+  Values: any;
+}
+export interface DataValuesPreviewInternalMultiple {
+  RecordCount: number /* int */;
+  Values: SchemaFieldValues[];
+}
+/**
+ * `Preview` is a `DataValuesPreviewInternal` if `Storage“ is internal,
+ * `[]DataSource` if external.
+ */
+export interface DataValuesPreview {
+  Storage: DataStorage;
+  Preview: any;
 }
 export const DataUserPermissionOwner = "owner";
 export const DataUserPermissionRead = "read";

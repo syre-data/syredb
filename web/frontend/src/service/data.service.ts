@@ -370,6 +370,14 @@ function dataValues(data: uuid.UUIDTypes): Promise<any> {
     }).then(async (resp) => await resp.json());
 }
 
+function dataPreview(data: uuid.UUIDTypes): Promise<types.DataValuesPreview> {
+    const params = new URLSearchParams();
+    params.set("id", uuidToString(data));
+    return fetch(`/api/data/values/preview?${params}`, {
+        credentials: "same-origin",
+    }).then(async (resp) => (await resp.json()) as types.DataValuesPreview);
+}
+
 export default {
     dataTypesGetAll,
     dataTypeCreateInternal,
@@ -396,4 +404,5 @@ export default {
     dataOriginCreate,
     dataOriginUpdate,
     dataValues,
+    dataPreview,
 };

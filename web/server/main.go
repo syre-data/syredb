@@ -299,6 +299,7 @@ func register_routes(
 	api.POST("/data", data.DataIngest)
 	api.GET("/data", data.DataGet)
 	api.GET("/data/values", data.DataValues)
+	api.GET("/data/values/preview", data.DataValuesPreview)
 	api.GET("/data/orphaned", data.OrphanedData)
 	api.GET("/data-origins", data.DataOrigins)
 	api.GET("/data-origin", data.DataOriginGet)

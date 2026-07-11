@@ -2563,6 +2563,74 @@ func (h *DataHandler) DataValues(c *echo.Context) error {
 	return c.JSON(http.StatusOK, values)
 }
 
+func (h *DataHandler) DataValuesPreview(c *echo.Context) error {
+	const previewInternalMultipleLimitDefault = 100
+
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	data_id_str := c.QueryParam("id")
+	if data_id_str == "" {
+		c.Logger().With("user", user_id).Warn("data id not present")
+		return c.NoContent(http.StatusBadRequest)
+	}
+	data_id, err := uuid.Parse(data_id_str)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data id", data_id_str,
+		).Warn("invalid data id")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	permissions, err := h.data_service.DataUserPermission(user_id, data_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+			"user", user_id,
+		).Error("could not get user data permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	has_permission := slices.Contains(permissions, service.DataUserPermissionReadValues) ||
+		slices.Contains(permissions, service.DataUserPermissionOwner)
+	if !has_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Error("insufficient permission to create data origin")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	preview, err := h.data_service.DataValuesPreviewById(data_id, previewInternalMultipleLimitDefault)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+		).Error("could not get data preview")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	if preview.Storage == service.DataStorageExternal {
+		srcs := preview.Preview.([]service.DataSource)
+		for idx, src := range srcs {
+			switch src.Cardinality {
+			case service.DataSourceCardinalityMultiple:
+				info := src.Source.([]service.SourceFileInfo)
+				for idx := range info {
+					info[idx].Path = ""
+				}
+			case service.DataSourceCardinalitySingle:
+				info := src.Source.(service.SourceFileInfo)
+				info.Path = ""
+				srcs[idx].Source = info
+			default:
+				panic(fmt.Sprintf("unexpected service.DataSourceCardinality: %#v", src.Cardinality))
+			}
+		}
+	}
+
+	return c.JSON(http.StatusOK, preview)
+}
+
 func sanitizeStringForFilename(s string) string {
 	invalid := regexp.MustCompile(`[^\w\d\s\.\-_]`)
 	sanitized := invalid.ReplaceAllString(s, "_")

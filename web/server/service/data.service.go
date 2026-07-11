@@ -1683,8 +1683,8 @@ func (s *DataService) DataOriginUpdate(update DataOriginRx) error {
 }
 
 // DataValues represents the actual data stored.
-// Values is []SchemaFieldValues if Storage is `internal`.
-// Values is a []DataSource if Storage is `external`.
+// Values is `[]SchemaFieldValues` if `Storage“ is `internal`,
+// `[]DataSource“ if `external`.
 type DataValues struct {
 	Data    uuid.UUID
 	Storage DataStorage
@@ -1693,12 +1693,12 @@ type DataValues struct {
 
 // DataValuesById gets the values associated with a data.
 func (s *DataService) DataValuesById(data uuid.UUID) (DataValues, error) {
-
 	type dataStorageInfo struct {
 		Data     uuid.UUID   `db:"data"`
 		DataType uuid.UUID   `db:"type"`
 		Storage  DataStorage `db:"storage"`
 	}
+
 	storage_query :=
 		`SELECT d._id as data, t._id as type, t._storage as storage
 		FROM data_ as d JOIN data_type_ as t ON d._type=t._id
@@ -1807,130 +1807,6 @@ func (s *DataService) DataValuesByIds(data_ids []uuid.UUID) ([]DataValues, error
 	}
 
 	return data_values, nil
-}
-
-func (s *DataService) DataTree(roots []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
-	tree := make(map[uuid.UUID][]uuid.UUID, len(roots))
-	for len(roots) > 0 {
-		idx_last := len(roots) - 1
-		parent := roots[idx_last]
-		roots = roots[:idx_last]
-
-		_, contains_parent := tree[parent]
-		if contains_parent {
-			continue
-		}
-
-		children, err := s.DataChildren(parent)
-		if err != nil {
-			s.logger.With(
-				"error", err,
-				"data", parent,
-			).Error("could not get data children")
-			return nil, err
-		}
-
-		tree[parent] = children
-		roots = slices.Concat(roots, children)
-	}
-
-	return tree, nil
-}
-
-func (s *DataService) DataChildren(parent uuid.UUID) ([]uuid.UUID, error) {
-	query := "SELECT _child FROM data_relation_ WHERE _parent=$1"
-	rows, _ := s.db.Conn.Query(s.ctx, query, parent)
-	children, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"data", parent,
-		).Error("could not get data relations")
-		return nil, err
-	}
-
-	return children, nil
-}
-
-func (s *DataService) DataChildrenMany(parents []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
-	type relation struct {
-		Parent uuid.UUID `db:"_parent"`
-		Child  uuid.UUID `db:"_child"`
-	}
-
-	query := "SELECT _parent, _child FROM data_relation_ WHERE _parent=ANY($1)"
-	rows, _ := s.db.Conn.Query(s.ctx, query, parents)
-	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[relation])
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"data", parents,
-		).Error("could not get data relations")
-		return nil, err
-	}
-
-	children := make(map[uuid.UUID][]uuid.UUID, len(parents))
-	for _, rx := range rxs {
-		_, exists := children[rx.Parent]
-		if !exists {
-			children[rx.Parent] = []uuid.UUID{rx.Child}
-		} else {
-			children[rx.Parent] = append(children[rx.Parent], rx.Child)
-		}
-	}
-
-	return children, nil
-}
-
-func (s *DataService) DataChildrenRxMap(data []uuid.UUID) (map[uuid.UUID][]DataRx, error) {
-	type record struct {
-		Parent      uuid.UUID       `db:"parent"`
-		Id          uuid.UUID       `db:"id"`
-		Type        uuid.UUID       `db:"type"`
-		CreatorType DataCreatorType `db:"creator_type"`
-		Timestamp   time.Time       `db:"timestamp"`
-		Visibility  Visibility      `db:"visibility"`
-	}
-
-	query :=
-		`SELECT 
-			r._parent AS parent,
-			d._id AS id, 
-			d._type AS type, 
-			d._creator_type AS creator_type, 
-			d.timestamp AS timestamp, 
-			d.visibility AS visibility
-		FROM data_ d JOIN data_relation_ r ON d._id=r._child
-		WHERE r._parent=ANY($1)`
-	rows, _ := s.db.Conn.Query(s.ctx, query, data)
-	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[record])
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"data", data,
-		).Error("could not get data children")
-		return nil, err
-	}
-
-	children := make(map[uuid.UUID][]DataRx, len(data))
-	for _, rx := range rxs {
-		child := DataRx{
-			Id:          rx.Id,
-			Type:        rx.Type,
-			CreatorType: rx.CreatorType,
-			Timestamp:   rx.Timestamp,
-			Visibility:  rx.Visibility,
-		}
-
-		_, exists := children[rx.Parent]
-		if !exists {
-			children[rx.Parent] = []DataRx{child}
-		} else {
-			children[rx.Parent] = append(children[rx.Parent], child)
-		}
-	}
-
-	return children, nil
 }
 
 type SourceFileInfo struct {
@@ -2116,6 +1992,327 @@ func (s *DataService) dataValuesByIdInternal(
 	}
 
 	return values, nil
+}
+
+// `Values` is `[]SchemaFieldValues` with all the data if `Cardinality` is single,
+// `DataValuesPreviewInternalMultiple` if multiple.
+type DataValuesPreviewInternal struct {
+	Cardinality DataSchemaCardinality
+	Values      any
+}
+
+type DataValuesPreviewInternalMultiple struct {
+	RecordCount int
+	Values      []SchemaFieldValues
+}
+
+// `Preview` is a `DataValuesPreviewInternal` if `Storage“ is internal,
+// `[]DataSource` if external.
+type DataValuesPreview struct {
+	Storage DataStorage
+	Preview any
+}
+
+// DataValuesPreviewById gets values preview associated with a data.
+func (s *DataService) DataValuesPreviewById(
+	data uuid.UUID,
+	limit int,
+) (DataValuesPreview, error) {
+	type dataStorageInfo struct {
+		Data     uuid.UUID   `db:"data"`
+		DataType uuid.UUID   `db:"type"`
+		Storage  DataStorage `db:"storage"`
+	}
+
+	storage_query :=
+		`SELECT d._id as data, t._id as type, t._storage as storage
+		FROM data_ as d JOIN data_type_ as t ON d._type=t._id
+		WHERE d._id=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, storage_query, data)
+	info, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[dataStorageInfo])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get data storage info")
+
+		return DataValuesPreview{}, err
+	}
+
+	var preview any
+	switch info.Storage {
+	case DataStorageExternal:
+		preview, err = s.dataValuesByIdExternalSource(info.Data)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", info.Data,
+				"storage", DataStorageExternal,
+			).Error("could not get data values")
+			return DataValuesPreview{}, err
+		}
+	case DataStorageInternal:
+		data_type_rx, err := s.DataTypeById(info.DataType)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data type", info.DataType,
+			).Error("could not get data type")
+			return DataValuesPreview{}, err
+		}
+		data_type := data_type_rx.(DataTypeInternal)
+		schema, err := s.DataSchemaById(data_type.Schema)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"schema", data_type.Schema,
+			).Error("could not get data schema")
+			return DataValuesPreview{}, err
+		}
+
+		switch schema.Cardinality {
+		case DataSchemaCardinalityMultiple:
+			values, err := s.dataValuesPreviewByIdInternalMultiple(info.Data, schema, limit)
+			if err != nil {
+				s.logger.With(
+					"error", err,
+					"data", info.Data,
+				).Error("could not get data values")
+				return DataValuesPreview{}, err
+			}
+			preview = DataValuesPreviewInternal{
+				Cardinality: DataSchemaCardinalityMultiple,
+				Values:      values,
+			}
+		case DataSchemaCardinalitySingle:
+			values_rx, err := s.DataValuesById(info.Data)
+			if err != nil {
+				s.logger.With(
+					"error", err,
+					"data", info.Data,
+				).Error("could not get data values")
+				return DataValuesPreview{}, err
+			}
+			values := values_rx.Values.([]SchemaFieldValues)
+			preview = DataValuesPreviewInternal{
+				Cardinality: DataSchemaCardinalitySingle,
+				Values:      values,
+			}
+		default:
+			panic(fmt.Sprintf("unexpected service.DataSchemaCardinality: %#v", schema.Cardinality))
+		}
+	}
+
+	values := DataValuesPreview{
+		Storage: info.Storage,
+		Preview: preview,
+	}
+
+	return values, nil
+}
+
+func (s *DataService) dataValuesPreviewByIdInternalMultiple(
+	data uuid.UUID,
+	schema DataSchema,
+	limit int,
+) (DataValuesPreviewInternalMultiple, error) {
+	field_labels := make([]string, len(schema.Fields))
+	for idx, field := range schema.Fields {
+		field_labels[idx] = field.Label
+	}
+	data_query := fmt.Sprintf(
+		"SELECT %s FROM %s WHERE _data=$1",
+		strings.Join(field_labels, ", "),
+		DataStorageTableNameFromSchemaId(schema.Id),
+	)
+	rows, err := s.db.Conn.Query(s.ctx, data_query, data)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get data values")
+		return DataValuesPreviewInternalMultiple{}, err
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		s.logger.With(
+			"query", data_query,
+			"data", data,
+		).Error("data values not found")
+		return DataValuesPreviewInternalMultiple{}, pgx.ErrNoRows
+	}
+	rx_fields := rows.FieldDescriptions()
+	rx_values, err := rows.Values()
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"schema", schema.Id,
+		).Error("could not get data schema values")
+		return DataValuesPreviewInternalMultiple{}, err
+	}
+
+	record_count := -1
+	values := make([]SchemaFieldValues, len(schema.Fields))
+	for _, field := range schema.Fields {
+		rx_idx := slices.IndexFunc(rx_fields, func(desc pgconn.FieldDescription) bool {
+			return desc.Name == field.Label
+		})
+		if rx_idx < 0 {
+			s.logger.With(
+				"fields", rx_fields,
+				"field", field,
+			).Error("invalid data schema field")
+			panic("invalid data schema field")
+		}
+
+		vals := rx_values[rx_idx].([]any)
+		if record_count < 0 {
+			record_count = len(vals)
+		} else if len(vals) != record_count {
+			s.logger.With(
+				"data", data,
+			).Error("invalid value length")
+			return DataValuesPreviewInternalMultiple{}, fmt.Errorf("invalid data length")
+		}
+
+		end := min(limit, len(vals))
+		fidx := field.Index
+		values[fidx].Label = field.Label
+		values[fidx].DType = field.DType
+		values[fidx].Cardinality = schema.Cardinality
+		values[fidx].Values = vals[:end]
+	}
+
+	preview := DataValuesPreviewInternalMultiple{
+		RecordCount: record_count,
+		Values:      values,
+	}
+	return preview, nil
+}
+
+func (s *DataService) DataTree(roots []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	tree := make(map[uuid.UUID][]uuid.UUID, len(roots))
+	for len(roots) > 0 {
+		idx_last := len(roots) - 1
+		parent := roots[idx_last]
+		roots = roots[:idx_last]
+
+		_, contains_parent := tree[parent]
+		if contains_parent {
+			continue
+		}
+
+		children, err := s.DataChildren(parent)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", parent,
+			).Error("could not get data children")
+			return nil, err
+		}
+
+		tree[parent] = children
+		roots = slices.Concat(roots, children)
+	}
+
+	return tree, nil
+}
+
+func (s *DataService) DataChildren(parent uuid.UUID) ([]uuid.UUID, error) {
+	query := "SELECT _child FROM data_relation_ WHERE _parent=$1"
+	rows, _ := s.db.Conn.Query(s.ctx, query, parent)
+	children, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", parent,
+		).Error("could not get data relations")
+		return nil, err
+	}
+
+	return children, nil
+}
+
+func (s *DataService) DataChildrenMany(parents []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	type relation struct {
+		Parent uuid.UUID `db:"_parent"`
+		Child  uuid.UUID `db:"_child"`
+	}
+
+	query := "SELECT _parent, _child FROM data_relation_ WHERE _parent=ANY($1)"
+	rows, _ := s.db.Conn.Query(s.ctx, query, parents)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[relation])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", parents,
+		).Error("could not get data relations")
+		return nil, err
+	}
+
+	children := make(map[uuid.UUID][]uuid.UUID, len(parents))
+	for _, rx := range rxs {
+		_, exists := children[rx.Parent]
+		if !exists {
+			children[rx.Parent] = []uuid.UUID{rx.Child}
+		} else {
+			children[rx.Parent] = append(children[rx.Parent], rx.Child)
+		}
+	}
+
+	return children, nil
+}
+
+func (s *DataService) DataChildrenRxMap(data []uuid.UUID) (map[uuid.UUID][]DataRx, error) {
+	type record struct {
+		Parent      uuid.UUID       `db:"parent"`
+		Id          uuid.UUID       `db:"id"`
+		Type        uuid.UUID       `db:"type"`
+		CreatorType DataCreatorType `db:"creator_type"`
+		Timestamp   time.Time       `db:"timestamp"`
+		Visibility  Visibility      `db:"visibility"`
+	}
+
+	query :=
+		`SELECT 
+			r._parent AS parent,
+			d._id AS id, 
+			d._type AS type, 
+			d._creator_type AS creator_type, 
+			d.timestamp AS timestamp, 
+			d.visibility AS visibility
+		FROM data_ d JOIN data_relation_ r ON d._id=r._child
+		WHERE r._parent=ANY($1)`
+	rows, _ := s.db.Conn.Query(s.ctx, query, data)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[record])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get data children")
+		return nil, err
+	}
+
+	children := make(map[uuid.UUID][]DataRx, len(data))
+	for _, rx := range rxs {
+		child := DataRx{
+			Id:          rx.Id,
+			Type:        rx.Type,
+			CreatorType: rx.CreatorType,
+			Timestamp:   rx.Timestamp,
+			Visibility:  rx.Visibility,
+		}
+
+		_, exists := children[rx.Parent]
+		if !exists {
+			children[rx.Parent] = []DataRx{child}
+		} else {
+			children[rx.Parent] = append(children[rx.Parent], child)
+		}
+	}
+
+	return children, nil
 }
 
 func (s *DataService) InternalValuesToCsv(fields []SchemaFieldValues) (string, error) {
