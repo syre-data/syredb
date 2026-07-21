@@ -247,7 +247,7 @@ type PropertyType string
 
 const (
 	PropertyTypeString    PropertyType = "string"
-	PropertyTypeBool      PropertyType = "bool"
+	PropertyTypeBool      PropertyType = "boolean"
 	PropertyTypeUint      PropertyType = "uint"
 	PropertyTypeInt       PropertyType = "int"
 	PropertyTypeFloat     PropertyType = "float"

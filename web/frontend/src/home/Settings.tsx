@@ -14,8 +14,8 @@ export default function () {
 
 function Nav() {
     return (
-        <div className="flex flex-col gap-4 text-2xl border-r">
-            <div className="grow">
+        <div className="flex flex-col gap-8 text-2xl border-r min-h-screen">
+            <div>
                 <Link to="/" title="Dashboard">
                     <button type="button" className="btn-cmd">
                         <icon.Home />

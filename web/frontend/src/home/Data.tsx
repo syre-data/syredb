@@ -3,6 +3,7 @@ import {
     QUERY_KEY_DATA,
     QUERY_KEY_DATA_VALUES,
     QUERY_KEY_USER_PROJECTS,
+    timestampToString,
     uuidToString,
 } from "@/common";
 import { Loading, SuspenseError } from "@/components";
@@ -10,6 +11,8 @@ import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
 import {
+    DataCreatorTypeTransform,
+    DataCreatorTypeUser,
     DataSchemaCardinalityMultiple,
     DataSchemaCardinalitySingle,
     DataSourceCardinalityMultiple,
@@ -22,6 +25,10 @@ import {
     ValueTypeString,
     ValueTypeTimestamp,
     ValueTypeUint,
+    type DataCreator,
+    type DataCreatorTransformInfo,
+    type DataCreatorType,
+    type DataCreatorUserInfo,
     type DataProjectResources,
     type DataRx,
     type DataSchemaCardinality,
@@ -101,17 +108,50 @@ function Data({ data_id }: DataProps) {
     const data_type = resources.DataType as DataType;
     const properties = resources.Properties as Property[];
     const notes = resources.Notes as Note[];
+    const creator = resources.Creator as DataCreator;
     const project_resources =
         resources.ProjectResources as DataProjectResources[];
     const users = resources.Users as User[];
     const currentProjects = project_resources.map(
         (resource) => resource.Project.Id,
     );
+
+    let creatorContent;
+    if (Object.hasOwn(creator, "User") && Object.hasOwn(creator, "Origin")) {
+        creatorContent = <CreatorUser creator={creator} />;
+    } else if (
+        Object.hasOwn(creator, "Id") &&
+        Object.hasOwn(creator, "Label") &&
+        Object.hasOwn(creator, "Description")
+    ) {
+        creatorContent = <CreatorTransform creator={creator} />;
+    } else {
+        console.debug(creator);
+        throw new Error("invalid data creator");
+    }
+
     return (
         <div>
             <div className="px-4 pt-2 flex justify-between">
-                <div>
-                    <h1>Data</h1>
+                <div className="group flex gap-2">
+                    <h1 className="title flex gap-2">
+                        <div className="flex gap-2 items-center">
+                            <Icon.DataType /> {data_type.Label}
+                        </div>
+                        |
+                        <div>{timestampToString(new Date(data.Timestamp))}</div>
+                    </h1>
+                    <div className="invisible group-hover:visible">
+                        <a
+                            href={`/data/${data_id}/edit`}
+                            title="Edit data"
+                            className="align-middle"
+                        >
+                            <button type="button" className="btn-cmd">
+                                <Icon.Pen />
+                            </button>
+                        </a>
+                    </div>
                 </div>
                 <div>
                     <div>
@@ -126,9 +166,8 @@ function Data({ data_id }: DataProps) {
                 </div>
             </div>
             <div className="px-4 pt-2">
-                <div>{data.Timestamp}</div>
                 <div>{data.Visibility}</div>
-                <div>{data_type.Label}</div>
+                <div>{creatorContent}</div>
             </div>
             <Properties properties={properties} />
             <Notes notes={notes} />
@@ -170,53 +209,100 @@ function Data({ data_id }: DataProps) {
     );
 }
 
+interface CreatorUserProps {
+    creator: DataCreatorUserInfo;
+}
+function CreatorUser({ creator }: CreatorUserProps) {
+    return (
+        <div>
+            Created by <span>{creator.User.Name || creator.User.Email}</span>{" "}
+            from <span>{creator.Origin.Label}</span>
+        </div>
+    );
+}
+
+interface CreatorTransformProps {
+    creator: DataCreatorTransformInfo;
+}
+function CreatorTransform({ creator }: CreatorTransformProps) {
+    return (
+        <div>
+            Created by script <span>{creator.Label}</span>
+        </div>
+    );
+}
+
 interface PropertiesProps {
     properties: Property[];
 }
 function Properties({ properties }: PropertiesProps) {
-    return (
-        <div>
-            <div className="px-4 pb-2">
-                <h3>Properties</h3>
+    if (properties.length === 0) {
+        return (
+            <div className="px-4 text-secondary-700 dark:text-secondary-300">
+                (no properties)
             </div>
-            <div className="px-4">
-                <table>
-                    <tbody>
-                        {properties.map((property) => (
-                            <tr key={property.Key}>
-                                <td>{property.Key}</td>
-                                <td>{property.Type}</td>
-                                <td>{property.Value}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+        );
+    } else {
+        return (
+            <div className="pt-2">
+                <div className="px-4">
+                    <h2 className="text-lg">Properties</h2>
+                </div>
+                <div className="px-4">
+                    <table>
+                        <tbody>
+                            {properties.map((property) => (
+                                <tr key={property.Key}>
+                                    <th className="pr-2">{property.Key}</th>
+                                    <td className="px-2">{property.Value}</td>
+                                    <td className="pl-2 text-syre-grey-700 dark:text-syre-grey-300">
+                                        ({property.Type})
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
-    );
+        );
+    }
 }
 
 interface NotesProps {
     notes: Note[];
 }
 function Notes({ notes }: NotesProps) {
-    return (
-        <div>
-            <div className="px-4 pb-2">
-                <h3>Notes</h3>
+    if (notes.length === 0) {
+        return (
+            <div className="px-4 text-secondary-700 dark:text-secondary-300">
+                (no notes)
             </div>
-            <ol>
-                {notes.map((note) => (
-                    <li key={note.Id.toString()}>
-                        <div className="px-4 pb-2">
-                            <h4>{note.Timestamp}</h4>
-                            <div>{note.Content}</div>
-                        </div>
-                    </li>
-                ))}
-            </ol>
-        </div>
-    );
+        );
+    } else {
+        return (
+            <div className="pt-2">
+                <div className="px-4 pb-2">
+                    <h2>Notes</h2>
+                </div>
+                <div>
+                    <ol>
+                        {notes.map((note) => (
+                            <li key={note.Id.toString()}>
+                                <div className="px-4 pb-2">
+                                    <h4>
+                                        {timestampToString(
+                                            new Date(note.Timestamp),
+                                        )}
+                                    </h4>
+                                    <div>{note.Content}</div>
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                </div>
+            </div>
+        );
+    }
 }
 
 // TODO: Show data tree.
@@ -360,6 +446,13 @@ function ProjectItem({ resources }: ProjectItemProps) {
     return (
         <tr className="group pb-1">
             <td className="font-bold pl-4 pr-2">{resources.Project.Label}</td>
+            <td className="pr-2">
+                {resources.Label ?? (
+                    <span className="text-secondary-700 dark:text-secondary-300">
+                        (no label)
+                    </span>
+                )}
+            </td>
             <td className="pr-2">{resources.Project.Description}</td>
             <td className="pr-2">
                 <div className="invisible group-hover:visible">
@@ -424,7 +517,7 @@ function DataValues({ data }: DataValuesProps) {
     return (
         <div className="pt-2">
             <div className="px-4 flex gap-2 group">
-                <h2>{title}</h2>
+                <h2 className="text-lg">{title}</h2>
                 <div className="invisible group-hover:visible">
                     <a href={download}>
                         <button type="button" className="btn-cmd">
@@ -452,10 +545,23 @@ function DataValuesInternal({ cardinality, values }: DataValuesInternalProps) {
 }
 
 interface DataValuesInternalSingleProps {
-    values: any;
+    values: SchemaFieldValues[];
 }
 function DataValuesInternalSingle({ values }: DataValuesInternalSingleProps) {
-    return <div>TODO</div>;
+    return (
+        <table className="table-std">
+            <tbody>
+                {values.map((field) => {
+                    return (
+                        <tr key={field.Label}>
+                            <th>{field.Label}</th>
+                            <td>{field.Values}</td>
+                        </tr>
+                    );
+                })}
+            </tbody>
+        </table>
+    );
 }
 
 interface DataValuesInternalMultipleProps {
@@ -497,14 +603,18 @@ function DataValuesInternalMultiple({
             <thead>
                 <tr>
                     <th></th>
-                    {values.map((col) => (
-                        <th className="px-2">{col.Label}</th>
+                    {values.map((field) => (
+                        <th key={field.Label} className="px-2">
+                            {field.Label}
+                        </th>
                     ))}
                 </tr>
                 <tr>
                     <th></th>
-                    {values.map((col) => (
-                        <th className="px-2">{col.DType}</th>
+                    {values.map((field) => (
+                        <th key={field.Label} className="px-2">
+                            {field.DType}
+                        </th>
                     ))}
                 </tr>
             </thead>

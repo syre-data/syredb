@@ -985,7 +985,7 @@ function DatumStorageInternalMultipleManual({
                                             type="button"
                                             className="btn-cmd"
                                             onMouseDown={(e) =>
-                                                remove_row(e, idx)
+                                                remove_row(e, rx_idx)
                                             }
                                             disabled={fields.length === 1}
                                         >
@@ -997,7 +997,7 @@ function DatumStorageInternalMultipleManual({
                                             type="button"
                                             className="btn-cmd"
                                             onMouseDown={(e) =>
-                                                insert_row_mouse(e, idx + 1)
+                                                insert_row_mouse(e, rx_idx + 1)
                                             }
                                         >
                                             <Icon.Plus />

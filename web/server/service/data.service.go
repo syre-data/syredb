@@ -23,6 +23,17 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+type DataPermission string
+
+const (
+	DataPermissionOwner            DataPermission = "owner"
+	DataPermissionRead             DataPermission = "read"
+	DataPermissionReadValues       DataPermission = "read_values"
+	DataPermissionModify           DataPermission = "modify"
+	DataPermissionNoteCreate       DataPermission = "note_create"
+	DataPermissionPropertiesModify DataPermission = "properties_modify"
+)
+
 type ValueType string
 
 const (
@@ -174,6 +185,22 @@ type DataCreatorTransform struct {
 
 func (t DataCreatorTransform) Type() DataCreatorType {
 	return DataCreatorTypeTransform
+}
+
+func (s *UserService) UserHasDataPermission(
+	user uuid.UUID,
+	data uuid.UUID,
+	permission DataPermission,
+) (bool, error) {
+	query := fmt.Sprintf(
+		`SELECT 1 FROM data_user_permission_ 
+		WHERE _user=$1 AND _data=$2 _permission=ANY('{%s, $3}')`,
+		DataPermissionOwner,
+	)
+	user_row := s.db.Conn.QueryRow(s.ctx, query, user, data, permission)
+	err := user_row.Scan()
+	has_permission := err != nil
+	return has_permission, nil
 }
 
 func (s *DataService) DataTypesAll() ([]DataType, error) {
@@ -1104,7 +1131,7 @@ func (s *DataService) dataSchemaCreateSchema(
 		(_id, _label, _dtype, index, description) VALUES `,
 	)
 
-	const numFields = 3
+	const numFields = 4
 	const argsOffset = 1
 	args := make([]any, len(schema)*numFields+argsOffset)
 	args[0] = schema_id
@@ -3486,7 +3513,7 @@ func (s *DataService) ValidateValuesAsSources(
 				if !valid {
 					return fmt.Errorf(
 						"`%s` does not match media type filter of `%s`",
-						value.Source,
+						value.Source.Path,
 						src.Label,
 					)
 				}
@@ -3499,7 +3526,7 @@ func (s *DataService) ValidateValuesAsSources(
 			if !valid {
 				return fmt.Errorf(
 					"`%s` does not match media type filter of `%s`",
-					value.Source,
+					value.Source.Filename,
 					src.Label,
 				)
 			}
@@ -3685,7 +3712,7 @@ func (s *DataService) dataCreateProperties(tx pgx.Tx, data []DataCreate, data_id
 	args := make([]any, num_properties*numFields)
 	var query strings.Builder
 	query.WriteString(
-		`INSERT INTO data_property_ (_data, _key, _type, value) VALUES `,
+		"INSERT INTO data_property_ (_data, _key, _type, value) VALUES ",
 	)
 	idx := 0
 	for ddx, datum := range data {
@@ -3795,6 +3822,361 @@ func (s *DataService) dataCreateNotes(
 			"error", err,
 			"query", query.String(),
 			"args", args,
+		).Error("could not create data notes")
+		return err
+	}
+
+	return nil
+}
+
+type DataUpdate struct {
+	Id         uuid.UUID
+	Visibility Visibility
+}
+
+func (s *DataService) DataUpdate(update DataUpdate) error {
+	query := "UPDATE data_ SET visibility=$2 WHERE _id=$1"
+	_, err := s.db.Conn.Exec(s.ctx, query, update.Id, update.Visibility)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"update", update,
+		).Error("could not update data")
+		return err
+	}
+
+	return nil
+}
+
+func (s *DataService) DataPropertiesRemove(id uuid.UUID, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	query := "DELETE FROM data_property_ WHERE _data=$1 AND _key=ANY($2)"
+	_, err := s.db.Conn.Exec(s.ctx, query, id, keys)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", id,
+			"keys", keys,
+		).Error("could not remove data properties")
+		return err
+	}
+
+	return nil
+}
+
+func (s *DataService) DataPropertiesCreate(id uuid.UUID, properties []Property) error {
+	if len(properties) == 0 {
+		return nil
+	}
+
+	const fieldsPerValue = 3
+	const argsOffset = 1
+	var query strings.Builder
+	query.WriteString("INSERT INTO data_property_ (_data, _key, _type, value) VALUES ")
+	args := make([]any, argsOffset+len(properties)*fieldsPerValue)
+	args[0] = id
+	for idx, property := range properties {
+		if idx > 0 {
+			query.WriteString(", ")
+		}
+
+		idx_key := idx*fieldsPerValue + argsOffset
+		idx_type := idx_key + 1
+		idx_value := idx_type + 1
+
+		fmt.Fprintf(&query, "($1, $%d, $%d, $%d)",
+			idx_key+1,
+			idx_type+1,
+			idx_value+1,
+		)
+
+		value, err := json.Marshal(property.Value)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"property", property,
+			).Error("could not encode property as JSON")
+			return err
+		}
+
+		args[idx_key] = property.Key
+		args[idx_type] = property.Type
+		args[idx_value] = value
+	}
+
+	_, err := s.db.Conn.Exec(s.ctx, query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", id,
+			"properties", properties,
+		).Error("could not create data properties")
+		return err
+	}
+
+	return nil
+}
+
+type PropertyValueUpdate struct {
+	Key   string
+	Value any
+}
+
+func (s *DataService) DataPropertyValuesUpdate(id uuid.UUID, updates []PropertyValueUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Conn.Begin(s.ctx)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not begin db transaction")
+		return err
+	}
+	defer tx.Rollback(s.ctx)
+
+	for _, property := range updates {
+		value, err := json.Marshal(property.Value)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"property", property,
+			).Error("could not encode property as JSON")
+			return err
+		}
+
+		query := "UPDATE data_property_ SET value=$3 WHERE _data=$1 AND _key=$2"
+		_, err = tx.Exec(s.ctx, query, id, property.Key, value)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", id,
+				"update", property,
+			).Error("could not update data property value")
+			return err
+		}
+	}
+
+	err = tx.Commit(s.ctx)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", id,
+			"updates", updates,
+		).Error("could not commit data property value update")
+		return err
+	}
+
+	return nil
+}
+
+type DataPropertiesUpdate struct {
+	Id           uuid.UUID
+	Remove       []string
+	Create       []Property
+	ValuesUpdate []PropertyValueUpdate
+}
+
+// Updates data properties.
+// All or nothing.
+//
+// Order of operations:
+// 1. Remove
+// 2. Create
+// 3. UpdateValues
+func (s *DataService) DataPropertiesUpdate(update DataPropertiesUpdate) error {
+	if len(update.Remove)+len(update.Create)+len(update.ValuesUpdate) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Conn.Begin(s.ctx)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not begin db transaction")
+		return err
+	}
+	defer tx.Rollback(s.ctx)
+
+	err = s.dataPropertiesUpdateRemove(tx, update.Id, update.Remove)
+	if err != nil {
+		return err
+	}
+
+	err = s.dataPropertiesUpdateCreate(tx, update.Id, update.Create)
+	if err != nil {
+		return err
+	}
+
+	err = s.dataPropertiesUpdateValues(tx, update.Id, update.ValuesUpdate)
+	if err != nil {
+		return err
+	}
+
+	err = tx.Commit(s.ctx)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"update", update,
+		).Error("could not commit data properties update")
+		return err
+	}
+
+	return nil
+}
+
+func (s *DataService) dataPropertiesUpdateRemove(tx pgx.Tx, id uuid.UUID, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	query := "DELETE FROM data_property_ WHERE _data=$1 AND _key=ANY($2)"
+	_, err := tx.Exec(s.ctx, query, id, keys)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", id,
+			"keys", keys,
+		).Error("could not remove data properties")
+		return err
+	}
+
+	return nil
+}
+
+func (s *DataService) dataPropertiesUpdateCreate(tx pgx.Tx, id uuid.UUID, properties []Property) error {
+	if len(properties) == 0 {
+		return nil
+	}
+
+	const fieldsPerValue = 3
+	const argsOffset = 1
+	var query strings.Builder
+	query.WriteString("INSERT INTO data_property_ (_data, _key, _type, value) VALUES ")
+	args := make([]any, argsOffset+len(properties)*fieldsPerValue)
+	args[0] = id
+	for idx, property := range properties {
+		if idx > 0 {
+			query.WriteString(", ")
+		}
+
+		idx_key := idx*fieldsPerValue + argsOffset
+		idx_type := idx_key + 1
+		idx_value := idx_type + 1
+
+		fmt.Fprintf(&query, "($1, $%d, $%d, $%d)",
+			idx_key+1,
+			idx_type+1,
+			idx_value+1,
+		)
+
+		value, err := json.Marshal(property.Value)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"property", property,
+			).Error("could not encode property as JSON")
+			return err
+		}
+
+		args[idx_key] = property.Key
+		args[idx_type] = property.Type
+		args[idx_value] = value
+	}
+
+	_, err := tx.Exec(s.ctx, query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", id,
+			"properties", properties,
+		).Error("could not create data properties")
+		return err
+	}
+
+	return nil
+}
+
+func (s *DataService) dataPropertiesUpdateValues(tx pgx.Tx, id uuid.UUID, updates []PropertyValueUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	for _, property := range updates {
+		value, err := json.Marshal(property.Value)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"property", property,
+			).Error("could not encode property as JSON")
+			return err
+		}
+
+		query := "UPDATE data_property_ SET value=$3 WHERE _data=$1 AND _key=$2"
+		_, err = tx.Exec(s.ctx, query, id, property.Key, value)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", id,
+				"update", property,
+			).Error("could not update data property value")
+			return err
+		}
+	}
+
+	return nil
+}
+
+type DataNoteCreate struct {
+	Timestamp  time.Time
+	Visibility Visibility
+	Content    string
+}
+
+// All or nothing
+func (s *DataService) DataNotesCreate(data uuid.UUID, creator uuid.UUID, notes []DataNoteCreate) error {
+	if len(notes) == 0 {
+		return nil
+	}
+
+	const argsOffset = 2
+	const fieldsPerValue = 3
+	args := make([]any, argsOffset+len(notes)*fieldsPerValue)
+	args[0] = data
+	args[1] = creator
+	var query strings.Builder
+	query.WriteString("INSERT INTO data_note_ (_data, _creator, timestamp, visibility, content) VALUES ")
+	for idx, note := range notes {
+		if idx > 0 {
+			query.WriteString(", ")
+		}
+
+		idx_timestamp := argsOffset + idx*fieldsPerValue
+		idx_visibility := idx_timestamp + 1
+		idx_content := idx_visibility + 1
+
+		args[idx_timestamp] = note.Timestamp
+		args[idx_visibility] = note.Visibility
+		args[idx_content] = note.Content
+
+		fmt.Fprintf(
+			&query,
+			"($1, $2, $%d, $%d, $%d)",
+			idx_timestamp+1,
+			idx_visibility+1,
+			idx_content+1,
+		)
+	}
+
+	_, err := s.db.Conn.Exec(s.ctx, query.String(), args...)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"notes", notes,
 		).Error("could not create data notes")
 		return err
 	}
@@ -3991,6 +4373,97 @@ func (s *DataService) DataProjectsResources(data uuid.UUID) ([]DataProjectResour
 	}
 
 	return resources, nil
+}
+
+type DataCreatorTransformInfo struct {
+	Id          uuid.UUID `db:"_id"`
+	Label       string    `db:"label"`
+	Description string    `db:"description"`
+}
+
+func (t DataCreatorTransformInfo) Type() DataCreatorType {
+	return DataCreatorTypeTransform
+}
+
+type DataCreatorUserInfo struct {
+	User   User
+	Origin DataOriginRx
+}
+
+func (t DataCreatorUserInfo) Type() DataCreatorType {
+	return DataCreatorTypeUser
+}
+
+// # Returns
+// `DataCreatorTransformInfo` or `DataCreatorUserInfo`.
+func (s *DataService) DataCreator(data uuid.UUID) (DataCreator, error) {
+	var creator_type DataCreatorType
+	query := "SELECT _creator_type FROM data_ WHERE _id=$1"
+	err := s.db.Conn.QueryRow(s.ctx, query, data).Scan(&creator_type)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get data")
+		return nil, err
+	}
+
+	switch creator_type {
+	case DataCreatorTypeTransform:
+		var creator DataCreatorTransformInfo
+		query =
+			`SELECT t._id as _id, t.label as label, t.description as description 
+			FROM data_type_transform_ as t JOIN data_creator_transform_ as c ON t._id=c._transform
+			WHERE c._data=$1`
+		err = s.db.Conn.QueryRow(s.ctx, query, data).Scan(&creator)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", data,
+			).Error("could not get data creator tranform")
+			return nil, err
+		}
+		return creator, nil
+	case DataCreatorTypeUser:
+		var user_id uuid.UUID
+		var origin_id uuid.UUID
+		query = "SELECT _creator, _origin FROM data_creator_user_ WHERE _data=$1"
+		err := s.db.Conn.QueryRow(s.ctx, query, data).Scan(&user_id, &origin_id)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", data,
+			).Error("could not get data creator user")
+			return nil, err
+		}
+
+		user, err := s.user_service.UserById(user_id)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", data,
+				"user", user_id,
+			).Error("could not get data creator user")
+			return nil, err
+		}
+		origin, err := s.DataOriginById(origin_id)
+		if err != nil {
+			s.logger.With(
+				"error", err,
+				"data", data,
+				"origin", origin_id,
+			).Error("could not get data creator origin")
+			return nil, err
+		}
+
+		creator := DataCreatorUserInfo{
+			User:   user,
+			Origin: origin,
+		}
+		return creator, nil
+	default:
+		panic(fmt.Sprintf("unexpected service.DataCreatorType: %#v", creator_type))
+	}
 }
 
 type membershipRx struct {

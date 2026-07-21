@@ -2184,11 +2184,13 @@ func (h *DataHandler) OrphanedData(c *echo.Context) error {
 	return c.JSON(http.StatusOK, data)
 }
 
+// `Creator` is `service.DataCreatorTransformInfo` or `service.DataCreatorUserInfo`
 type DataResources struct {
 	Data             service.DataRx
 	DataType         service.DataType
 	Properties       []service.Property
 	Notes            []service.Note
+	Creator          service.DataCreator
 	ProjectResources []service.DataProjectResources
 	Users            []service.User
 }
@@ -2285,6 +2287,16 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
+	creator, err := h.data_service.DataCreator(data_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_id,
+			"user", user,
+		).Error("could not get data origin")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
 	project_resources, err := h.data_service.DataProjectsResources(data_id)
 	if err != nil {
 		c.Logger().With(
@@ -2364,10 +2376,150 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 		DataType:         data_type,
 		Properties:       properties,
 		Notes:            notes,
+		Creator:          creator,
 		ProjectResources: project_resources,
 		Users:            users,
 	}
 	return c.JSON(http.StatusOK, resources)
+}
+
+func (h *DataHandler) DataUpdate(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	var update service.DataUpdate
+	err := c.Bind(&update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("invalid update")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	sufficient_permission, err := h.user_service.UserHasDataPermission(
+		user_id,
+		update.Id,
+		service.DataPermissionModify,
+	)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not validate user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !sufficient_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Error("insufficient permission to modify data")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	err = h.data_service.DataUpdate(update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"update", update,
+		).Error("could not update data")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	var update service.DataPropertiesUpdate
+	err := c.Bind(&update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("invalid update")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	sufficient_permission, err := h.user_service.UserHasDataPermission(
+		user_id,
+		update.Id,
+		service.DataPermissionPropertiesModify,
+	)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not validate user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !sufficient_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Error("insufficient permission to update data properties")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	err = h.data_service.DataPropertiesUpdate(update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"update", update,
+		).Error("could not update data properties")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+type DataNotesCreate struct {
+	Id    uuid.UUID
+	Notes []service.DataNoteCreate
+}
+
+func (h *DataHandler) DataNotesCreate(c *echo.Context) error {
+
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	var notes DataNotesCreate
+	err := c.Bind(&notes)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("invalid data")
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	sufficient_permission, err := h.user_service.UserHasDataPermission(
+		user_id,
+		notes.Id,
+		service.DataPermissionNoteCreate,
+	)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("could not validate user permissions")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	if !sufficient_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Error("insufficient permission to create data notes")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	err = h.data_service.DataNotesCreate(notes.Id, user_id, notes.Notes)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data", notes.Id,
+			"notes", notes.Notes,
+		).Error("could not create data notes")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	return c.NoContent(http.StatusOK)
 }
 
 func (h *DataHandler) DataOrigins(c *echo.Context) error {

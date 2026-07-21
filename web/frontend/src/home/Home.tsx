@@ -22,6 +22,7 @@ import DataTypeTransformCreate from "./DataTypeTransformCreate";
 import Profile from "./Profile";
 import DataTypeEdit from "./DataTypeEdit";
 import Data from "./Data";
+import DataEdit from "./DataEdit";
 import DataOrigins from "./DataOrigins";
 import DataOriginEdit from "./DataOriginEdit";
 import DataOriginCreate from "./DataOriginCreate";
@@ -81,6 +82,7 @@ export default function Home() {
                     <Route path="data/create" element={<ProjectDataCreate />} />
                 </Route>
                 <Route path="data/:data_id" element={<Data />} />
+                <Route path="data/:data_id/edit" element={<DataEdit />} />
                 <Route path="*" element={<NotFound />} />
             </Routes>
         </BrowserRouter>

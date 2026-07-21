@@ -36,6 +36,13 @@ export interface InsufficientPermissionsError {
 //////////
 // source: data.service.go
 
+export const DataPermissionOwner = "owner";
+export const DataPermissionRead = "read";
+export const DataPermissionReadValues = "read_values";
+export const DataPermissionModify = "modify";
+export const DataPermissionNoteCreate = "note_create";
+export const DataPermissionPropertiesModify = "properties_modify";
+export type DataPermission = typeof DataPermissionOwner | typeof DataPermissionRead | typeof DataPermissionReadValues | typeof DataPermissionModify | typeof DataPermissionNoteCreate | typeof DataPermissionPropertiesModify;
 export const ValueTypeString = "string";
 export const ValueTypeInt = "int";
 export const ValueTypeUint = "uint";
@@ -350,6 +357,25 @@ export const DataPermissionKeyNoteCreate = "note_create";
 export const DataPermissionKeyPropertiesModify = "properties_modify";
 export type DataPermissionKey = typeof DataPermissionKeyOwner | typeof DataPermissionKeyRead | typeof DataPermissionKeyNoteCreate | typeof DataPermissionKeyPropertiesModify;
 export const FIELDS = 3;
+export interface DataUpdate {
+  Id: uuid.UUIDTypes;
+  Visibility: Visibility;
+}
+export interface PropertyValueUpdate {
+  Key: string;
+  Value: any;
+}
+export interface DataPropertiesUpdate {
+  Id: uuid.UUIDTypes;
+  Remove: string[];
+  Create: Property[];
+  ValuesUpdate: PropertyValueUpdate[];
+}
+export interface DataNoteCreate {
+  Timestamp: Date;
+  Visibility: Visibility;
+  Content: string;
+}
 export interface DataWithOrigin {
   Data: DataRx;
   Origin: uuid.UUIDTypes;
@@ -367,6 +393,15 @@ export interface DataProjectResources {
   Tags: string[];
   Properties: Property[];
   Notes: ProjectDataNote[];
+}
+export interface DataCreatorTransformInfo {
+  Id: uuid.UUIDTypes;
+  Label: string;
+  Description: string;
+}
+export interface DataCreatorUserInfo {
+  User: User;
+  Origin: DataOriginRx;
 }
 export interface ProjectDataNote {
   Id: uuid.UUIDTypes;
@@ -404,7 +439,7 @@ export interface ProjectCreate {
   Visibility: Visibility;
 }
 export const PropertyTypeString = "string";
-export const PropertyTypeBool = "bool";
+export const PropertyTypeBool = "boolean";
 export const PropertyTypeUint = "uint";
 export const PropertyTypeInt = "int";
 export const PropertyTypeFloat = "float";

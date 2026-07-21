@@ -189,7 +189,7 @@ CREATE TABLE IF NOT EXISTS data_type_transform_ (
 
 CREATE TYPE data_creator_type AS ENUM (
     'user',
-    'transform',
+    'transform'
 );
 
 CREATE TABLE IF NOT EXISTS data_ (
@@ -226,6 +226,7 @@ INSERT INTO _data_permission_ (_id, label, description) VALUES
     ('owner', 'Owner', 'Full permission'),
     ('read', 'Read', 'Data is visible'), 
     ('read_values', 'Read values', 'Data values are visible'), 
+    ('modify', 'Update', 'Update data status'),
     ('note_create', 'Create note', 'Create notes on this data'),
     ('properties_modify', 'Modify properties', 'Add, remove, and modify data properties');
 

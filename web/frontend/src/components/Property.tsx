@@ -69,6 +69,30 @@ export function value_is_compatible_with_type(
     }
 }
 
+// For `PropertyTypeQuantity` only parses `Magnitude` as float.
+// Does **not** check values are valid. e.g. UInt greater than 0.
+export function parse_string_to_type(
+    type: types.PropertyType,
+    value: string,
+): any {
+    switch (type) {
+        case types.PropertyTypeString:
+            return value.trim();
+        case types.PropertyTypeBool:
+            return value === "true";
+        case types.PropertyTypeInt:
+            return parseInt(value);
+        case types.PropertyTypeUint:
+            return parseInt(value);
+        case types.PropertyTypeFloat:
+            return parseFloat(value);
+        case types.PropertyTypeTimestamp:
+            return Date.parse(value);
+        case types.PropertyTypeQuantity:
+            return parseFloat(value);
+    }
+}
+
 export function value_to_string(property: types.Property): string {
     var value;
     switch (property.Type) {
@@ -239,7 +263,7 @@ export function InputPropertyValue({
                 <input
                     ref={inputNode}
                     type="checkbox"
-                    defaultChecked={defaultValue}
+                    defaultChecked={false}
                     {...props}
                 />
             );
@@ -264,8 +288,9 @@ export function InputPropertyValue({
             let default_magnitude;
             let default_unit;
             if (defaultValue) {
-                default_magnitude = (defaultValue as QuantityValue).magnitude;
-                default_unit = (defaultValue as QuantityValue).unit;
+                const val = defaultValue as QuantityValue;
+                default_magnitude = val.magnitude;
+                default_unit = val.unit;
             }
             return (
                 <>

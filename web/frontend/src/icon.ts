@@ -21,11 +21,12 @@ import {
     FaX,
     FaUserGroup,
     FaLocationPin,
+    FaMagnifyingGlass,
 } from "react-icons/fa6";
 import { IoIosLogOut, IoMdHome, IoIosArrowRoundBack } from "react-icons/io";
 import { MdEdit, MdOutlineCategory } from "react-icons/md";
 import { TbColumns3 } from "react-icons/tb";
-import { IoEyeOutline } from "react-icons/io5";
+import { IoEyeOutline, IoEyeOffOutline } from "react-icons/io5";
 import { BsFile, BsFiles, BsArrowReturnRight } from "react-icons/bs";
 import { LuSquareFunction } from "react-icons/lu";
 
@@ -42,6 +43,7 @@ export default {
     DataSchema: TbColumns3,
     Download: FaDownload,
     Eye: IoEyeOutline,
+    EyeSlash: IoEyeOffOutline,
     File: BsFile,
     FileCode: FaFileCode,
     Files: BsFiles,
@@ -52,6 +54,7 @@ export default {
     LeftArrow: FaArrowLeft,
     LocationPin: FaLocationPin,
     Logout: IoIosLogOut,
+    MagnifyingGlass: FaMagnifyingGlass,
     Minus: AiOutlineMinus,
     Pen: MdEdit,
     Plus: AiOutlinePlus,

@@ -328,6 +328,15 @@ function dataGet(data_id: uuid.UUIDTypes): Promise<any> {
     }).then(async (resp) => (await resp.json()) as any);
 }
 
+function dataUpdate(update: types.DataUpdate): Promise<Response> {
+    return fetch("/api/data", {
+        credentials: "same-origin",
+        method: "put",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+    });
+}
+
 function dataOrigins(): Promise<types.DataOriginRx[]> {
     return fetch("/api/data-origins", {
         credentials: "same-origin",
@@ -378,6 +387,24 @@ function dataPreview(data: uuid.UUIDTypes): Promise<types.DataValuesPreview> {
     }).then(async (resp) => (await resp.json()) as types.DataValuesPreview);
 }
 
+function propertiesUpdate(update: types.DataPropertiesUpdate) {
+    return fetch(`/api/data/properties`, {
+        credentials: "same-origin",
+        method: "put",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+    });
+}
+
+function notesCreate(data: uuid.UUIDTypes, notes: types.DataNoteCreate[]) {
+    return fetch(`/api/data/notes`, {
+        credentials: "same-origin",
+        method: "post",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Id: uuidToString(data), Notes: notes }),
+    });
+}
+
 export default {
     dataTypesGetAll,
     dataTypeCreateInternal,
@@ -399,10 +426,13 @@ export default {
     projectDataCreate,
     orphanedData,
     dataGet,
+    dataUpdate,
     dataOrigins,
     dataOriginById,
     dataOriginCreate,
     dataOriginUpdate,
     dataValues,
     dataPreview,
+    propertiesUpdate,
+    notesCreate,
 };

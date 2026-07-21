@@ -142,9 +142,13 @@ export function uuidToString(id: UUIDTypes): string {
     }
 }
 
-export function timestampToString(date: Date): string {
+export function timestampToString(date: Date | string): string {
+    if (typeof date == "string") {
+        date = new Date(date);
+    }
+
     const y = String(date.getUTCFullYear()).padStart(4, "0");
-    const mo = String(date.getMonth()).padStart(2, "0");
+    const mo = String(date.getMonth() + 1).padStart(2, "0");
     const d = String(date.getDate()).padStart(2, "0");
     const h = String(date.getHours()).padStart(2, "0");
     const m = String(date.getMinutes()).padStart(2, "0");

@@ -310,7 +310,7 @@ function ProjectDataItem({
 
     const date = new Date(data.Timestamp);
     const y = date.getUTCFullYear();
-    const mo = date.getMonth();
+    const mo = date.getMonth() + 1;
     const d = date.getDate();
     const h = date.getHours();
     const m = date.getMinutes();
@@ -376,9 +376,9 @@ function ProjectDataItem({
                             <button
                                 type="button"
                                 className="btn-cmd"
-                                title="Edit"
+                                title="View data"
                             >
-                                <Icon.Pen />
+                                <Icon.Eye />
                             </button>
                         </Link>
                     </div>
@@ -386,12 +386,12 @@ function ProjectDataItem({
                         <button
                             type="button"
                             className="btn-cmd"
-                            title="Preview"
+                            title="Preview values"
                             onFocus={fetch_preview}
                             onMouseEnter={fetch_preview}
                             onMouseDown={open_preview}
                         >
-                            <Icon.Eye />
+                            <Icon.MagnifyingGlass />
                         </button>
                     </div>
                     <div>

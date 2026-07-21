@@ -110,7 +110,7 @@ function UserProjectsEmpty() {
             <Link to="/project/create">
                 <button
                     type="button"
-                    className="cursor-pointer border px-1 py-0.5"
+                    className="cursor-pointer border px-2 py-0.5 rounded-sm"
                 >
                     Create your first project
                 </button>
