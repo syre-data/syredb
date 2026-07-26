@@ -52,11 +52,11 @@ export function value_is_compatible_with_type(
         case types.PropertyTypeString:
             return typeof value === "string";
         case types.PropertyTypeQuantity:
-            return (
-                typeof value === "object" &&
-                "magnitude" in value &&
-                "unit" in value
-            );
+            if (typeof value !== "object") {
+                return false;
+            }
+
+            return "magnitude" in value && "unit" in value;
         case types.PropertyTypeTimestamp:
             if (value instanceof Date) {
                 return true;
@@ -72,14 +72,15 @@ export function value_is_compatible_with_type(
 // For `PropertyTypeQuantity` only parses `Magnitude` as float.
 // Does **not** check values are valid. e.g. UInt greater than 0.
 export function parse_string_to_type(
-    type: types.PropertyType,
     value: string,
+    type: types.PropertyType,
 ): any {
     switch (type) {
         case types.PropertyTypeString:
             return value.trim();
         case types.PropertyTypeBool:
-            return value === "true";
+            console.debug(value, typeof value);
+            return value === "true" || value === "on";
         case types.PropertyTypeInt:
             return parseInt(value);
         case types.PropertyTypeUint:
@@ -94,7 +95,7 @@ export function parse_string_to_type(
 }
 
 export function value_to_string(property: types.Property): string {
-    var value;
+    var value: any;
     switch (property.Type) {
         case types.PropertyTypeBool:
             if (property.Value === true) {
@@ -115,7 +116,13 @@ export function value_to_string(property: types.Property): string {
             return (property.Value as number).toString();
         case types.PropertyTypeQuantity:
             value = property.Value as QuantityValue;
-            return `${value.magnitude} ${value.unit}`;
+            if ("magnitude" in value && "unit" in value) {
+                return `${value.magnitude} ${value.unit}`;
+            } else if ("Magnitude" in value && "Unit" in value) {
+                return `${value.Magnitude} ${value.Unit}`;
+            } else {
+                throw new Error(`invalid property ${property}`);
+            }
         case types.PropertyTypeTimestamp:
             value = property.Value as Date;
             return value.toLocaleString();
@@ -209,6 +216,7 @@ export function SelectPropertyType({ ref, ...props }: SelectPropertyTypeProps) {
 type InputPropertyValueProps = ComponentPropsWithoutRef<"input"> & {
     ref?: React.Ref<HTMLSelectElement>;
     type: types.PropertyType;
+    value?: any;
     defaultValue?: any;
     quantity_magnitude_props?: ComponentPropsWithoutRef<"input">;
     quantity_unit_props?: ComponentPropsWithoutRef<"input">;
@@ -216,12 +224,17 @@ type InputPropertyValueProps = ComponentPropsWithoutRef<"input"> & {
 export function InputPropertyValue({
     ref,
     type,
+    value,
     defaultValue,
     quantity_magnitude_props,
     quantity_unit_props,
     ...props
 }: InputPropertyValueProps) {
     const inputNode = useRef(null);
+    if (value && !value_is_compatible_with_type(value, type)) {
+        console.error("incompatible property value for type", type, value);
+        value = undefined;
+    }
     if (defaultValue && !value_is_compatible_with_type(defaultValue, type)) {
         console.error(
             "incompatible property default value for type",
@@ -232,7 +245,12 @@ export function InputPropertyValue({
     }
 
     useLayoutEffect(() => {
-        if (inputNode.current !== null && type === types.PropertyTypeBool) {
+        if (
+            inputNode.current !== null &&
+            type === types.PropertyTypeBool &&
+            value === undefined &&
+            defaultValue === undefined
+        ) {
             const input = inputNode.current as HTMLInputElement;
             input.indeterminate = true;
         }
@@ -241,29 +259,52 @@ export function InputPropertyValue({
     switch (type) {
         case types.PropertyTypeString:
             return (
-                <input type="string" defaultValue={defaultValue} {...props} />
+                <input
+                    ref={inputNode}
+                    type="string"
+                    value={value}
+                    defaultValue={defaultValue}
+                    {...props}
+                />
             );
         case types.PropertyTypeInt:
             return (
-                <input type="number" defaultValue={defaultValue} {...props} />
+                <input
+                    ref={inputNode}
+                    type="number"
+                    value={value}
+                    defaultValue={defaultValue}
+                    {...props}
+                />
             );
         case types.PropertyTypeUint:
             return (
                 <input
+                    ref={inputNode}
                     type="number"
+                    value={value}
                     defaultValue={defaultValue}
                     min={0}
                     {...props}
                 />
             );
         case types.PropertyTypeFloat:
-            return <input type="text" defaultValue={defaultValue} {...props} />;
+            return (
+                <input
+                    ref={inputNode}
+                    type="text"
+                    value={value}
+                    defaultValue={defaultValue}
+                    {...props}
+                />
+            );
         case types.PropertyTypeBool:
             return (
                 <input
                     ref={inputNode}
                     type="checkbox"
-                    defaultChecked={false}
+                    checked={value}
+                    defaultChecked={defaultValue}
                     {...props}
                 />
             );
@@ -272,21 +313,27 @@ export function InputPropertyValue({
                 <input
                     ref={inputNode}
                     type="datetime-local"
+                    value={value}
                     defaultValue={defaultValue}
                     {...props}
                 />
             );
         case types.PropertyTypeQuantity:
-            const mag_id = props.id ? `${props.id}[magnitude]` : "";
-            const mag_name = props.name ? `${props.name}[magnitude]` : "";
-            const unit_id = props.id ? `${props.id}[unit]` : "";
-            const unit_name = props.name ? `${props.name}[unit]` : "";
+            const mag_id = props.id ? `${props.id}.magnitude` : "";
+            const mag_name = props.name ? `${props.name}.magnitude` : "";
+            const unit_id = props.id ? `${props.id}.unit` : "";
+            const unit_name = props.name ? `${props.name}.unit` : "";
             const quant_props = { ...props };
             delete quant_props.id;
             delete quant_props.name;
             delete quant_props.placeholder;
-            let default_magnitude;
-            let default_unit;
+            let value_magnitude, value_unit;
+            let default_magnitude, default_unit;
+            if (value) {
+                const val = value as QuantityValue;
+                value_magnitude = val.magnitude;
+                value_unit = val.unit;
+            }
             if (defaultValue) {
                 const val = defaultValue as QuantityValue;
                 default_magnitude = val.magnitude;
@@ -298,6 +345,7 @@ export function InputPropertyValue({
                         type="text"
                         id={mag_id}
                         name={mag_name}
+                        value={value_magnitude}
                         defaultValue={default_magnitude}
                         placeholder="Magnitude"
                         {...quant_props}
@@ -307,6 +355,7 @@ export function InputPropertyValue({
                         type="text"
                         id={unit_id}
                         name={unit_name}
+                        value={value_unit}
                         defaultValue={default_unit}
                         placeholder="Unit"
                         {...quant_props}

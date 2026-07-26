@@ -72,6 +72,11 @@ func ParseSaveDataHierarchy(value string) (SaveDataHierarchy, error) {
 	}
 }
 
+type PropertyQuantityValue struct {
+	Magnitude float64
+	Unit      string
+}
+
 type DataService struct {
 	ctx          context.Context
 	logger       *slog.Logger
@@ -2813,6 +2818,28 @@ func (s *DataService) DataProperties(id uuid.UUID) ([]Property, error) {
 		s.logger.With(
 			"error", err,
 			"data", id,
+		).Error("could not get data properties")
+		return nil, err
+	}
+
+	return properties, nil
+}
+
+func (s *DataService) DataPropertiesByKeys(data uuid.UUID, keys []string) ([]Property, error) {
+	if len(keys) == 0 {
+		return []Property{}, nil
+	}
+
+	query :=
+		`SELECT _key, _type, value FROM data_property_ 
+		WHERE _data=$1 AND _key=ANY($2)`
+	rows, _ := s.db.Conn.Query(s.ctx, query, data, keys)
+	properties, err := pgx.CollectRows(rows, pgx.RowToStructByName[Property])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+			"keys", keys,
 		).Error("could not get data properties")
 		return nil, err
 	}

@@ -56,6 +56,10 @@ export const SaveDataHierarchySample = "sample";
 export const SaveDataHierarchySampleDataSchema = "sample-data_scmeha";
 export const SaveDataHierarchyDataSchemaSample = "data_schema-sample";
 export type SaveDataHierarchy = typeof SaveDataHierarchyFlat | typeof SaveDataHierarchyDataSchema | typeof SaveDataHierarchySample | typeof SaveDataHierarchySampleDataSchema | typeof SaveDataHierarchyDataSchemaSample;
+export interface PropertyQuantityValue {
+  Magnitude: number /* float64 */;
+  Unit: string;
+}
 export interface DataService {
 }
 export const DataStorageInternal = "internal";

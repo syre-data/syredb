@@ -15,22 +15,16 @@ import {
     type_string_to_variant,
     value_is_compatible_with_type,
 } from "@/components/Property";
-import { VisibilityIcon } from "@/components/Visibility";
+import { VisibilityFormToggle, VisibilityIcon } from "@/components/Visibility";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import {
-    PropertyTypeBool,
-    PropertyTypeFloat,
-    PropertyTypeInt,
-    PropertyTypeQuantity,
     PropertyTypeString,
-    PropertyTypeTimestamp,
-    PropertyTypeUint,
     VisibilityPrivate,
     VisibilityPublic,
+    type PropertyValueUpdate,
     type DataNoteCreate,
     type DataProjectResources,
-    type DataPropertiesUpdate,
     type DataRx,
     type DataType,
     type DataUpdate,
@@ -38,23 +32,21 @@ import {
     type Property,
     type PropertyType,
     type User,
-    type Visibility,
+    PropertyTypeQuantity,
+    PropertyTypeBool,
+    type DataPropertiesUpdate,
 } from "@/types";
+import { useForm } from "@tanstack/react-form";
 import {
-    FieldApi,
-    useForm,
-    type ReactFormExtendedApi,
-} from "@tanstack/react-form";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import {
-    Suspense,
-    useState,
-    type ChangeEvent,
-    type MouseEvent,
-    type SubmitEvent,
-} from "react";
+    QueryClient,
+    useMutation,
+    useQuery,
+    useQueryClient,
+    useSuspenseQuery,
+} from "@tanstack/react-query";
+import { Suspense, type MouseEvent, type SubmitEvent } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import { data, useParams } from "react-router";
+import { useParams } from "react-router";
 import { Navigate } from "react-router";
 import { useNavigate } from "react-router";
 import type { UUIDTypes } from "uuid";
@@ -129,9 +121,7 @@ function DataEdit({ data_id }: DataEditProps) {
                 </div>
             </div>
             <div>
-                <div>
-                    <DataEditForm data={data} />
-                </div>
+                <DataEditForm data={data} />
                 <DataProperties data={data.Id} properties={properties} />
                 <DataNotes data={data.Id} notes={notes} />
             </div>
@@ -143,52 +133,50 @@ interface DataEditFormProps {
     data: DataRx;
 }
 function DataEditForm({ data }: DataEditFormProps) {
+    const queryClient = useQueryClient();
+    const form = useForm({
+        defaultValues: {
+            visibility: data.Visibility,
+        },
+        onSubmit: async ({ value }) => {
+            const update = {
+                Id: uuidToString(data.Id),
+                Visibility: value.visibility,
+            } as DataUpdate;
+
+            await dataService.dataUpdate(update).then((res) => {
+                if (res.ok) {
+                    queryClient.invalidateQueries({
+                        queryKey: [QUERY_KEY_DATA, uuidToString(data.Id)],
+                    });
+                }
+            });
+        },
+    });
+
     function update(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault();
-
-        const fdata = new FormData(e.target);
-        const visibility = fdata.get("visibility")!.toString() as Visibility;
-
-        const update = {
-            Id: uuidToString(data.Id),
-            Visibility: visibility,
-        } as DataUpdate;
-        dataService.dataUpdate(update);
+        form.handleSubmit();
     }
 
     return (
-        <form className="px-4 flex flex-col gap-2" onSubmit={update}>
+        <form className=" pt-2 px-4 flex flex-col gap-2" onSubmit={update}>
             <div>
-                <div>
-                    <fieldset className="flex gap-2">
-                        <div>
-                            <label>
-                                <input
-                                    type="radio"
-                                    name="visibility"
-                                    value={VisibilityPrivate}
-                                    defaultChecked={
-                                        data.Visibility === VisibilityPrivate
+                <form.Field name="visibility">
+                    {(field) => {
+                        return (
+                            <div>
+                                <VisibilityFormToggle
+                                    defaultValue={data.Visibility}
+                                    className="text-lg"
+                                    onChange={(visibility) =>
+                                        field.handleChange(visibility)
                                     }
                                 />
-                                <span className="pl-2">Private</span>
-                            </label>
-                        </div>
-                        <div>
-                            <label>
-                                <input
-                                    type="radio"
-                                    name="visibility"
-                                    value={VisibilityPublic}
-                                    defaultChecked={
-                                        data.Visibility === VisibilityPublic
-                                    }
-                                />
-                                <span className="pl-2">Public</span>
-                            </label>
-                        </div>
-                    </fieldset>
-                </div>
+                            </div>
+                        );
+                    }}
+                </form.Field>
             </div>
             <div>
                 <div>
@@ -205,23 +193,175 @@ interface DataPropertiesProps {
     data: UUIDTypes;
     properties: Property[];
 }
+
+interface PropertyCreate {
+    key?: string;
+    type: PropertyType;
+    value: any;
+}
+
+function useMutationProperties(queryClient: QueryClient, data: UUIDTypes) {
+    return useMutation({
+        mutationFn: (update: DataPropertiesUpdate) => {
+            return dataService.propertiesUpdate(update).then((_) => update);
+        },
+        // onMutate: async (update) => {
+        //     await queryClient.cancelQueries({
+        //         queryKey: [QUERY_KEY_DATA, uuidToString(data)],
+        //     });
+
+        //     const previous = queryClient.getQueryData([
+        //         QUERY_KEY_DATA,
+        //         uuidToString(data),
+        //     ]);
+        //     queryClient.setQueryData(
+        //         [QUERY_KEY_DATA, uuidToString(data)],
+        //         (current: any) => {
+        //             let properties = [...current.Properties] as Property[];
+        //             properties = properties.filter(
+        //                 (property) => !update.Remove.includes(property.Key),
+        //             );
+        //             properties.concat(update.Create);
+        //             for (const { Key, Value } of update.ValuesUpdate) {
+        //                 const idx = properties.findIndex(
+        //                     (property) => property.Key === Key,
+        //                 );
+        //                 if (idx < 0) {
+        //                     throw new Error(`invalid property key '${Key}'`);
+        //                 }
+
+        //                 properties[idx]!.Value = Value;
+        //             }
+
+        //             current.properties = properties;
+        //             return current;
+        //         },
+        //     );
+
+        //     return { previous };
+        // },
+        // onError: (_err, _update, context) => {
+        //     if (context?.previous) {
+        //         queryClient.setQueryData(
+        //             [QUERY_KEY_DATA, uuidToString(data)],
+        //             context.previous,
+        //         );
+        //     }
+        // },
+        onSettled: () => {
+            queryClient.invalidateQueries({
+                queryKey: [QUERY_KEY_DATA, uuidToString(data)],
+            });
+        },
+    });
+}
+
+type PropertiesMutationApi = ReturnType<typeof useMutationProperties>;
+
+function useFormProperties(
+    data: UUIDTypes,
+    properties: Property[],
+    onSubmit: PropertiesMutationApi,
+) {
+    return useForm({
+        defaultValues: {
+            properties: properties,
+            removed: new Array<string>(),
+            created: new Array<PropertyCreate>(),
+        },
+        onSubmit: async ({ value, formApi }) => {
+            const created = value.created.map((property) => {
+                let value;
+                if (property.type === PropertyTypeQuantity) {
+                    value = {
+                        Magnitude: property.value.magnitude,
+                        Unit: property.value.unit,
+                    };
+                } else {
+                    try {
+                        value = parse_string_to_type(
+                            property.value,
+                            property.type,
+                        );
+                    } catch (err) {
+                        throw new Error(
+                            `could not convert value '${property.value}' (type ${typeof property.value}) to type ${property.type}`,
+                        );
+                    }
+                }
+                return {
+                    Key: property.key,
+                    Type: property.type,
+                    Value: value,
+                } as Property;
+            });
+            const updated = value.properties
+                .filter(
+                    (_, idx) =>
+                        formApi.getFieldMeta(`properties[${idx}].Value`)!
+                            .isDirty,
+                )
+                .map((property) => {
+                    let value = property.Value;
+                    if (typeof value === "string") {
+                        value = parse_string_to_type(
+                            property.Value,
+                            property.Type,
+                        );
+                    }
+
+                    if (!value_is_compatible_with_type(value, property.Type)) {
+                        throw new Error(
+                            `property value '${property.Value}' incompatible with type ${property.Type}`,
+                        );
+                    }
+
+                    return {
+                        Key: property.Key,
+                        Value: value,
+                    } as PropertyValueUpdate;
+                });
+
+            if (
+                value.removed.length === 0 &&
+                created.length === 0 &&
+                updated.length === 0
+            ) {
+                console.debug("no changes to form");
+                return;
+            }
+
+            const update = {
+                Id: data,
+                Remove: value.removed,
+                Create: created,
+                ValuesUpdate: updated,
+            };
+            await onSubmit.mutateAsync(update).then((_update) => {
+                // TODO: Don't reload, just update data
+                window.location.reload();
+            });
+        },
+    });
+}
+
+type PropertiesFormApi = ReturnType<typeof useFormProperties>;
+
 function DataProperties({ data, properties }: DataPropertiesProps) {
-    const [newProperties, setNewProperties] = useState<NewProperty[]>([]);
+    const queryClient = useQueryClient();
+    const update_mutation = useMutationProperties(queryClient, data);
+    const form = useFormProperties(data, properties, update_mutation);
 
     function create_property(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
             return;
         }
 
-        const max_id = newProperties.at(-1)?.id || 0;
-        const newProp = {
-            id: max_id + 1,
-            key: undefined,
+        form.pushFieldValue("created", {
+            key: "",
             type: PropertyTypeString,
-            value: undefined,
-        } as NewProperty;
-
-        setNewProperties([...newProperties, newProp]);
+            value: "",
+        });
     }
 
     return (
@@ -239,16 +379,19 @@ function DataProperties({ data, properties }: DataPropertiesProps) {
                     </button>
                 </div>
             </div>
-            {properties.length + newProperties.length ? (
-                <DataPropertiesContent
-                    data={data}
-                    properties={properties}
-                    newProperties={newProperties}
-                    setNewProperties={setNewProperties}
-                />
-            ) : (
-                <DataPropertiesEmpty />
-            )}
+            <form.Subscribe
+                selector={(state) =>
+                    state.values.properties.length + state.values.created.length
+                }
+            >
+                {(count) =>
+                    count === 0 ? (
+                        <DataPropertiesEmpty />
+                    ) : (
+                        <DataPropertiesContent form={form} />
+                    )
+                }
+            </form.Subscribe>
         </div>
     );
 }
@@ -261,303 +404,13 @@ function DataPropertiesEmpty() {
     );
 }
 
-interface NewProperty {
-    id: number;
-    key?: string;
-    type: PropertyType;
-    value: any;
-}
-
 interface DataPropertiesContentProps {
-    data: UUIDTypes;
-    properties: Property[];
-    newProperties: NewProperty[];
-    setNewProperties: React.Dispatch<React.SetStateAction<NewProperty[]>>;
+    form: PropertiesFormApi;
 }
-function DataPropertiesContent({
-    data,
-    properties,
-    newProperties,
-    setNewProperties,
-}: DataPropertiesContentProps) {
-    const [removed, setRemoved] = useState<Array<string>>([]);
-
-    function update_key(e: ChangeEvent<HTMLInputElement>, id: number) {
-        const property = newProperties.find((property) => property.id === id);
-        if (property === undefined) {
-            throw new Error("invalid property");
-        }
-
-        const value = e.target.value.trim();
-        property.key = value;
-
-        if (value === "") {
-            return;
-        }
-
-        let idx = properties.findIndex((prop) => prop.Key == value);
-        if (idx > -1) {
-            e.target.setCustomValidity("Key already exists");
-            return;
-        }
-
-        idx = newProperties.findIndex(
-            (prop) => prop.id !== id && prop.key === value,
-        );
-        if (idx > -1) {
-            console.debug("match");
-            e.target.setCustomValidity("Key already exists");
-            return;
-        }
-    }
-
-    function set_property_type(e: ChangeEvent<HTMLSelectElement>, id: number) {
-        const property = newProperties.find((prop) => prop.id === id);
-        if (property === undefined) {
-            throw new Error("invalid property");
-        }
-
-        const type = type_string_to_variant(e.target.value);
-        if (type === undefined) {
-            throw new Error("invalid property");
-        }
-
-        property.type = type;
-        setNewProperties([...newProperties]);
-    }
-
-    function remove(e: MouseEvent<HTMLButtonElement>, key: string) {
-        if (e.button !== MouseButton.Primary) {
-            return;
-        }
-
-        setRemoved([...removed, key]);
-    }
-
-    function removeNew(e: MouseEvent<HTMLButtonElement>, id: number) {
-        if (e.button !== MouseButton.Primary) {
-            return;
-        }
-
-        const idx = newProperties.findIndex((prop) => prop.id === id);
-        if (idx < 0) {
-            throw new Error("invalid property");
-        }
-
-        newProperties.splice(idx, 1);
-        setNewProperties([...newProperties]);
-    }
-
-    async function update(e: SubmitEvent<HTMLFormElement>) {
+function DataPropertiesContent({ form }: DataPropertiesContentProps) {
+    function update(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault();
-
-        const fdata = new FormData(e.target);
-        const update = {
-            Id: uuidToString(data),
-            Remove: removed,
-            Create: [],
-            ValuesUpdate: [],
-        } as DataPropertiesUpdate;
-
-        const propPattern = new RegExp(/^property\[(.+)\]\[value\]/);
-        for (const [name, field] of fdata.entries()) {
-            const match = propPattern.exec(name);
-            if (!match) {
-                continue;
-            }
-
-            const key = match[1]!;
-            const property = properties.find((property) => property.Key == key);
-            if (property === undefined) {
-                throw new Error("property key does not exist");
-            }
-
-            let value;
-            switch (property.Type) {
-                case PropertyTypeString:
-                    value = field.toString().trim();
-                    if (value !== property.Value) {
-                        update.ValuesUpdate.push({ Key: key, Value: value });
-                    }
-                    break;
-                case PropertyTypeBool:
-                    // handled above
-                    break;
-                case PropertyTypeInt:
-                    value = parseInt(field.toString());
-                    if (value !== property.Value) {
-                        update.ValuesUpdate.push({ Key: key, Value: value });
-                    }
-                    break;
-                case PropertyTypeUint:
-                    value = parseInt(field.toString());
-                    if (value < 0) {
-                        throw new Error("invalid property value");
-                    }
-                    if (value !== property.Value) {
-                        update.ValuesUpdate.push({ Key: key, Value: value });
-                    }
-                    break;
-                case PropertyTypeFloat:
-                    value = parseFloat(field.toString());
-                    if (value !== property.Value) {
-                        update.ValuesUpdate.push({ Key: key, Value: value });
-                    }
-                    break;
-                case PropertyTypeTimestamp:
-                    value = new Date(field.toString());
-                    if (value !== property.Value) {
-                        update.ValuesUpdate.push({ Key: key, Value: value });
-                    }
-                    break;
-                case PropertyTypeQuantity:
-                    if (name.endsWith("[unit]")) {
-                        continue;
-                    }
-
-                    const unitName = name.replace("[magnitude]", "[unit]");
-                    const unit = fdata.get(unitName)!.toString().trim();
-                    const magnitude = parseFloat(field.toString());
-                    if (
-                        magnitude !== property.Value.Magnitude ||
-                        unit !== property.Value.Unit
-                    ) {
-                        update.ValuesUpdate.push({
-                            Key: key,
-                            Value: { Magnitude: magnitude, Unit: unit },
-                        });
-                    }
-                    break;
-            }
-        }
-
-        const newPropsFields = new Map<
-            string,
-            [string, FormDataEntryValue][]
-        >();
-        const newPropPattern = new RegExp(
-            /^new\[(\d+)\]\[(.+?)\](?:\[(magnitude|unit)\])?/,
-        );
-        for (const [name, field] of fdata.entries()) {
-            const match = newPropPattern.exec(name);
-            if (!match) {
-                continue;
-            }
-
-            const id = match[1]!;
-            let label = match[2]!;
-            if (match[3] != undefined) {
-                label += ":" + match[3];
-            }
-            const vals = newPropsFields.get(id) ?? [];
-            vals.push([label, field]);
-            newPropsFields.set(id, vals);
-        }
-
-        for (const [id, fields] of newPropsFields.entries()) {
-            const prop = {
-                Key: undefined,
-                Type: undefined,
-                Value: undefined,
-            } as Partial<Property>;
-            for (const [label, field] of fields) {
-                switch (label) {
-                    case "key":
-                        prop.Key = field.toString().trim();
-                        break;
-                    case "type":
-                        prop.Type = type_string_to_variant(
-                            field.toString().trim(),
-                        );
-                        break;
-                    case "value":
-                        prop.Value = field;
-                        break;
-                    case "value:magnitude":
-                        if (prop.Value === undefined) {
-                            prop.Value = {
-                                Magnitude: field.toString().trim(),
-                                Unit: undefined,
-                            };
-                        } else {
-                            prop.Value.Magnitude = field.toString().trim();
-                        }
-                        break;
-                    case "value:unit":
-                        if (prop.Value === undefined) {
-                            prop.Value = {
-                                Magnitude: undefined,
-                                Unit: field.toString().trim(),
-                            };
-                        } else {
-                            prop.Value.Unit = field.toString().trim();
-                        }
-                        break;
-                    default:
-                        throw new Error(`invalid property label ${label}`);
-                }
-            }
-            if (prop.Key === undefined || prop.Type === undefined) {
-                console.debug(prop);
-                throw new Error("invalid property fields");
-            }
-
-            if (prop.Type === PropertyTypeBool && prop.Value === undefined) {
-                prop.Value = false;
-            }
-
-            if (prop.Value === undefined) {
-                console.debug(prop);
-                throw new Error("invalid property value");
-            }
-            if (prop.Key === "" && prop.Value.length === 0) {
-                continue;
-            }
-            if (prop.Key === "") {
-                const el = document.getElementById(
-                    `new[${id}][key]`,
-                )! as HTMLInputElement;
-                el.setCustomValidity("Key can not be empty");
-                return;
-            }
-
-            switch (prop.Type) {
-                case PropertyTypeString:
-                    prop.Value = prop.Value.trim();
-                    break;
-                case PropertyTypeBool:
-                    if (typeof prop.Value === "string") {
-                        prop.Value = true;
-                    }
-                    break;
-                case PropertyTypeInt:
-                    prop.Value = parseInt(prop.Value);
-                    break;
-                case PropertyTypeUint:
-                    prop.Value = parseInt(prop.Value);
-                    if (prop.Value < 0) {
-                        throw new Error("invalid property value");
-                    }
-                    break;
-                case PropertyTypeFloat:
-                    prop.Value = parseFloat(prop.Value);
-                    break;
-                case PropertyTypeTimestamp:
-                    Date.parse(prop.Value);
-                    break;
-                case PropertyTypeQuantity:
-                    prop.Value.Magnitude = parseFloat(prop.Value.Magnitude);
-                    prop.Value.Unit = prop.Value.Unit.trim();
-            }
-
-            update.Create.push(prop as Property);
-        }
-
-        await dataService.propertiesUpdate(update).then((resp) => {
-            if (resp.ok) {
-                setNewProperties([]);
-            }
-        });
+        form.handleSubmit();
     }
 
     return (
@@ -565,128 +418,369 @@ function DataPropertiesContent({
             <div>
                 <table>
                     <tbody>
-                        {properties
-                            .filter(
-                                (property) => !removed.includes(property.Key),
-                            )
-                            .map((property) => {
-                                let defaultValue = property.Value;
-                                if (property.Type === PropertyTypeQuantity) {
-                                    defaultValue = {
-                                        magnitude: property.Value.Magnitude,
-                                        unit: property.Value.Unit,
-                                    };
-                                }
-
+                        <form.Field name="properties" mode="array">
+                            {(properties) => {
                                 return (
-                                    <tr
-                                        key={property.Key}
-                                        className="group/row"
-                                    >
-                                        <th className="pr-2 py-1 text-left">
-                                            {property.Key}
-                                        </th>
-                                        <td className="px-2 py-1">
-                                            {property.Type}
-                                        </td>
-                                        <td className="px-2 py-1">
-                                            <div className="flex gap-2">
-                                                <InputPropertyValue
-                                                    id={`property[${property.Key}][value]`}
-                                                    name={`property[${property.Key}][value]`}
-                                                    type={property.Type}
-                                                    className="input-basic"
-                                                    defaultValue={defaultValue}
+                                    <>
+                                        {properties.state.value
+                                            .sort((a, b) =>
+                                                a.Key.localeCompare(b.Key),
+                                            )
+                                            .map((property, idx) => (
+                                                <DataPropertyItem
+                                                    key={idx}
+                                                    form={form}
+                                                    idx={idx}
+                                                    property={property}
                                                 />
-                                            </div>
-                                        </td>
-                                        <td className="pl-2 py-1">
-                                            <div className=" invisible group-hover/row:visible">
-                                                <button
-                                                    type="button"
-                                                    className="btn-cmd"
-                                                    onMouseDown={(e) =>
-                                                        remove(e, property.Key)
-                                                    }
-                                                    title={`Remove property ${property.Key}`}
-                                                >
-                                                    <Icon.Minus />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                            ))}
+                                    </>
                                 );
-                            })}
-                        {newProperties.map((property) => {
-                            return (
-                                <tr key={property.id}>
-                                    <td className="pr-2 py-1">
-                                        <input
-                                            id={`new[${property.id}][key]`}
-                                            name={`new[${property.id}][key]`}
-                                            type="text"
-                                            min="1"
-                                            className="input-basic invalid:border-syre-red-600 dark:invalid:border-syre-red-500"
-                                            placeholder="Key"
-                                            required
-                                            onChange={(e) =>
-                                                update_key(e, property.id)
-                                            }
-                                        />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                        <SelectPropertyType
-                                            id={`new[${property.id}][type]`}
-                                            name={`new[${property.id}][type]`}
-                                            className="input-basic"
-                                            onChange={(e) =>
-                                                set_property_type(
-                                                    e,
-                                                    property.id,
-                                                )
-                                            }
-                                        />
-                                    </td>
-                                    <td className="px-2 py-1">
-                                        <div className="flex gap-2">
-                                            <InputPropertyValue
-                                                id={`new[${property.id}][value]`}
-                                                name={`new[${property.id}][value]`}
-                                                type={property.type}
-                                                className="input-basic"
+                            }}
+                        </form.Field>
+                        <form.Field name="created" mode="array">
+                            {(properties) => (
+                                <>
+                                    {properties.state.value.map(
+                                        (property, idx) => (
+                                            <DataPropertyCreateItem
+                                                key={idx}
+                                                form={form}
+                                                idx={idx}
+                                                property={property}
                                             />
-                                        </div>
-                                    </td>
-                                    <td className="pl-2 py-1">
-                                        <button
-                                            type="button"
-                                            className="btn-cmd"
-                                            onMouseDown={(e) =>
-                                                removeNew(e, property.id)
-                                            }
-                                            title="Remove new property"
-                                        >
-                                            <Icon.Minus />
-                                        </button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                                        ),
+                                    )}
+                                </>
+                            )}
+                        </form.Field>
                     </tbody>
                 </table>
             </div>
             <div className="float gap-2">
                 <div>
-                    <button type="submit" className="btn-submit">
-                        Save
-                    </button>
+                    <form.Subscribe
+                        selector={(state) => [
+                            state.canSubmit,
+                            state.isSubmitting,
+                        ]}
+                        children={([canSubmit, isSubmitting]) => (
+                            <button
+                                type="submit"
+                                className="btn-submit"
+                                disabled={!canSubmit}
+                            >
+                                {isSubmitting ? "Saving" : "Save"}
+                            </button>
+                        )}
+                    />
                 </div>
             </div>
         </form>
     );
 }
 
-function useNotesForm(data: UUIDTypes) {
+interface DataPropertyItemProps {
+    form: PropertiesFormApi;
+    idx: number;
+    property: Property;
+}
+function DataPropertyItem({ form, idx, property }: DataPropertyItemProps) {
+    function remove(e: MouseEvent<HTMLButtonElement>, idx: number) {
+        if (e.button !== MouseButton.Primary) {
+            return;
+        }
+
+        const key = form.state.values.properties[idx]!.Key;
+        form.pushFieldValue("removed", key);
+        form.removeFieldValue("properties", idx);
+    }
+
+    return (
+        <tr key={idx} className="group/row">
+            <th className="pr-2 py-1 text-left">{property.Key}</th>
+            <td className="px-2 py-1">{property.Type}</td>
+            <td className="px-2 py-1">
+                <form.Field name={`properties[${idx}].Value`}>
+                    {(pvalue) => {
+                        let value = pvalue.state.value;
+                        if (typeof value === "string") {
+                            value = parse_string_to_type(value, property.Type);
+                        }
+                        if (property.Type === PropertyTypeQuantity) {
+                            value = {
+                                magnitude: value.Magnitude,
+                                unit: value.Unit,
+                            };
+                        }
+
+                        return (
+                            <div className="flex gap-2">
+                                <InputPropertyValue
+                                    name={pvalue.name}
+                                    type={property.Type}
+                                    className="input-basic"
+                                    value={value}
+                                    onChange={(e) => {
+                                        let update;
+                                        if (
+                                            property.Type === PropertyTypeBool
+                                        ) {
+                                            update = e.target.checked;
+                                        } else if (
+                                            property.Type ===
+                                            PropertyTypeQuantity
+                                        ) {
+                                            console.debug(
+                                                e.target.name,
+                                                e.target.value,
+                                                value,
+                                            );
+                                            if (
+                                                e.target.name ===
+                                                `properties[${idx}].Value.magnitude`
+                                            ) {
+                                                update = {
+                                                    magnitude: parseFloat(
+                                                        e.target.value,
+                                                    ),
+                                                    unit: value.unit,
+                                                };
+                                            } else if (
+                                                e.target.name ===
+                                                `properties[${idx}].Value.unit`
+                                            ) {
+                                                update = {
+                                                    magnitude: value.magnitude,
+                                                    unit: e.target.value.trim(),
+                                                };
+                                            } else {
+                                                throw new Error(
+                                                    `unknown field '${e.target.name}'`,
+                                                );
+                                            }
+                                        } else {
+                                            update = parse_string_to_type(
+                                                e.target.value,
+                                                property.Type,
+                                            );
+                                        }
+
+                                        pvalue.handleChange(update);
+                                    }}
+                                    placeholder="Value"
+                                />
+                            </div>
+                        );
+                    }}
+                </form.Field>
+            </td>
+            <td className="pl-2 py-1">
+                <div className=" invisible group-hover/row:visible">
+                    <button
+                        type="button"
+                        className="btn-cmd"
+                        onMouseDown={(e) => remove(e, idx)}
+                        title={`Remove property ${property.Key}`}
+                    >
+                        <Icon.Minus />
+                    </button>
+                </div>
+            </td>
+        </tr>
+    );
+}
+
+interface DataPropertyCreatedItemProps {
+    form: PropertiesFormApi;
+    idx: number;
+    property: PropertyCreate;
+}
+function DataPropertyCreateItem({
+    form,
+    idx,
+    property,
+}: DataPropertyCreatedItemProps) {
+    function remove(e: MouseEvent<HTMLButtonElement>, idx: number) {
+        if (e.button !== MouseButton.Primary) {
+            return;
+        }
+
+        form.removeFieldValue("created", idx);
+    }
+
+    return (
+        <tr key={idx}>
+            <td className="pr-2 py-1">
+                <form.Field
+                    name={`created[${idx}].key`}
+                    validators={{
+                        onChange: ({ value, fieldApi }) => {
+                            if (value === "") {
+                                return undefined;
+                            }
+
+                            let match =
+                                fieldApi.form.state.values.created.findIndex(
+                                    (other, odx) => {
+                                        return (
+                                            odx !== idx && other.key === value
+                                        );
+                                    },
+                                );
+                            if (match > -1) {
+                                return `Key must be unique`;
+                            }
+
+                            match =
+                                fieldApi.form.state.values.properties.findIndex(
+                                    (other) => {
+                                        return other.Key === value;
+                                    },
+                                );
+                            if (match > -1) {
+                                return `Key must be unique`;
+                            }
+
+                            return undefined;
+                        },
+                    }}
+                >
+                    {(key) => (
+                        <input
+                            name={key.name}
+                            type="text"
+                            min="1"
+                            className="input-basic invalid:border-syre-red-600 dark:invalid:border-syre-red-500"
+                            placeholder="Key"
+                            value={key.state.value}
+                            onChange={(e) =>
+                                key.handleChange(e.target.value.trim())
+                            }
+                            required
+                        />
+                    )}
+                </form.Field>
+            </td>
+            <td className="px-2 py-1">
+                <form.Field name={`created[${idx}].type`}>
+                    {(ptype) => (
+                        <SelectPropertyType
+                            name={ptype.name}
+                            className="input-basic"
+                            value={ptype.state.value}
+                            onChange={(e) =>
+                                ptype.handleChange(
+                                    type_string_to_variant(e.target.value)!,
+                                )
+                            }
+                        />
+                    )}
+                </form.Field>
+            </td>
+            <td className="px-2 py-1">
+                <div className="flex gap-2">
+                    <form.Subscribe
+                        selector={(state) => state.values.created[idx]?.type!}
+                    >
+                        {(property_type) => (
+                            <form.Field name={`created[${idx}].value`}>
+                                {(pvalue) => {
+                                    let value = pvalue.state.value;
+                                    if (typeof value === "string") {
+                                        value = parse_string_to_type(
+                                            value,
+                                            property.type,
+                                        );
+                                    }
+                                    if (
+                                        property.type === PropertyTypeQuantity
+                                    ) {
+                                        value = {
+                                            magnitude: value.Magnitude,
+                                            unit: value.Unit,
+                                        };
+                                    }
+
+                                    return (
+                                        <InputPropertyValue
+                                            name={pvalue.name}
+                                            type={property_type}
+                                            className="input-basic"
+                                            placeholder="Value"
+                                            onChange={(e) => {
+                                                let update;
+                                                if (
+                                                    property.type ===
+                                                    PropertyTypeBool
+                                                ) {
+                                                    update = e.target.checked;
+                                                } else if (
+                                                    property_type ===
+                                                    PropertyTypeQuantity
+                                                ) {
+                                                    if (
+                                                        e.target.name ===
+                                                        `created[${idx}].value.magnitude`
+                                                    ) {
+                                                        update = {
+                                                            magnitude:
+                                                                parseFloat(
+                                                                    e.target
+                                                                        .value,
+                                                                ),
+                                                            unit: pvalue.state
+                                                                .value.unit,
+                                                        };
+                                                    } else if (
+                                                        e.target.name ===
+                                                        `created[${idx}].value.unit`
+                                                    ) {
+                                                        update = {
+                                                            magnitude:
+                                                                pvalue.state
+                                                                    .value
+                                                                    .magnitude,
+                                                            unit: e.target.value.trim(),
+                                                        };
+                                                    } else {
+                                                        throw new Error(
+                                                            `unknown field '${e.target.name}'`,
+                                                        );
+                                                    }
+                                                } else {
+                                                    update =
+                                                        parse_string_to_type(
+                                                            e.target.value,
+                                                            property.type,
+                                                        );
+                                                }
+
+                                                pvalue.handleChange(update);
+                                            }}
+                                        />
+                                    );
+                                }}
+                            </form.Field>
+                        )}
+                    </form.Subscribe>
+                </div>
+            </td>
+            <td className="pl-2 py-1">
+                <button
+                    type="button"
+                    className="btn-cmd"
+                    onMouseDown={(e) => remove(e, idx)}
+                    title="Remove new property"
+                >
+                    <Icon.Minus />
+                </button>
+            </td>
+        </tr>
+    );
+}
+
+function useFormNotes(data: UUIDTypes) {
     return useForm({
         defaultValues: {
             notes: new Array<DataNoteCreate>(),
@@ -697,14 +791,14 @@ function useNotesForm(data: UUIDTypes) {
     });
 }
 
-type NotesFormApi = ReturnType<typeof useNotesForm>;
+type NotesFormApi = ReturnType<typeof useFormNotes>;
 
 interface DataNotesProps {
     data: UUIDTypes;
     notes: Note[];
 }
 function DataNotes({ data, notes }: DataNotesProps) {
-    const form = useNotesForm(data);
+    const form = useFormNotes(data);
 
     function create_note(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
@@ -778,10 +872,10 @@ function DataNotesContent({ form, notes }: DataNotesContentProps) {
             <form className="px-4 flex flex-col gap-2" onSubmit={update}>
                 <div className="flex flex-col gap-2">
                     <form.Field name="notes" mode="array">
-                        {(field) => {
+                        {(notes) => {
                             return (
                                 <div className="flex flex-col gap-2">
-                                    {field.state.value.map((_, idx) => {
+                                    {notes.state.value.map((_, idx) => {
                                         return (
                                             <div
                                                 key={idx}
@@ -799,7 +893,9 @@ function DataNotesContent({ form, notes }: DataNotesContentProps) {
                                                                     </span>
                                                                     <input
                                                                         type="datetime-local"
-                                                                        name={`notes[${idx}].Created`}
+                                                                        name={
+                                                                            timestamp.name
+                                                                        }
                                                                         value={timestampToString(
                                                                             timestamp
                                                                                 .state
@@ -932,9 +1028,9 @@ function DataNotesContent({ form, notes }: DataNotesContentProps) {
                     </form.Field>
                 </div>
                 <ol>
-                    {notes.map((note) => {
+                    {notes.map((note, idx) => {
                         return (
-                            <li>
+                            <li key={idx}>
                                 <div className="flex gap-2 items-center">
                                     <div>
                                         {timestampToString(note.Timestamp)}

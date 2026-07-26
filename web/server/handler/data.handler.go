@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -2458,6 +2459,61 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
+	for _, property := range update.Create {
+		err = validate_property_value_as_type(property.Type, property.Value)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"property", property,
+			).Error("incompatible property type and value")
+			return c.NoContent(http.StatusBadRequest)
+		}
+	}
+
+	update_keys := make([]string, len(update.ValuesUpdate))
+	for idx, property := range update.ValuesUpdate {
+		if slices.Contains(update_keys, property.Key) {
+			c.Logger().With(
+				"key", property.Key,
+			).Error("duplicate key in property update value")
+			return c.NoContent(http.StatusBadRequest)
+		}
+
+		update_keys[idx] = property.Key
+	}
+	update_properties, err := h.data_service.DataPropertiesByKeys(update.Id, update_keys)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", update.Id,
+			"keys", update_keys,
+		).Error("could not get updated data properties")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	for _, property := range update.ValuesUpdate {
+		idx_base := slices.IndexFunc(update_properties, func(base service.Property) bool {
+			return base.Key == property.Key
+		})
+		if idx_base < 0 {
+			c.Logger().With(
+				"error", err,
+				"data", update.Id,
+				"key", property.Key,
+			).Error("could not find data properties")
+			panic("invalid data property update")
+		}
+
+		property_type := update_properties[idx_base].Type
+		err = validate_property_value_as_type(property_type, property.Value)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"property", property,
+			).Error("incompatible property type and value")
+			return c.NoContent(http.StatusBadRequest)
+		}
+	}
+
 	err = h.data_service.DataPropertiesUpdate(update)
 	if err != nil {
 		c.Logger().With(
@@ -2469,6 +2525,54 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+func validate_property_value_as_type(ptype service.PropertyType, value any) error {
+	ok := false
+	switch ptype {
+	case service.PropertyTypeBool:
+		_, ok = value.(bool)
+	case service.PropertyTypeFloat:
+		_, ok = value.(float64)
+	case service.PropertyTypeInt:
+		val, ok_val := value.(float64)
+		if ok_val {
+			if val == math.Round(val) {
+				ok = true
+			}
+		}
+	case service.PropertyTypeUint:
+		val, ok_val := value.(float64)
+		if ok_val {
+			ival := math.Round(val)
+			if val == ival && ival >= 0 {
+				ok = true
+			}
+		}
+	case service.PropertyTypeQuantity:
+		val, ok_val := value.(map[string]any)
+		if ok_val {
+			magnitude, ok_mag := val["Magnitude"]
+			unit, ok_unit := val["Unit"]
+			if ok_mag && ok_unit {
+				_, ok_mag = magnitude.(float64)
+				_, ok_unit = unit.(string)
+				ok = ok_mag && ok_unit
+			}
+		}
+	case service.PropertyTypeString:
+		_, ok = value.(string)
+	case service.PropertyTypeTimestamp:
+		_, ok = value.(time.Time)
+	default:
+		panic(fmt.Sprintf("unexpected service.PropertyType: %#v", ptype))
+	}
+
+	if !ok {
+		return fmt.Errorf("invalid value for type")
+	} else {
+		return nil
+	}
 }
 
 type DataNotesCreate struct {

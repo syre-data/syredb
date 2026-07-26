@@ -849,9 +849,9 @@ function DatumStorageInternal({
 
     switch (schema.DataSchema.Cardinality) {
         case DataSchemaCardinalitySingle:
-            return;
-            <DatumStorageInternalSingle schema={schema.DataSchema.Fields} />;
-            break;
+            return (
+                <DatumStorageInternalSingle schema={schema.DataSchema.Fields} />
+            );
         case DataSchemaCardinalityMultiple:
             return (
                 <DatumStorageInternalMultipleManual
@@ -859,7 +859,6 @@ function DatumStorageInternal({
                     schema={schema.DataSchema.Fields}
                 />
             );
-            break;
         default:
             console.error("invalid data schema cardinality", schema);
     }

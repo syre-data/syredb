@@ -1,7 +1,7 @@
 import Icon from "@/icon";
 import { VisibilityPrivate, VisibilityPublic, type Visibility } from "@/types";
 import classNames from "classnames";
-import { useState } from "react";
+import { useState, type ChangeEvent } from "react";
 
 interface VisibilityIconProps {
     visibility: Visibility;
@@ -18,21 +18,28 @@ export function VisibilityIcon({ visibility }: VisibilityIconProps) {
 interface VisibilityFormToggleProps {
     defaultValue: Visibility;
     className?: string;
+    onChange?: (visibility: Visibility) => void;
 }
 export function VisibilityFormToggle({
     defaultValue,
     className,
+    onChange,
 }: VisibilityFormToggleProps) {
     const iconClass =
         "text-syre-grey-600 dark:text-syre-grey-300 \
         peer-checked:bg-primary-700 dark:peer-checked:bg-primary-500 \
         peer-checked:text-white dark:peer-checked:text-black \
+        transition-colors duration-200 ease-in-out\
         rounded-full block \
         h-full aspect-square p-1 cursor-pointer";
 
     let parentClass = "flex";
     if (className) {
         parentClass += " " + className;
+    }
+
+    if (onChange === undefined) {
+        onChange = (_) => {};
     }
 
     return (
@@ -47,6 +54,7 @@ export function VisibilityFormToggle({
                     value={VisibilityPublic}
                     defaultChecked={defaultValue === VisibilityPublic}
                     className="hidden peer"
+                    onChange={(_) => onChange(VisibilityPublic)}
                 />
                 <span className="sr-only">Public</span>
                 <span className={iconClass}>
@@ -63,6 +71,7 @@ export function VisibilityFormToggle({
                     value={VisibilityPrivate}
                     defaultChecked={defaultValue === VisibilityPrivate}
                     className="hidden peer"
+                    onChange={(_) => onChange(VisibilityPrivate)}
                 />
                 <span className="sr-only">Private</span>
                 <span className={iconClass}>

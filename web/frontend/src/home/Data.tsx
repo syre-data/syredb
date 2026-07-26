@@ -7,6 +7,7 @@ import {
     uuidToString,
 } from "@/common";
 import { Loading, SuspenseError } from "@/components";
+import { value_to_string } from "@/components/Property";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
@@ -25,6 +26,7 @@ import {
     ValueTypeString,
     ValueTypeTimestamp,
     ValueTypeUint,
+    VisibilityPublic,
     type DataCreator,
     type DataCreatorTransformInfo,
     type DataCreatorType,
@@ -254,7 +256,9 @@ function Properties({ properties }: PropertiesProps) {
                             {properties.map((property) => (
                                 <tr key={property.Key}>
                                     <th className="pr-2">{property.Key}</th>
-                                    <td className="px-2">{property.Value}</td>
+                                    <td className="px-2">
+                                        {value_to_string(property)}
+                                    </td>
                                     <td className="pl-2 text-syre-grey-700 dark:text-syre-grey-300">
                                         ({property.Type})
                                     </td>
@@ -289,11 +293,28 @@ function Notes({ notes }: NotesProps) {
                         {notes.map((note) => (
                             <li key={note.Id.toString()}>
                                 <div className="px-4 pb-2">
-                                    <h4>
-                                        {timestampToString(
-                                            new Date(note.Timestamp),
-                                        )}
-                                    </h4>
+                                    <div className="flex gap-2 items-center">
+                                        <h3>
+                                            {timestampToString(
+                                                new Date(note.Timestamp),
+                                            )}
+                                        </h3>
+                                        <div
+                                            title={
+                                                note.Visibility ===
+                                                VisibilityPublic
+                                                    ? "Public"
+                                                    : "Private"
+                                            }
+                                        >
+                                            {note.Visibility ===
+                                            VisibilityPublic ? (
+                                                <Icon.Eye />
+                                            ) : (
+                                                <Icon.EyeSlash />
+                                            )}
+                                        </div>
+                                    </div>
                                     <div>{note.Content}</div>
                                 </div>
                             </li>
