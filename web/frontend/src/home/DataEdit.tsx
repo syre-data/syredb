@@ -14,6 +14,7 @@ import {
     parse_string_to_type,
     type_string_to_variant,
     value_is_compatible_with_type,
+    value_to_string,
 } from "@/components/Property";
 import { VisibilityFormToggle, VisibilityIcon } from "@/components/Visibility";
 import Icon from "@/icon";
@@ -205,49 +206,6 @@ function useMutationProperties(queryClient: QueryClient, data: UUIDTypes) {
         mutationFn: (update: DataPropertiesUpdate) => {
             return dataService.propertiesUpdate(update).then((_) => update);
         },
-        // onMutate: async (update) => {
-        //     await queryClient.cancelQueries({
-        //         queryKey: [QUERY_KEY_DATA, uuidToString(data)],
-        //     });
-
-        //     const previous = queryClient.getQueryData([
-        //         QUERY_KEY_DATA,
-        //         uuidToString(data),
-        //     ]);
-        //     queryClient.setQueryData(
-        //         [QUERY_KEY_DATA, uuidToString(data)],
-        //         (current: any) => {
-        //             let properties = [...current.Properties] as Property[];
-        //             properties = properties.filter(
-        //                 (property) => !update.Remove.includes(property.Key),
-        //             );
-        //             properties.concat(update.Create);
-        //             for (const { Key, Value } of update.ValuesUpdate) {
-        //                 const idx = properties.findIndex(
-        //                     (property) => property.Key === Key,
-        //                 );
-        //                 if (idx < 0) {
-        //                     throw new Error(`invalid property key '${Key}'`);
-        //                 }
-
-        //                 properties[idx]!.Value = Value;
-        //             }
-
-        //             current.properties = properties;
-        //             return current;
-        //         },
-        //     );
-
-        //     return { previous };
-        // },
-        // onError: (_err, _update, context) => {
-        //     if (context?.previous) {
-        //         queryClient.setQueryData(
-        //             [QUERY_KEY_DATA, uuidToString(data)],
-        //             context.previous,
-        //         );
-        //     }
-        // },
         onSettled: () => {
             queryClient.invalidateQueries({
                 queryKey: [QUERY_KEY_DATA, uuidToString(data)],
@@ -266,10 +224,11 @@ function useFormProperties(
     return useForm({
         defaultValues: {
             properties: properties,
-            removed: new Array<string>(),
+            removed: new Array<Property>(),
             created: new Array<PropertyCreate>(),
         },
         onSubmit: async ({ value, formApi }) => {
+            const removed = value.removed.map((property) => property.Key);
             const created = value.created.map((property) => {
                 let value;
                 if (property.type === PropertyTypeQuantity) {
@@ -333,13 +292,31 @@ function useFormProperties(
 
             const update = {
                 Id: data,
-                Remove: value.removed,
+                Remove: removed,
                 Create: created,
                 ValuesUpdate: updated,
             };
-            await onSubmit.mutateAsync(update).then((_update) => {
-                // TODO: Don't reload, just update data
-                window.location.reload();
+            await onSubmit.mutateAsync(update).then((update) => {
+                let props = [...formApi.state.values.properties];
+                props = props.filter(
+                    (property) => !update.Remove.includes(property.Key),
+                );
+                props = props.concat(update.Create);
+                for (const { Key, Value } of update.ValuesUpdate) {
+                    const idx = props.findIndex(
+                        (property) => property.Key === Key,
+                    );
+                    if (idx < 0) {
+                        throw new Error("invalid property");
+                    }
+                    props[idx]!.Value = Value;
+                }
+
+                formApi.reset({
+                    properties: props,
+                    removed: new Array<Property>(),
+                    created: new Array<PropertyCreate>(),
+                });
             });
         },
     });
@@ -350,7 +327,11 @@ type PropertiesFormApi = ReturnType<typeof useFormProperties>;
 function DataProperties({ data, properties }: DataPropertiesProps) {
     const queryClient = useQueryClient();
     const update_mutation = useMutationProperties(queryClient, data);
-    const form = useFormProperties(data, properties, update_mutation);
+
+    const properties_sorted = properties.toSorted((a, b) =>
+        a.Key.localeCompare(b.Key),
+    );
+    const form = useFormProperties(data, properties_sorted, update_mutation);
 
     function create_property(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
@@ -381,7 +362,9 @@ function DataProperties({ data, properties }: DataPropertiesProps) {
             </div>
             <form.Subscribe
                 selector={(state) =>
-                    state.values.properties.length + state.values.created.length
+                    state.values.properties.length +
+                    state.values.created.length +
+                    state.values.removed.length
                 }
             >
                 {(count) =>
@@ -422,22 +405,24 @@ function DataPropertiesContent({ form }: DataPropertiesContentProps) {
                             {(properties) => {
                                 return (
                                     <>
-                                        {properties.state.value
-                                            .sort((a, b) =>
-                                                a.Key.localeCompare(b.Key),
-                                            )
-                                            .map((property, idx) => (
+                                        {properties.state.value.map(
+                                            (property, idx) => (
                                                 <DataPropertyItem
-                                                    key={idx}
+                                                    key={property.Key}
                                                     form={form}
                                                     idx={idx}
                                                     property={property}
                                                 />
-                                            ))}
+                                            ),
+                                        )}
                                     </>
                                 );
                             }}
                         </form.Field>
+                    </tbody>
+                </table>
+                <table>
+                    <tbody>
                         <form.Field name="created" mode="array">
                             {(properties) => (
                                 <>
@@ -445,6 +430,26 @@ function DataPropertiesContent({ form }: DataPropertiesContentProps) {
                                         (property, idx) => (
                                             <DataPropertyCreateItem
                                                 key={idx}
+                                                form={form}
+                                                idx={idx}
+                                                property={property}
+                                            />
+                                        ),
+                                    )}
+                                </>
+                            )}
+                        </form.Field>
+                    </tbody>
+                </table>
+                <table>
+                    <tbody>
+                        <form.Field name="removed" mode="array">
+                            {(properties) => (
+                                <>
+                                    {properties.state.value.map(
+                                        (property, idx) => (
+                                            <DataPropertyRemovedItem
+                                                key={property.Key}
                                                 form={form}
                                                 idx={idx}
                                                 property={property}
@@ -491,13 +496,21 @@ function DataPropertyItem({ form, idx, property }: DataPropertyItemProps) {
             return;
         }
 
-        const key = form.state.values.properties[idx]!.Key;
-        form.pushFieldValue("removed", key);
+        const removing = form.state.values.properties[idx]!;
+        const idx_insert = form.state.values.removed.findIndex(
+            (property) => property.Key.localeCompare(removing.Key) > 0,
+        );
+        if (idx_insert === -1) {
+            form.pushFieldValue("removed", removing);
+        } else {
+            form.insertFieldValue("removed", idx_insert, removing);
+        }
+
         form.removeFieldValue("properties", idx);
     }
 
     return (
-        <tr key={idx} className="group/row">
+        <tr className="group/row">
             <th className="pr-2 py-1 text-left">{property.Key}</th>
             <td className="px-2 py-1">{property.Type}</td>
             <td className="px-2 py-1">
@@ -531,11 +544,6 @@ function DataPropertyItem({ form, idx, property }: DataPropertyItemProps) {
                                             property.Type ===
                                             PropertyTypeQuantity
                                         ) {
-                                            console.debug(
-                                                e.target.name,
-                                                e.target.value,
-                                                value,
-                                            );
                                             if (
                                                 e.target.name ===
                                                 `properties[${idx}].Value.magnitude`
@@ -610,11 +618,12 @@ function DataPropertyCreateItem({
     }
 
     return (
-        <tr key={idx}>
+        <tr>
             <td className="pr-2 py-1">
                 <form.Field
                     name={`created[${idx}].key`}
                     validators={{
+                        onChangeListenTo: ["properties"],
                         onChange: ({ value, fieldApi }) => {
                             if (value === "") {
                                 return undefined;
@@ -775,6 +784,61 @@ function DataPropertyCreateItem({
                 >
                     <Icon.Minus />
                 </button>
+            </td>
+        </tr>
+    );
+}
+
+interface DataPropertyRemovedItemProps {
+    form: PropertiesFormApi;
+    idx: number;
+    property: Property;
+}
+function DataPropertyRemovedItem({
+    form,
+    idx,
+    property,
+}: DataPropertyRemovedItemProps) {
+    function keep(e: MouseEvent<HTMLButtonElement>, idx: number) {
+        if (e.button !== MouseButton.Primary) {
+            return;
+        }
+
+        const restoring = form.state.values.removed[idx]!;
+        const idx_insert = form.state.values.properties.findIndex(
+            (property) => property.Key.localeCompare(restoring.Key) > 0,
+        );
+        if (idx_insert === -1) {
+            form.pushFieldValue("properties", restoring);
+        } else {
+            form.insertFieldValue("properties", idx_insert, restoring);
+        }
+
+        form.removeFieldValue("removed", idx);
+    }
+
+    return (
+        <tr className="group/row">
+            <th className="pr-2 py-1 text-left text-syre-grey-600 dark:text-syre-grey-300">
+                {property.Key}
+            </th>
+            <td className="px-2 py-1 text-syre-grey-600 dark:text-syre-grey-300">
+                {property.Type}
+            </td>
+            <td className="px-2 py-1 text-syre-grey-600 dark:text-syre-grey-300">
+                {value_to_string(property)}
+            </td>
+            <td className="pl-2 py-1">
+                <div className=" invisible group-hover/row:visible">
+                    <button
+                        type="button"
+                        className="btn-cmd"
+                        onMouseDown={(e) => keep(e, idx)}
+                        title={`Keep property ${property.Key}`}
+                    >
+                        <Icon.Plus />
+                    </button>
+                </div>
             </td>
         </tr>
     );

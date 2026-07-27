@@ -31,7 +31,10 @@
     },
     "devDependencies": {
         "@tanstack/devtools-vite": "^0.8",
+        "@tanstack/react-devtools": "^0.10.9",
         "@tanstack/react-form-devtools": "^0.2.31",
+        "@tanstack/react-query-devtools": "^5.101.4",
+        "@tanstack/react-router-devtools": "^1.167.0",
         "@types/node": "^26.0.0",
         "@types/react": "^19",
         "@types/react-dom": "^19",

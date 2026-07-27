@@ -79,7 +79,6 @@ export function parse_string_to_type(
         case types.PropertyTypeString:
             return value.trim();
         case types.PropertyTypeBool:
-            console.debug(value, typeof value);
             return value === "true" || value === "on";
         case types.PropertyTypeInt:
             return parseInt(value);
@@ -232,7 +231,12 @@ export function InputPropertyValue({
 }: InputPropertyValueProps) {
     const inputNode = useRef(null);
     if (value && !value_is_compatible_with_type(value, type)) {
-        console.error("incompatible property value for type", type, value);
+        console.error(
+            "incompatible property value for type",
+            type,
+            value,
+            typeof value,
+        );
         value = undefined;
     }
     if (defaultValue && !value_is_compatible_with_type(defaultValue, type)) {
@@ -240,6 +244,7 @@ export function InputPropertyValue({
             "incompatible property default value for type",
             type,
             defaultValue,
+            typeof defaultValue,
         );
         defaultValue = undefined;
     }
