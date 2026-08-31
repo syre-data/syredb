@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -27,12 +29,19 @@ import (
 	"syredb/service"
 )
 
+//go:embed dist/frontend/*
+var frontendFs embed.FS
+
 const devFrontendPath = "../frontend/dist"
+const prodFrontendPath = "dist/frontend"
 const JWTContextKey string = "user"
 const EnvKey = "SYREDB_ENV"
 const IncludePath = "../frontend/dist"
+const ViteUrl = "http://localhost:5173"
 
 func main() {
+	envCtx := os.Getenv(EnvKey)
+
 	ctx := context.Background()
 	db_credentials, err := database.CollectCredentialsFromEnvAndFlags()
 	if err != nil {
@@ -75,6 +84,12 @@ func main() {
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestID())
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			c.Set("env", envCtx)
+			return next(c)
+		}
+	})
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins:     []string{"http://localhost:8080", "https://localhost:8080"},
 		AllowCredentials: true,
@@ -102,9 +117,18 @@ func main() {
 		ContinueOnIgnoredError: true,
 	}))
 
-	static_root, err := filepath.Abs(devFrontendPath)
-	if err != nil {
-		panic(err)
+	var static_root string
+	var fileSystem fs.FS
+	if envCtx == "production" {
+		static_root = prodFrontendPath
+		fileSystem = frontendFs
+	} else {
+		root, err := filepath.Abs(devFrontendPath)
+		if err != nil {
+			panic(err)
+		}
+		static_root = root
+		fileSystem = nil
 	}
 	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
 		Root:       static_root,
@@ -112,7 +136,7 @@ func main() {
 		HTML5:      true,
 		Browse:     false,
 		IgnoreBase: false,
-		Filesystem: nil,
+		Filesystem: fileSystem,
 		Skipper: middleware.Skipper(func(c *echo.Context) bool {
 			_, jwt_err := echo.ContextGet[*jwt.Token](c, handler.SessionTokenKey)
 			valid_token := jwt_err == nil
@@ -140,7 +164,9 @@ func main() {
 		data_handler,
 		api_client_handler,
 	)
-	if os.Getenv("ENV") != "production" {
+	if envCtx == "production" {
+		serve_prod(e)
+	} else {
 		proxy_to_vite(e)
 	}
 
@@ -273,6 +299,7 @@ func register_routes(
 	api.Use(api_middleware.SessionTokenFromJWT)
 	api.Use(api_middleware.UserIdFromSessionToken)
 
+	api.PUT("/logout", auth.Deactivate)
 	api.GET("/app/db-permissions", app.DbPermissions)
 	api.GET("/user", user.UserGet)
 	api.PUT("/user", user.UserUpdate)
@@ -329,8 +356,18 @@ func register_routes(
 	client.POST("/data/create", api_client.DataCreate)
 }
 
+func serve_prod(e *echo.Echo) {
+	dist, err := fs.Sub(frontendFs, "frontend/dist")
+	if err != nil {
+		panic(err)
+	}
+	// e.FileFS("/", "index.html", dist)
+
+	e.GET("/*", echo.WrapHandler(http.FileServer(http.FS(dist))))
+}
+
 func proxy_to_vite(e *echo.Echo) {
-	vite_url, _ := url.Parse("http://localhost:5173")
+	vite_url, _ := url.Parse(ViteUrl)
 	proxy := httputil.NewSingleHostReverseProxy(vite_url)
 
 	e.GET("/*", echo.WrapHandler(proxy))

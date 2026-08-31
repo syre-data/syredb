@@ -1,6 +1,5 @@
 function logout(): Promise<Response> {
-    return fetch("/api/logout", {
-        method: "PUT",
+    return fetch("/logout", {
         credentials: "same-origin",
     });
 }

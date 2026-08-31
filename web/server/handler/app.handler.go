@@ -25,12 +25,17 @@ func NewAppHandler(
 }
 
 func (h AppHandler) Index(c *echo.Context) error {
+	isProd := c.Get("env") == "production"
 	_, err := echo.ContextGet[*jwt.Token](c, SessionTokenKey)
 	if err != nil {
 		return h.indexUnauthenticatedHandler(c)
 	}
 
-	panic("unreachable: session token validity checked in middleware")
+	if isProd {
+		return c.HTML(200, "<div>Hi</div>")
+	} else {
+		panic("unreachable: session token validity checked in middleware")
+	}
 }
 
 func (h *AppHandler) indexUnauthenticatedHandler(c *echo.Context) error {

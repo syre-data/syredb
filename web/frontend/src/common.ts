@@ -155,3 +155,87 @@ export function timestampToString(date: Date | string): string {
     const s = String(date.getSeconds()).padStart(2, "0");
     return `${y}-${mo}-${d} ${h}:${m}:${s}`;
 }
+
+// Parse a string to a float, collecting the remaining characters.
+//
+// @returns `value` is `NaN` if no value could be parsed, with `remaining` being the whole string.
+export function parseFloatWithRemainder(value: string): {
+    value: number;
+    remaining: string;
+} {
+    const match = value.match(/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/);
+    if (!match) {
+        return { value: NaN, remaining: value };
+    }
+
+    return {
+        value: parseFloat(match[0]),
+        remaining: value.slice(match[0].length),
+    };
+}
+
+// Parse a string to an int, collecting the remaining characters.
+//
+// @returns `value` is `NaN` if no value could be parsed, with `remaining` being the whole string.
+export function parseIntWithRemainder(value: string): {
+    value: number;
+    remaining: string;
+} {
+    const match = value.match(/^[+-]?(?:\d+)(?:[eE][+-]?\d+)?/);
+    if (!match) {
+        return { value: NaN, remaining: value };
+    }
+
+    return {
+        value: parseInt(match[0]),
+        remaining: value.slice(match[0].length),
+    };
+}
+
+// Parse a string to the given data type.
+// # Notes
+// + string types are trimmed.
+//
+// @throws If type is invalid.
+// @throws If value can not be parsed as type.
+export function stringToDataValue(value: string, type: types.ValueType): any {
+    const PARSE_ERR = `could not parse value ${value} as ${type}`;
+    let parsed;
+    switch (type) {
+        case types.ValueTypeString:
+            return value.trim();
+        case types.ValueTypeInt:
+            parsed = parseIntWithRemainder(value);
+            if (Number.isNaN(parsed.value) || parsed.remaining.length > 0) {
+                throw new Error(PARSE_ERR);
+            }
+            return parsed.value;
+        case types.ValueTypeUint:
+            parsed = parseIntWithRemainder(value);
+            if (
+                Number.isNaN(parsed.value) ||
+                parsed.value < 0 ||
+                parsed.remaining.length > 0
+            ) {
+                throw new Error(PARSE_ERR);
+            }
+            return parsed.value;
+        case types.ValueTypeFloat:
+            parsed = parseFloatWithRemainder(value);
+            if (Number.isNaN(parsed.value) || parsed.remaining.length > 0) {
+                throw new Error(PARSE_ERR);
+            }
+            return parsed.value;
+        case types.ValueTypeBoolean:
+            const trueVals = ["true", "on"];
+            return trueVals.includes(value);
+        case types.ValueTypeTimestamp:
+            parsed = Date.parse(value);
+            if (Number.isNaN(parsed)) {
+                throw new Error(PARSE_ERR);
+            }
+            return parsed;
+        default:
+            throw new Error(`invalid data type ${type}`);
+    }
+}

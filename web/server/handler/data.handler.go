@@ -1765,7 +1765,6 @@ type DataIngestSourceInfo struct {
 
 func (h *DataHandler) DataIngest(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-
 	sufficient_permission, err := h.user_service.UserHasPermission(
 		user_id,
 		service.DbPermissionDataCreate,
@@ -1958,7 +1957,7 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 							"error", err,
 							"source", source,
 							"file", name,
-						).Error("could not get form file")
+						).Warn("could not get form file")
 						return c.NoContent(http.StatusBadRequest)
 					}
 
@@ -1985,7 +1984,7 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 							"source", source,
 							"field", field,
 						).Warn("invalid source cardinality")
-						return c.NoContent(http.StatusBadGateway)
+						return c.NoContent(http.StatusBadRequest)
 					}
 
 					files, exists := form.File[name]
@@ -1993,7 +1992,7 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 						c.Logger().With(
 							"source", source,
 							"file", name,
-						).Error("could not get form file")
+						).Warn("could not get form file")
 						return c.NoContent(http.StatusBadRequest)
 					}
 

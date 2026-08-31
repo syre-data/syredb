@@ -127,7 +127,7 @@ function DataTypeCommon({ dataType }: DataTypeCommonProps) {
                         ) : (
                             <Icon.CircleX
                                 title="Inactive"
-                                className="text-syre-grey-400 dark:text-syre-grey-600"
+                                className="text-secondary"
                             />
                         )}
                     </div>
@@ -178,7 +178,7 @@ function DataTypeInternal({ dataType }: DataTypeInternalProps) {
                         type="button"
                         className="btn-cmd flex gap-1 items-center"
                     >
-                        <Icon.DataSchema />
+                        <Icon.Columns />
                         {data_schema?.DataSchema.Label}
                     </button>
                 </Link>

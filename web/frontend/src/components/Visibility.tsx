@@ -26,7 +26,7 @@ export function VisibilityFormToggle({
     onChange,
 }: VisibilityFormToggleProps) {
     const iconClass =
-        "text-syre-grey-600 dark:text-syre-grey-300 \
+        "text-secondary \
         peer-checked:bg-primary-700 dark:peer-checked:bg-primary-500 \
         peer-checked:text-white dark:peer-checked:text-black \
         transition-colors duration-200 ease-in-out\

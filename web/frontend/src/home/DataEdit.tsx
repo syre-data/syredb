@@ -11,7 +11,7 @@ import {
     SuspenseError,
 } from "@/components";
 import {
-    parse_string_to_type,
+    stringToPropertyValue,
     type_string_to_variant,
     value_is_compatible_with_type,
     value_to_string,
@@ -238,7 +238,7 @@ function useFormProperties(
                     };
                 } else {
                     try {
-                        value = parse_string_to_type(
+                        value = stringToPropertyValue(
                             property.value,
                             property.type,
                         );
@@ -263,7 +263,7 @@ function useFormProperties(
                 .map((property) => {
                     let value = property.Value;
                     if (typeof value === "string") {
-                        value = parse_string_to_type(
+                        value = stringToPropertyValue(
                             property.Value,
                             property.Type,
                         );
@@ -380,11 +380,7 @@ function DataProperties({ data, properties }: DataPropertiesProps) {
 }
 
 function DataPropertiesEmpty() {
-    return (
-        <div className="px-4 pt-2 text-syre-grey-700 dark:text-syre-grey-300">
-            (no properties)
-        </div>
-    );
+    return <div className="px-4 pt-2 text-secondary">(no properties)</div>;
 }
 
 interface DataPropertiesContentProps {
@@ -518,7 +514,7 @@ function DataPropertyItem({ form, idx, property }: DataPropertyItemProps) {
                     {(pvalue) => {
                         let value = pvalue.state.value;
                         if (typeof value === "string") {
-                            value = parse_string_to_type(value, property.Type);
+                            value = stringToPropertyValue(value, property.Type);
                         }
                         if (property.Type === PropertyTypeQuantity) {
                             value = {
@@ -568,7 +564,7 @@ function DataPropertyItem({ form, idx, property }: DataPropertyItemProps) {
                                                 );
                                             }
                                         } else {
-                                            update = parse_string_to_type(
+                                            update = stringToPropertyValue(
                                                 e.target.value,
                                                 property.Type,
                                             );
@@ -697,7 +693,7 @@ function DataPropertyCreateItem({
                                 {(pvalue) => {
                                     let value = pvalue.state.value;
                                     if (typeof value === "string") {
-                                        value = parse_string_to_type(
+                                        value = stringToPropertyValue(
                                             value,
                                             property.type,
                                         );
@@ -759,7 +755,7 @@ function DataPropertyCreateItem({
                                                     }
                                                 } else {
                                                     update =
-                                                        parse_string_to_type(
+                                                        stringToPropertyValue(
                                                             e.target.value,
                                                             property.type,
                                                         );
@@ -819,13 +815,11 @@ function DataPropertyRemovedItem({
 
     return (
         <tr className="group/row">
-            <th className="pr-2 py-1 text-left text-syre-grey-600 dark:text-syre-grey-300">
+            <th className="pr-2 py-1 text-left text-secondary">
                 {property.Key}
             </th>
-            <td className="px-2 py-1 text-syre-grey-600 dark:text-syre-grey-300">
-                {property.Type}
-            </td>
-            <td className="px-2 py-1 text-syre-grey-600 dark:text-syre-grey-300">
+            <td className="px-2 py-1 text-secondary">{property.Type}</td>
+            <td className="px-2 py-1 text-secondary">
                 {value_to_string(property)}
             </td>
             <td className="pl-2 py-1">
@@ -905,11 +899,7 @@ function DataNotes({ data, notes }: DataNotesProps) {
 }
 
 function DataNotesEmpty() {
-    return (
-        <div className="px-4 pt-2 text-syre-grey-700 dark:text-syre-grey-300">
-            (no notes)
-        </div>
-    );
+    return <div className="px-4 pt-2 text-secondary">(no notes)</div>;
 }
 
 interface DataNotesContentProps {

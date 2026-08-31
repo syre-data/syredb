@@ -40,7 +40,7 @@ function Nav() {
                 <div>
                     <Link to="/data-schemas" title="Data schemas">
                         <button type="button" className="btn-cmd">
-                            <icon.DataSchema />
+                            <icon.Columns />
                         </button>
                     </Link>
                 </div>

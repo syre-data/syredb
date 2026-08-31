@@ -114,8 +114,8 @@ CREATE TABLE IF NOT EXISTS data_schema_field_ (
     _id UUID REFERENCES data_schema_(_id) NOT NULL,
     _label VARCHAR(128) NOT NULL,
     _dtype value_type NOT NULL,
-    _required boolean DEFAULT true NOT NULL,
-    _nullable boolean DEFAULT false NOT NULL,
+    _required boolean DEFAULT true NOT NULL, -- field can be missing
+    _nullable boolean DEFAULT false NOT NULL, -- value(s) can be missing
     index INT NOT NULL, -- default index for display and export
     description TEXT,
     PRIMARY KEY (_id, _label),

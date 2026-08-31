@@ -1,6 +1,7 @@
 import { useRef, useLayoutEffect } from "react";
 import type { ComponentPropsWithoutRef } from "react";
 import * as types from "@/types";
+import { parseFloatWithRemainder, parseIntWithRemainder } from "@/common";
 
 export interface QuantityValue {
     magnitude: number;
@@ -69,27 +70,76 @@ export function value_is_compatible_with_type(
     }
 }
 
-// For `PropertyTypeQuantity` only parses `Magnitude` as float.
-// Does **not** check values are valid. e.g. UInt greater than 0.
-export function parse_string_to_type(
+// Parses a string as the given type. If parsing succeeds, validates the value conforms to the type.
+// e.g. Validates value is non-negative for uint.
+//
+// # Notes
+// + Trims string type value.
+// + For numeric and date types, throws an error if string could not be parsed as value.
+// + For boolean type, returns `true` if value is in ["true", "on"], `false` otherwise.
+// + For quantity type, parses first part of string as float assigned to magnitude, remainder is trimmed and assigned to unit.
+//
+// @throws Could not parse value.
+// @throws Value is invalid.
+export function stringToPropertyValue(
     value: string,
     type: types.PropertyType,
 ): any {
+    const PARSE_ERR = "could not parse value as type";
+
+    let parsed;
     switch (type) {
         case types.PropertyTypeString:
             return value.trim();
         case types.PropertyTypeBool:
-            return value === "true" || value === "on";
+            const trueVals = ["true", "on"];
+            return trueVals.includes(value);
         case types.PropertyTypeInt:
-            return parseInt(value);
+            parsed = parseIntWithRemainder(value);
+            if (
+                Number.isNaN(parsed.value) ||
+                parsed.remaining.trim().length > 0
+            ) {
+                throw new Error(PARSE_ERR);
+            }
+            return parsed.value;
         case types.PropertyTypeUint:
-            return parseInt(value);
+            parsed = parseIntWithRemainder(value);
+            if (
+                Number.isNaN(parsed.value) ||
+                parsed.value < 0 ||
+                parsed.remaining.trim().length > 0
+            ) {
+                throw new Error(PARSE_ERR);
+            }
+            return parsed.value;
         case types.PropertyTypeFloat:
-            return parseFloat(value);
+            parsed = parseFloatWithRemainder(value);
+            if (
+                Number.isNaN(parsed.value) ||
+                parsed.remaining.trim().length > 0
+            ) {
+                throw new Error(PARSE_ERR);
+            }
+            return parsed.value;
         case types.PropertyTypeTimestamp:
-            return Date.parse(value);
+            parsed = Date.parse(value);
+            if (Number.isNaN(parsed)) {
+                throw new Error(PARSE_ERR);
+            }
+            return parsed;
         case types.PropertyTypeQuantity:
-            return parseFloat(value);
+            parsed = parseFloatWithRemainder(value);
+            if (
+                Number.isNaN(parsed.value) ||
+                parsed.remaining.trim().length === 0
+            ) {
+                throw new Error(PARSE_ERR);
+            }
+            return {
+                magnitude: parsed.value,
+                unit: parsed.remaining.trim(),
+            };
     }
 }
 
@@ -217,56 +267,21 @@ type InputPropertyValueProps = ComponentPropsWithoutRef<"input"> & {
     type: types.PropertyType;
     value?: any;
     defaultValue?: any;
-    quantity_magnitude_props?: ComponentPropsWithoutRef<"input">;
-    quantity_unit_props?: ComponentPropsWithoutRef<"input">;
 };
 export function InputPropertyValue({
     ref,
     type,
     value,
     defaultValue,
-    quantity_magnitude_props,
-    quantity_unit_props,
     ...props
 }: InputPropertyValueProps) {
     const inputNode = useRef(null);
-    if (value && !value_is_compatible_with_type(value, type)) {
-        console.error(
-            "incompatible property value for type",
-            type,
-            value,
-            typeof value,
-        );
-        value = undefined;
-    }
-    if (defaultValue && !value_is_compatible_with_type(defaultValue, type)) {
-        console.error(
-            "incompatible property default value for type",
-            type,
-            defaultValue,
-            typeof defaultValue,
-        );
-        defaultValue = undefined;
-    }
-
-    useLayoutEffect(() => {
-        if (
-            inputNode.current !== null &&
-            type === types.PropertyTypeBool &&
-            value === undefined &&
-            defaultValue === undefined
-        ) {
-            const input = inputNode.current as HTMLInputElement;
-            input.indeterminate = true;
-        }
-    }, [inputNode]);
-
     switch (type) {
         case types.PropertyTypeString:
             return (
                 <input
                     ref={inputNode}
-                    type="string"
+                    type="text"
                     value={value}
                     defaultValue={defaultValue}
                     {...props}
@@ -324,49 +339,14 @@ export function InputPropertyValue({
                 />
             );
         case types.PropertyTypeQuantity:
-            const mag_id = props.id ? `${props.id}.magnitude` : "";
-            const mag_name = props.name ? `${props.name}.magnitude` : "";
-            const unit_id = props.id ? `${props.id}.unit` : "";
-            const unit_name = props.name ? `${props.name}.unit` : "";
-            const quant_props = { ...props };
-            delete quant_props.id;
-            delete quant_props.name;
-            delete quant_props.placeholder;
-            let value_magnitude, value_unit;
-            let default_magnitude, default_unit;
-            if (value) {
-                const val = value as QuantityValue;
-                value_magnitude = val.magnitude;
-                value_unit = val.unit;
-            }
-            if (defaultValue) {
-                const val = defaultValue as QuantityValue;
-                default_magnitude = val.magnitude;
-                default_unit = val.unit;
-            }
             return (
-                <>
-                    <input
-                        type="text"
-                        id={mag_id}
-                        name={mag_name}
-                        value={value_magnitude}
-                        defaultValue={default_magnitude}
-                        placeholder="Magnitude"
-                        {...quant_props}
-                        {...quantity_magnitude_props}
-                    />
-                    <input
-                        type="text"
-                        id={unit_id}
-                        name={unit_name}
-                        value={value_unit}
-                        defaultValue={default_unit}
-                        placeholder="Unit"
-                        {...quant_props}
-                        {...quantity_unit_props}
-                    />
-                </>
+                <input
+                    ref={inputNode}
+                    type="text"
+                    value={value}
+                    defaultValue={defaultValue}
+                    {...props}
+                />
             );
     }
 }

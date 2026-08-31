@@ -132,13 +132,13 @@ function DataTypeItem({ data_type }: DataTypeItemProps) {
         <tr
             className={classNames({
                 group: true,
-                "text-gray-600 dark:text-gray-400": !data_type.Active,
+                "text-secondary": !data_type.Active,
             })}
         >
             <td className="whitespace-nowrap w-0">{data_type.Label}</td>
             <td className="whitespace-nowrap w-0">
                 {data_type.Storage === types.DataStorageInternal ? (
-                    <icon.DataSchema
+                    <icon.Columns
                         className="inline-block"
                         title="Internal storage"
                     />

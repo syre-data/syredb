@@ -284,20 +284,32 @@ function dataTypeTransformCreate(data: FormData): Promise<Response> {
     });
 }
 
+// # Notes
+// + `Sources` keys should be UUIDs
+export interface DataIngest {
+    Type: uuid.UUIDTypes;
+    Timestamp: Date;
+    Visibility: types.Visibility;
+    Properties: types.Property[];
+    Notes: types.DataNoteCreate[];
+    Values?: Record<string, any>;
+    Sources?: Record<string, any>;
+}
+
 function projectDataCreate(
     project: uuid.UUIDTypes,
-    data: types.DataIngest[],
+    data: DataIngest[],
     labels: string[],
-    sourceFiles: [string, File | File[]][],
+    sourceFiles: [string, File | FileList][],
 ) {
     const params = new URLSearchParams();
-    params.set("project", project.toString());
+    params.set("project", uuidToString(project));
 
     const body = new FormData();
     body.set("data", JSON.stringify(data));
     body.set("project_labels", JSON.stringify(labels));
     for (const [key, file] of sourceFiles) {
-        if (file instanceof Array) {
+        if (file instanceof FileList) {
             for (const f of file) {
                 body.append(key, f);
             }

@@ -510,7 +510,7 @@ function DataPreviewInner({
     }
 
     const className =
-        "bg-white dark:bg-syre-grey-900 border-2 border-secondary-700 dark:border-secondary-400 rounded";
+        "bg-white dark:bg-syre-gray-900 border-2 border-secondary-700 dark:border-secondary-400 rounded";
     return (
         <div ref={ref} style={style} className={className} {...floatingProps}>
             {previewComponent}

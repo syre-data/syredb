@@ -264,7 +264,7 @@ function DataTypeInternal({ dataType, dataTypes }: DataTypeInternalProps) {
                                 type="button"
                                 className="btn-cmd flex gap-1 items-center"
                             >
-                                <Icon.DataSchema />
+                                <Icon.Columns />
                                 {data_schema?.DataSchema.Label}
                             </button>
                         </Link>

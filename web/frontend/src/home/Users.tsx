@@ -125,8 +125,7 @@ function UserItem({ user }: UserItemProps) {
         <tr
             className={classNames({
                 group: true,
-                "text-gray-600": user.AccountStatus != "active",
-                "dark:text-gray-400": user.AccountStatus != "active",
+                "text-secondary": user.AccountStatus != "active",
             })}
         >
             <td className="whitespace-nowrap font-semibold w-0">

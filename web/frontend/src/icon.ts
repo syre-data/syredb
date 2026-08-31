@@ -1,4 +1,9 @@
-import { AiOutlinePlus, AiOutlineReload, AiOutlineMinus } from "react-icons/ai";
+import {
+    AiOutlinePlus,
+    AiOutlineReload,
+    AiOutlineMinus,
+    AiOutlineTable,
+} from "react-icons/ai";
 import {
     FaUser,
     FaCheck,
@@ -29,6 +34,7 @@ import { TbColumns3 } from "react-icons/tb";
 import { IoEyeOutline, IoEyeOffOutline } from "react-icons/io5";
 import { BsFile, BsFiles, BsArrowReturnRight } from "react-icons/bs";
 import { LuSquareFunction } from "react-icons/lu";
+import { RxText } from "react-icons/rx";
 
 export default {
     ArrowBack: IoIosArrowRoundBack,
@@ -39,8 +45,8 @@ export default {
     CircleCheck: FaRegCircleCheck,
     CircleX: FaRegCircleXmark,
     Close: FaX,
+    Columns: TbColumns3,
     DataType: MdOutlineCategory,
-    DataSchema: TbColumns3,
     Download: FaDownload,
     Eye: IoEyeOutline,
     EyeSlash: IoEyeOffOutline,
@@ -63,6 +69,8 @@ export default {
     Reload: AiOutlineReload,
     Search: FaSearch,
     Spinner: FaSpinner,
+    Table: AiOutlineTable,
+    Text: RxText,
     Trash: FaTrash,
     User: FaUser,
     Users: FaUserGroup,

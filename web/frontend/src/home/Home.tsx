@@ -26,12 +26,14 @@ import DataEdit from "./DataEdit";
 import DataOrigins from "./DataOrigins";
 import DataOriginEdit from "./DataOriginEdit";
 import DataOriginCreate from "./DataOriginCreate";
+import Logout from "./Logout";
 
 export default function Home() {
     return (
         <BrowserRouter>
             <Routes>
                 <Route index element={<Dashboard />} />
+                <Route path="/logout" element={<Logout />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/users" element={<Users />} />

@@ -251,9 +251,7 @@ function OrphanedDataItem({
             <td>{dataType.Label}</td>
             <td>{origin.Label}</td>
             <td>{data.Timestamp}</td>
-            <td className="text-gray-600 dark:text-gray-400">
-                ({children.length} children)
-            </td>
+            <td className="text-secondary">({children.length} children)</td>
             <td>
                 <div className="invisible group-hover:visible">
                     <Link to={`/data/${data.Id}`}>

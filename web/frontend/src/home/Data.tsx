@@ -259,7 +259,7 @@ function Properties({ properties }: PropertiesProps) {
                                     <td className="px-2">
                                         {value_to_string(property)}
                                     </td>
-                                    <td className="pl-2 text-syre-grey-700 dark:text-syre-grey-300">
+                                    <td className="pl-2 text-secondary">
                                         ({property.Type})
                                     </td>
                                 </tr>
