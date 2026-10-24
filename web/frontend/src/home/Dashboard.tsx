@@ -6,7 +6,6 @@ import { Link } from "react-router";
 import icon from "../icon";
 import * as common from "../common";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import classNames from "classnames";
 import project_service from "@/service/project.service";
 import data_service from "@/service/data.service";
 import { Loading, SuspenseError } from "@/components";

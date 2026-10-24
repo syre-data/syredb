@@ -417,6 +417,15 @@ function notesCreate(data: uuid.UUIDTypes, notes: types.DataNoteCreate[]) {
     });
 }
 
+function search(project: uuid.UUIDTypes, query: string) {
+    return fetch("/api/data/search", {
+        credentials: "same-origin",
+        method: "post",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project, query }),
+    });
+}
+
 export default {
     dataTypesGetAll,
     dataTypeCreateInternal,
@@ -447,4 +456,5 @@ export default {
     dataPreview,
     propertiesUpdate,
     notesCreate,
+    search,
 };

@@ -533,6 +533,54 @@ export interface ProjectDataMembershipRx {
 }
 
 //////////
+// source: query.go
+
+export type DataQueryTokenKind = number /* int */;
+export const EOF = 0;
+export const ILLEGAL = 1;
+export const STRING = 2;
+export const HEADER_PROPERTY = 3;
+export const HEADER_TAG = 4;
+export const NOT = 5;
+export const EQUAL = 6;
+export const NOT_EQUAL = 7;
+export const LESS = 8;
+export const LESS_EQUAL = 9;
+export const GREATER = 10;
+export const GREATER_EQUAL = 11;
+export type Position = number /* int */;
+export interface DataQueryLexer {
+}
+export const DataQueryFilterKindProject = "project";
+export const DataQueryFilterKindProperty = "property";
+export const DataQueryFilterKindTag = "tag";
+export type DataQueryFilterKind = typeof DataQueryFilterKindProject | typeof DataQueryFilterKindProperty | typeof DataQueryFilterKindTag;
+export const DataQueryOperatorEqual = "=";
+export const DataQueryOperatorNotEqual = "!=";
+export const DataQueryOperatorLess = "<";
+export const DataQueryOperatorLessOrEqual = "<=";
+export const DataQueryOperatorGreater = ">";
+export const DataQueryOperatorGreaterOrEqual = ">=";
+export type DataQueryOperator = typeof DataQueryOperatorEqual | typeof DataQueryOperatorNotEqual | typeof DataQueryOperatorLess | typeof DataQueryOperatorLessOrEqual | typeof DataQueryOperatorGreater | typeof DataQueryOperatorGreaterOrEqual;
+export type DataQueryFilter = any;
+export interface DataQueryFilterProject {
+  Project: uuid.UUIDTypes;
+}
+export interface DataQueryFilterProperty {
+  Key: string;
+  Operator?: DataQueryFilterPropertyOperator;
+}
+export interface DataQueryFilterPropertyOperator {
+  Operator: DataQueryOperator;
+  Kind: PropertyType;
+  Value: any;
+}
+export interface DataQueryFilterTag {
+  Tag: string;
+  Project: uuid.UUIDTypes;
+}
+
+//////////
 // source: user.service.go
 
 export const AppEmailUrlKey = "app:email:url";

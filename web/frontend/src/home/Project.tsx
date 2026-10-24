@@ -26,6 +26,7 @@ import {
     type SourceFileInfo,
 } from "@/types";
 import { useDismiss, useFloating, useInteractions } from "@floating-ui/react";
+import { useForm } from "@tanstack/react-form";
 import {
     QueryClient,
     useQuery,
@@ -34,7 +35,13 @@ import {
 } from "@tanstack/react-query";
 import classNames from "classnames";
 import type { types } from "node:util";
-import React, { Suspense, useState, type MouseEvent, type Ref } from "react";
+import React, {
+    Suspense,
+    useState,
+    type MouseEvent,
+    type Ref,
+    type SubmitEvent,
+} from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { data } from "react-router";
 import { Link, redirect, useParams } from "react-router";
@@ -125,7 +132,7 @@ function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
                             </button>
                         </Link>
                     </div>
-                    <div className="invisible group-hover:visible">
+                    <div className="invisible group-hover:visible in-focus-within:visible">
                         {data.length === 0 ? (
                             <button
                                 type="button"
@@ -144,6 +151,10 @@ function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
                         )}
                     </div>
                 </div>
+                <DataQuery
+                    projectId={projectId}
+                    className="invisible group-hover:visible in-focus-within:visible"
+                />
             </div>
             {data.length === 0 ? (
                 <ProjectDataEmpty />
@@ -156,6 +167,63 @@ function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
                 />
             )}
         </div>
+    );
+}
+
+interface DataQuery {
+    type?: string | string[];
+    property: Map<string, any>;
+    label?: string;
+    user?: string;
+    owner?: string;
+}
+
+interface DataQueryProps {
+    projectId: uuid.UUIDTypes;
+    className?: string;
+}
+function DataQuery({ projectId, className }: DataQueryProps) {
+    const form = useForm({
+        defaultValues: { query: "" },
+        onSubmit: async ({ value }) => {
+            const results = await dataService.search(
+                projectId,
+                value.query.trim(),
+            );
+
+            // TODO: filter data
+            console.debug(results);
+        },
+    });
+
+    function onsubmit(e: SubmitEvent<HTMLFormElement>) {
+        e.preventDefault();
+        e.stopPropagation();
+        form.handleSubmit();
+    }
+
+    return (
+        <form className={className} onSubmit={onsubmit}>
+            <div>
+                <label className="flex gap-1 items-center">
+                    <Icon.MagnifyingGlass />
+                    <form.Field name="query">
+                        {(field) => {
+                            return (
+                                <input
+                                    type="text"
+                                    className="input-basic"
+                                    value={field.state.value}
+                                    onChange={(e) =>
+                                        field.handleChange(e.target.value)
+                                    }
+                                />
+                            );
+                        }}
+                    </form.Field>
+                </label>
+            </div>
+        </form>
     );
 }
 
