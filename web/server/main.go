@@ -63,12 +63,14 @@ func main() {
 	user_service := service.NewUserService(ctx, e.Logger, db, auth_service)
 	data_service := service.NewDataService(ctx, e.Logger, db, app_service, user_service)
 	project_service := service.NewProjectService(ctx, e.Logger, db, user_service, data_service)
+	query_service := service.NewQueryService(ctx, e.Logger, db, data_service)
 
 	app_handler := handler.NewAppHandler(db, app_service)
 	auth_handler := handler.NewAuthHandler(db, auth_service)
 	user_handler := handler.NewUserHandler(db, user_service, app_service)
 	project_handler := handler.NewProjectHandler(db, project_service, user_service)
 	data_handler := handler.NewDataHandler(db, data_service, app_service, user_service, project_service)
+	query_handler := handler.NewQueryHandler(db, query_service)
 	api_client_handler := handler.NewApiClientHandler(db, auth_service, data_service)
 
 	transform_daemon_logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -162,6 +164,7 @@ func main() {
 		user_handler,
 		project_handler,
 		data_handler,
+		query_handler,
 		api_client_handler,
 	)
 	if envCtx == "production" {
@@ -288,6 +291,7 @@ func register_routes(
 	user *handler.UserHandler,
 	project *handler.ProjectHandler,
 	data *handler.DataHandler,
+	query *handler.QueryHandler,
 	api_client *handler.ApiClientHandler,
 ) {
 	e.GET("/", app.Index)
@@ -330,7 +334,7 @@ func register_routes(
 	api.GET("/data/values/preview", data.DataValuesPreview)
 	api.PUT("/data/properties", data.DataPropertiesUpdate)
 	api.POST("/data/notes", data.DataNotesCreate)
-	api.POST("/data/search", data.DataSearch)
+	api.POST("/data/search", query.DataSearch)
 	api.GET("/data/orphaned", data.OrphanedData)
 	api.GET("/data-origins", data.DataOrigins)
 	api.GET("/data-origin", data.DataOriginGet)

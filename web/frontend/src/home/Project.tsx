@@ -120,6 +120,8 @@ function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
     params.append("project", uuidToString(projectId));
     const download = `/resource/project/data?${params}`;
 
+    const [dataFilter, setDataFilter] = useState<null | uuid.UUIDTypes[]>(null);
+
     return (
         <div>
             <div className="px-4 flex gap-2 items-center group">
@@ -132,7 +134,12 @@ function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
                             </button>
                         </Link>
                     </div>
-                    <div className="invisible group-hover:visible in-focus-within:visible">
+                    <div
+                        className={classNames({
+                            "invisible group-hover:visible in-focus-within:visible": true,
+                            visible: dataFilter,
+                        })}
+                    >
                         {data.length === 0 ? (
                             <button
                                 type="button"
@@ -153,17 +160,22 @@ function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
                 </div>
                 <DataQuery
                     projectId={projectId}
-                    className="invisible group-hover:visible in-focus-within:visible"
+                    setDataFilter={setDataFilter}
+                    className={classNames({
+                        "invisible group-hover:visible in-focus-within:visible": true,
+                        visible: dataFilter,
+                    })}
                 />
             </div>
             {data.length === 0 ? (
                 <ProjectDataEmpty />
             ) : (
-                <ProjectDataList
+                <ProjectDataListView
                     projectId={projectId}
                     data={data}
                     relations={relations}
                     types={types}
+                    filter={dataFilter}
                 />
             )}
         </div>
@@ -180,19 +192,21 @@ interface DataQuery {
 
 interface DataQueryProps {
     projectId: uuid.UUIDTypes;
+    setDataFilter: React.Dispatch<
+        React.SetStateAction<
+            uuid.UUIDTypes<Uint8Array<ArrayBufferLike>>[] | null
+        >
+    >;
     className?: string;
 }
-function DataQuery({ projectId, className }: DataQueryProps) {
+function DataQuery({ projectId, setDataFilter, className }: DataQueryProps) {
     const form = useForm({
         defaultValues: { query: "" },
         onSubmit: async ({ value }) => {
-            const results = await dataService.search(
-                projectId,
-                value.query.trim(),
-            );
+            const res = await dataService.search(projectId, value.query.trim());
 
-            // TODO: filter data
-            console.debug(results);
+            const results = await res.json();
+            setDataFilter(results);
         },
     });
 
@@ -214,9 +228,13 @@ function DataQuery({ projectId, className }: DataQueryProps) {
                                     type="text"
                                     className="input-basic"
                                     value={field.state.value}
-                                    onChange={(e) =>
-                                        field.handleChange(e.target.value)
-                                    }
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (!val) {
+                                            setDataFilter(null);
+                                        }
+                                        field.handleChange(val);
+                                    }}
                                 />
                             );
                         }}
@@ -236,6 +254,54 @@ function ProjectDataEmpty() {
             </p>
         </div>
     );
+}
+
+interface ProjectDataListViewProps {
+    projectId: uuid.UUIDTypes;
+    data: ProjectData[];
+    relations: { [key: string]: uuid.UUIDTypes[] };
+    types: DataType[];
+    filter: uuid.UUIDTypes<Uint8Array<ArrayBufferLike>>[] | null;
+}
+function ProjectDataListView({
+    projectId,
+    data,
+    relations,
+    types,
+    filter,
+}: ProjectDataListViewProps) {
+    if (!filter) {
+        return (
+            <ProjectDataList
+                projectId={projectId}
+                data={data}
+                relations={relations}
+                types={types}
+            />
+        );
+    } else if (filter.length == 0) {
+        return <ProjectDataFilterEmpty />;
+    } else {
+        const filteredData = data.filter((data) => filter.includes(data.Id));
+
+        return (
+            <div>
+                <div className="text-sm px-4 pb-2">
+                    Filtered {filteredData.length} out of {data.length} data
+                </div>
+                <ProjectDataList
+                    projectId={projectId}
+                    data={filteredData}
+                    relations={relations}
+                    types={types}
+                />
+            </div>
+        );
+    }
+}
+
+function ProjectDataFilterEmpty() {
+    return <div className="pt-2 px-4 text-lg">No data match your query</div>;
 }
 
 interface ProjectDataListProps {

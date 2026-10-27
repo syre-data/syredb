@@ -419,10 +419,10 @@ func (s *DataService) DataTypesById(ids []uuid.UUID) ([]DataType, error) {
 }
 
 func (s *DataService) DataTypeById(id uuid.UUID) (DataType, error) {
-	data_type_query :=
+	q :=
 		`SELECT _id, _creator, _storage, label, description, active
 		FROM data_type_ WHERE _id=$1`
-	rows, _ := s.db.Conn.Query(s.ctx, data_type_query, id)
+	rows, _ := s.db.Conn.Query(s.ctx, q, id)
 	data_type, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataTypeRx])
 	if err != nil {
 		s.logger.With("error", err).Error("could not get data types")
@@ -433,10 +433,10 @@ func (s *DataService) DataTypeById(id uuid.UUID) (DataType, error) {
 }
 
 func (s *DataService) DataTypeByLabel(label string) (DataType, error) {
-	data_type_query :=
+	q :=
 		`SELECT _id, _creator, _storage, label, description, active
 		FROM data_type_ WHERE label=$1`
-	rows, _ := s.db.Conn.Query(s.ctx, data_type_query, label)
+	rows, _ := s.db.Conn.Query(s.ctx, q, label)
 	data_type, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataTypeRx])
 	if err != nil {
 		s.logger.With("error", err).Error("could not get data types")
@@ -4642,7 +4642,6 @@ type projectNotes struct {
 }
 
 func (s *DataService) dataProjectNotes(data uuid.UUID) ([]projectNotes, error) {
-
 	query :=
 		`SELECT _id, _project, _data, _creator, timestamp, visibility, content 
 		FROM project_data_note_ WHERE _data=$1`
@@ -4678,4 +4677,23 @@ func (s *DataService) dataProjectNotes(data uuid.UUID) ([]projectNotes, error) {
 	}
 
 	return notes, nil
+}
+
+// Return ids of all data the given user `read` or `ownership` permissions on.
+func (s *DataService) UserDataAllRead(user uuid.UUID) ([]uuid.UUID, error) {
+	query :=
+		`SELECT d._id FROM data_ as d 
+		JOIN data_user_permission_ as p ON d._id=p._data
+		WHERE p._user=$1 AND (_permission='read' OR _permission='owner')`
+	rows, _ := s.db.Conn.Query(s.ctx, query, user)
+	data, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"user", user,
+		).Error("could not get user data")
+		return nil, err
+	}
+
+	return data, nil
 }

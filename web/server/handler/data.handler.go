@@ -2886,53 +2886,6 @@ func (h *DataHandler) DataValuesPreview(c *echo.Context) error {
 	return c.JSON(http.StatusOK, preview)
 }
 
-func (h *DataHandler) DataSearch(c *echo.Context) error {
-	type dataSearchQuery struct {
-		Query   string
-		Project uuid.UUID
-	}
-
-	user_id := c.Get(UserIdKey).(uuid.UUID)
-
-	var searchQuery dataSearchQuery
-	err := c.Bind(&searchQuery)
-	if err != nil {
-		c.Logger().With(
-			"user", user_id,
-		).Error("could not bind data search query")
-		return c.NoContent(http.StatusBadRequest)
-	}
-
-	clauses := strings.Fields(searchQuery.Query)
-	num_filters := len(clauses)
-	if searchQuery.Project != uuid.Nil {
-		num_filters += 1
-	}
-	filters := make([]service.DataQueryFilter, num_filters)
-
-	if searchQuery.Project != uuid.Nil {
-		filters[0] = service.DataQueryFilterProject{
-			Project: searchQuery.Project,
-		}
-	}
-
-	for idx, clause := range clauses {
-		filter, err := service.ParseDataQueryClause(clause)
-		if err != nil {
-			c.Logger().With(
-				"user", user_id,
-				"clause", clause,
-			).Error("invalid data query clause")
-			return c.NoContent(http.StatusBadRequest)
-
-		}
-		filters[idx+1] = filter
-	}
-
-	return c.JSON(http.StatusOK, "")
-
-}
-
 func sanitizeStringForFilename(s string) string {
 	invalid := regexp.MustCompile(`[^\w\d\s\.\-_]`)
 	sanitized := invalid.ReplaceAllString(s, "_")
