@@ -6,23 +6,25 @@
 //   + Backslashes contianed in a delimeted string must be escaped with a backslash (i.e. \\)
 //
 // query -> clause*
-// clause -> [-]property_query | [-]tag_query | note_query | _string
+// clause -> [-]type_query [-]property_query | [-]tag_query | note_query | _string
+// type_query -> "type:" _string
 // property_query -> "property:" _string [operator _string ]
 // operator -> "=" | "!=" | "<" | "<=" | ">" | ">="
 // tag_query -> "tag:" _string
 // note_query -> "note:" _string
 //
 // ## Examples
-// + **tag_query:** `tag:good`
-// + **property_query:** `property:temperature`, `property:temperature>10`, `property:"annealing time"!=0`
+// + **type_query:** `type:photoluminescence`, `-type:"impedence spectroscopy"`
+// + **tag_query:** `tag:good`, `-tag:bad`
+// + **property_query:** `property:temperature`, `property:temperature>10`, `property:"annealing time"!=0`, `-property:test=true`
 // + **note_query:** `note:keyword`, `note:"important phrase"`
 //
 // ## TODO
-// + `type` filter
-// + `project` filter
 // + `field` filter
 // + `name` filter
+// + `created` filter
 // + `OR` groups
+// + `project` filter
 // + parse property_query in a typed fashion
 //   i.e. if the property is a boolean only allow `true` or `false` values with restricted operators
 
@@ -43,6 +45,7 @@ const (
 	TOKEN_ILLEGAL
 	TOKEN_STRING_BARE
 	TOKEN_STRING_DELIMITED
+	TOKEN_KW_TYPE
 	TOKEN_KW_PROPERTY
 	TOKEN_KW_TAG
 	TOKEN_KW_NOTE
@@ -60,6 +63,7 @@ var TOKENS = []string{
 	TOKEN_ILLEGAL:          "ILLEGAL",
 	TOKEN_STRING_BARE:      "STRING_BARE",
 	TOKEN_STRING_DELIMITED: "STRING_DELIMITED",
+	TOKEN_KW_TYPE:          "type:",
 	TOKEN_KW_PROPERTY:      "property:",
 	TOKEN_KW_TAG:           "tag:",
 	TOKEN_KW_NOTE:          "note:",
@@ -75,13 +79,6 @@ var TOKENS = []string{
 func (t DataQueryTokenKind) String() string {
 	return TOKENS[t]
 }
-
-type StringDelimeter rune
-
-const (
-	QUOTE_SINGLE StringDelimeter = '\''
-	QUOTE_DOUBLE StringDelimeter = '"'
-)
 
 type Token struct {
 	Pos  Position
@@ -304,6 +301,10 @@ func (l *DataQueryLexer) NextToken() (Position, DataQueryTokenKind, string, erro
 	}
 	value := string(next) + string(runes)
 	if !l.in_property_query {
+		if strings.HasPrefix(value, TOKEN_KW_TYPE.String()) {
+			l.pos = start + Position(len(TOKEN_KW_TYPE.String()))
+			return start, TOKEN_KW_TYPE, TOKEN_KW_TYPE.String(), nil
+		}
 		if strings.HasPrefix(value, TOKEN_KW_PROPERTY.String()) {
 			l.in_property_query = true
 			l.pos = start + Position(len(TOKEN_KW_PROPERTY.String()))

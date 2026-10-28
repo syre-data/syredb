@@ -212,6 +212,42 @@ func TestLexerKeywordProperty(t *testing.T) {
 	compareTokenStream(t, r9, t9)
 }
 
+func TestLexerKeywordType(t *testing.T) {
+	t1, err := tokenize("type:t1")
+	r1 := []Token{
+		{Pos: 0, Kind: TOKEN_KW_TYPE, Lit: "type:"},
+		{Pos: 5, Kind: TOKEN_STRING_BARE, Lit: "t1"},
+		{Pos: 7, Kind: TOKEN_EOF, Lit: ""},
+	}
+	if err != nil {
+		t.Error(err)
+	}
+	compareTokenStream(t, r1, t1)
+
+	t2, err := tokenize("type:\"test type\"")
+	r2 := []Token{
+		{Pos: 0, Kind: TOKEN_KW_TYPE, Lit: "type:"},
+		{Pos: 5, Kind: TOKEN_STRING_DELIMITED, Lit: "\"test type\""},
+		{Pos: 16, Kind: TOKEN_EOF, Lit: ""},
+	}
+	if err != nil {
+		t.Error(err)
+	}
+	compareTokenStream(t, r2, t2)
+
+	t3, err := tokenize("-type:t1")
+	r3 := []Token{
+		{Pos: 0, Kind: TOKEN_NOT, Lit: "-"},
+		{Pos: 1, Kind: TOKEN_KW_TYPE, Lit: "type:"},
+		{Pos: 6, Kind: TOKEN_STRING_BARE, Lit: "t1"},
+		{Pos: 8, Kind: TOKEN_EOF, Lit: ""},
+	}
+	if err != nil {
+		t.Error(err)
+	}
+	compareTokenStream(t, r3, t3)
+}
+
 func TestLexerKeywordTag(t *testing.T) {
 	t1, err := tokenize("tag:t1")
 	r1 := []Token{

@@ -381,6 +381,40 @@ func TestParserProperty(t *testing.T) {
 	compareExprArrays(t, r10, p10)
 }
 
+func TestParserType(t *testing.T) {
+	t1, err := tokenize("type:t1")
+	if err != nil {
+		t.Error(err)
+	}
+	p1, err := parseTokens(t1)
+	if err != nil {
+		t.Error(err)
+	}
+	r1 := []Expr{
+		{
+			Kind: EXPR_TYPE,
+			Expr: "t1",
+		},
+	}
+	compareExprArrays(t, r1, p1)
+
+	t2, err := tokenize("type:'test type'")
+	if err != nil {
+		t.Error(err)
+	}
+	p2, err := parseTokens(t2)
+	if err != nil {
+		t.Error(err)
+	}
+	r2 := []Expr{
+		{
+			Kind: EXPR_TYPE,
+			Expr: "test type",
+		},
+	}
+	compareExprArrays(t, r2, p2)
+}
+
 func TestParserTag(t *testing.T) {
 	t1, err := tokenize("tag:t1")
 	if err != nil {

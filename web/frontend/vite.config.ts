@@ -7,6 +7,7 @@ import { fileURLToPath, URL } from "node:url";
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [devtools(), react(), tailwindcss()],
+    publicDir: "_public",
     server: {
         port: 3001,
         proxy: {

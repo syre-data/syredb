@@ -15,6 +15,7 @@ const (
 	EXPR_NOT
 	EXPR_PROPERTY
 	EXPR_TAG
+	EXPR_TYPE
 	EXPR_NOTE
 )
 
@@ -42,6 +43,25 @@ const (
 	OP_LESS
 	OP_LESS_EQUAL
 )
+
+func (op ExprPropertyOperatorKind) String() string {
+	switch op {
+	case OP_EQUAL:
+		return "="
+	case OP_GREATER:
+		return ">"
+	case OP_GREATER_EQUAL:
+		return ">="
+	case OP_LESS:
+		return "<"
+	case OP_LESS_EQUAL:
+		return "<="
+	case OP_NOT_EQUAL:
+		return "!="
+	default:
+		panic(fmt.Sprintf("unexpected query.ExprPropertyOperatorKind: %#v", op))
+	}
+}
 
 type ExprPropertyOperator struct {
 	Op    ExprPropertyOperatorKind
@@ -105,6 +125,7 @@ func (p *Parser) parsePrefix() (Expr, error) {
 	case TOKEN_NOT,
 		TOKEN_KW_NOTE,
 		TOKEN_KW_PROPERTY,
+		TOKEN_KW_TYPE,
 		TOKEN_KW_TAG,
 		TOKEN_STRING_BARE,
 		TOKEN_STRING_DELIMITED:
@@ -138,6 +159,8 @@ func (p *Parser) parseUnary() (Expr, error) {
 			Kind: EXPR_NOT,
 			Expr: expr,
 		}, nil
+	case TOKEN_KW_TYPE:
+		return p.parseTypeQuery()
 	case TOKEN_KW_PROPERTY:
 		return p.parsePropertyQuery()
 	case TOKEN_KW_TAG:
@@ -245,6 +268,28 @@ func (p *Parser) parsePropertyQuery() (Expr, error) {
 				Value: filter,
 			},
 		},
+	}, nil
+}
+
+func (p *Parser) parseTypeQuery() (Expr, error) {
+	next, valid := p.next()
+	if !valid {
+		panic("unexpected end of input")
+	}
+
+	var tag string
+	switch next.Kind {
+	case TOKEN_STRING_BARE:
+		tag = next.Lit
+	case TOKEN_STRING_DELIMITED:
+		tag = next.Lit[1 : len(next.Lit)-1]
+	default:
+		return Expr{}, fmt.Errorf("invalid tag query")
+	}
+
+	return Expr{
+		Kind: EXPR_TYPE,
+		Expr: tag,
 	}, nil
 }
 

@@ -154,6 +154,65 @@ func TestProjectQueryProperty(t *testing.T) {
 	compareQuery(t, sql, args, q)
 }
 
+func TestQueryType(t *testing.T) {
+	user, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+
+	exprs := []Expr{
+		{
+			Kind: EXPR_TYPE,
+			Expr: "test_type",
+		},
+	}
+	q := BuildQuery(user, exprs)
+	sql :=
+		`SELECT d._id from data_ as d WHERE EXISTS (
+			SELECT 1 FROM data_user_permission_
+			WHERE _data=d._id AND _user=$1
+			AND (_permission='owner' OR _permission='read')
+		) AND EXISTS (
+			SELECT 1 FROM data_ JOIN data_type_ ON data_._type=data_type_._id
+			WHERE data_._id=d._id AND data_type_.label=$2
+		)`
+	args := []any{user, "test_type"}
+	compareQuery(t, sql, args, q)
+}
+
+func TestProjectQueryType(t *testing.T) {
+	user, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+	project, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+
+	exprs := []Expr{
+		{
+			Kind: EXPR_TYPE,
+			Expr: "test_type",
+		},
+	}
+	q := BuildProjectQuery(user, project, exprs)
+	sql :=
+		`SELECT d._id from data_ as d WHERE EXISTS (
+			SELECT 1 FROM data_user_permission_
+			WHERE _data=d._id AND _user=$1
+			AND (_permission='owner' OR _permission='read')
+		) AND EXISTS (
+			SELECT 1 FROM project_data_membership_
+			WHERE _project=$2 AND _data=d._id 
+		) AND EXISTS (
+			SELECT 1 FROM data_ JOIN data_type_ ON data_._type=data_type_._id
+			WHERE data_._id=d._id AND data_type_.label=$3
+		)`
+	args := []any{user, project, "test_type"}
+	compareQuery(t, sql, args, q)
+}
+
 func TestQueryTag(t *testing.T) {
 	user, err := uuid.NewV7()
 	if err != nil {
@@ -235,7 +294,7 @@ func TestQueryNote(t *testing.T) {
 			SELECT 1 FROM data_note_
 			WHERE _data=d._id AND content LIKE $2
 		)`
-	args := []any{user, "%%word%%"}
+	args := []any{user, "%word%"}
 	compareQuery(t, sql, args, q)
 }
 
@@ -268,6 +327,6 @@ func TestProjectQueryNote(t *testing.T) {
 			SELECT 1 FROM data_note_
 			WHERE _data=d._id AND content LIKE $3
 		)`
-	args := []any{user, project, "%%word%%"}
+	args := []any{user, project, "%word%"}
 	compareQuery(t, sql, args, q)
 }

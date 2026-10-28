@@ -75,6 +75,8 @@ func (q *QueryParams) AddExpr(expr Expr, project uuid.UUID) {
 		panic("TODO")
 	case EXPR_PROPERTY:
 		q.exprPropertyToSql(expr.Expr.(ExprProperty))
+	case EXPR_TYPE:
+		q.exprTypeToSql(expr.Expr.(string))
 	case EXPR_TAG:
 		q.exprTagToSql(expr.Expr.(string))
 	case EXPR_NOTE:
@@ -99,8 +101,31 @@ func (q *QueryParams) exprPropertyToSql(expr ExprProperty) {
 		)
 		q.Args = append(q.Args, expr.Key)
 	} else {
-		panic("TODO")
+		fmt.Fprintf(
+			&q.Sql,
+			`EXISTS (
+				SELECT 1 FROM data_property_
+				WHERE _data=d._id AND _key=$%d AND value%v$%d
+			)`,
+			len(q.Args)+1,
+			expr.Op.Op.String(),
+			len(q.Args)+2,
+		)
+		q.Args = append(q.Args, expr.Key)
+		q.Args = append(q.Args, expr.Op.Value)
 	}
+}
+
+func (q *QueryParams) exprTypeToSql(data_type string) {
+	fmt.Fprintf(
+		&q.Sql,
+		`EXISTS (
+			SELECT 1 FROM data_ JOIN data_type_ ON data_._type=data_type_._id
+			WHERE data_._id=d._id AND data_type_.label=$%d
+		)`,
+		len(q.Args)+1,
+	)
+	q.Args = append(q.Args, data_type)
 }
 
 func (q *QueryParams) exprTagToSql(tag string) {
