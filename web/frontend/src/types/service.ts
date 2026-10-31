@@ -269,15 +269,9 @@ export interface DataValuesPreview {
   Storage: DataStorage;
   Preview: any;
 }
-export const DataUserPermissionOwner = "owner";
-export const DataUserPermissionRead = "read";
-export const DataUserPermissionReadValues = "read_values";
-export const DataUserPermissionNoteCreate = "note_create";
-export const DataUserPermissionPropertiesModify = "properties_modify";
-export type DataUserPermission = typeof DataUserPermissionOwner | typeof DataUserPermissionRead | typeof DataUserPermissionReadValues | typeof DataUserPermissionNoteCreate | typeof DataUserPermissionPropertiesModify;
 export interface DataUserPermissions {
   Data: uuid.UUIDTypes;
-  Permissions: DataUserPermission[];
+  Permissions: DataPermission[];
 }
 export interface ProjectDataWithMembership {
   Data: DataRx;
@@ -355,11 +349,6 @@ export interface DataCreateValuesSources {
 export const ArgsOffset = 1;
 export const ArgsPerRowSingle = 2;
 export const ArgsPerRowMultiple = 3;
-export const DataPermissionKeyOwner = "owner";
-export const DataPermissionKeyRead = "read";
-export const DataPermissionKeyNoteCreate = "note_create";
-export const DataPermissionKeyPropertiesModify = "properties_modify";
-export type DataPermissionKey = typeof DataPermissionKeyOwner | typeof DataPermissionKeyRead | typeof DataPermissionKeyNoteCreate | typeof DataPermissionKeyPropertiesModify;
 export const FIELDS = 3;
 export interface DataUpdate {
   Id: uuid.UUIDTypes;

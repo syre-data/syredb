@@ -1,7 +1,5 @@
 import * as types from "@/types";
-import * as payload from "@/types/handler";
 import type { UUIDTypes } from "uuid";
-import * as uuid from "uuid";
 
 function getUserProjects(): Promise<types.Project[]> {
     return fetch("/api/projects", {
@@ -46,14 +44,6 @@ function getProjectWithUserPermission(
     );
 }
 
-function saveSampleDataMultiple(
-    sample_data: UUIDTypes,
-    project: UUIDTypes,
-    hierarchy: types.SaveDataHierarchy[],
-): Promise<Response> {
-    throw new Error("not yet impleneted");
-}
-
 function dataMembershipCreate(
     project: UUIDTypes,
     data: UUIDTypes,
@@ -82,7 +72,6 @@ export default {
     createProject,
     getProjectResources,
     getProjectWithUserPermission,
-    saveSampleDataMultiple,
     hasPermission,
     dataMembershipCreate,
 };

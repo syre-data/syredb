@@ -110,7 +110,7 @@ func main() {
 				c.Logger().With(
 					"error", err,
 					"cookies", c.Request().Cookies(),
-				).Debug("could not get jwt from cookie")
+				).Info("could not get jwt from cookie")
 				return c.NoContent(http.StatusUnauthorized)
 			}
 
@@ -200,7 +200,7 @@ func (m *ApiMiddleware) SessionTokenFromJWT(next echo.HandlerFunc) echo.HandlerF
 		if err != nil {
 			c.Logger().With(
 				"error", err,
-			).Warn("jwt token not found in context")
+			).Info("jwt token not found in context")
 			return c.NoContent(http.StatusUnauthorized)
 		}
 

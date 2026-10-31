@@ -192,7 +192,7 @@ func (t DataCreatorTransform) Type() DataCreatorType {
 	return DataCreatorTypeTransform
 }
 
-func (s *UserService) UserHasDataPermission(
+func (s *DataService) UserHasDataPermission(
 	user uuid.UUID,
 	data uuid.UUID,
 	permission DataPermission,
@@ -202,10 +202,14 @@ func (s *UserService) UserHasDataPermission(
 		WHERE _user=$1 AND _data=$2 _permission=ANY('{%s, $3}')`,
 		DataPermissionOwner,
 	)
-	user_row := s.db.Conn.QueryRow(s.ctx, query, user, data, permission)
-	err := user_row.Scan()
-	has_permission := err != nil
-	return has_permission, nil
+	err := s.db.Conn.QueryRow(s.ctx, query, user, data, permission).Scan()
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *DataService) DataTypesAll() ([]DataType, error) {
@@ -418,35 +422,55 @@ func (s *DataService) DataTypesById(ids []uuid.UUID) ([]DataType, error) {
 	return data_types, nil
 }
 
-func (s *DataService) DataTypeById(id uuid.UUID) (DataType, error) {
+// Get a data type by its id.
+// First return value is the data type, if valid.
+// Second return value is whether the data type is valid. i.e. Was the data type found.
+// Third return value is any error.
+func (s *DataService) DataTypeById(id uuid.UUID) (DataType, bool, error) {
 	q :=
 		`SELECT _id, _creator, _storage, label, description, active
 		FROM data_type_ WHERE _id=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, q, id)
 	data_type, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataTypeRx])
 	if err != nil {
-		s.logger.With("error", err).Error("could not get data types")
-		return nil, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		} else {
+			s.logger.With("error", err).Error("could not get data types")
+			return nil, false, err
+		}
 	}
 
 	return s.dataTypeRxInfo(data_type)
 }
 
-func (s *DataService) DataTypeByLabel(label string) (DataType, error) {
+// Get a data type by its label.
+// First return value is the data type, if valid.
+// Second return value is if teh data type is valid. i.e. If it was found.
+// Thrid return value is any error.
+func (s *DataService) DataTypeByLabel(label string) (DataType, bool, error) {
 	q :=
 		`SELECT _id, _creator, _storage, label, description, active
 		FROM data_type_ WHERE label=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, q, label)
 	data_type, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataTypeRx])
 	if err != nil {
-		s.logger.With("error", err).Error("could not get data types")
-		return nil, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		} else {
+			s.logger.With("error", err).Error("could not get data types")
+			return nil, false, err
+		}
 	}
 
 	return s.dataTypeRxInfo(data_type)
 }
 
-func (s *DataService) dataTypeRxInfo(data_type DataTypeRx) (DataType, error) {
+// Get info for a data type, both internal and external.
+// First return value is the data type, if valid.
+// Second return value is if the data type is valid. i.e. If it was found.
+// Third return value is any error.
+func (s *DataService) dataTypeRxInfo(data_type DataTypeRx) (DataType, bool, error) {
 	switch data_type.Storage {
 	case DataStorageInternal:
 		data_type_internal := DataTypeInternal{
@@ -462,14 +486,18 @@ func (s *DataService) dataTypeRxInfo(data_type DataTypeRx) (DataType, error) {
 			WHERE _data_type=$1`
 		err := s.db.Conn.QueryRow(s.ctx, internal_query, data_type.Id).Scan(&data_type_internal.Schema)
 		if err != nil {
-			s.logger.With(
-				"error", err,
-				"data type", data_type.Id,
-			).Error("could not get data type internal storage")
-			return nil, err
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, false, nil
+			} else {
+				s.logger.With(
+					"error", err,
+					"data type", data_type.Id,
+				).Error("could not get data type internal storage")
+				return nil, false, err
+			}
 		}
 
-		return data_type_internal, nil
+		return data_type_internal, true, nil
 
 	case DataStorageExternal:
 		data_type_external := DataTypeExternal{
@@ -490,12 +518,12 @@ func (s *DataService) dataTypeRxInfo(data_type DataTypeRx) (DataType, error) {
 				"error", err,
 				"data type", data_type.Id,
 			).Error("could not get data type sources")
-			return nil, err
+			return nil, false, err
 		}
 
 		data_type_external.Sources = external_sources
 
-		return data_type_external, nil
+		return data_type_external, true, nil
 
 	default:
 		panic("invalid data_type.Storage")
@@ -943,18 +971,26 @@ func (s *DataService) DataSchemasById(schema_ids []uuid.UUID) ([]DataSchema, err
 	return schemas, nil
 }
 
-func (s *DataService) DataSchemaById(schema_id uuid.UUID) (DataSchema, error) {
+// Get a data schema by its id.
+// First return value is the data schema, if valid.
+// Second return value is if the schema is valid. i.e. It was found.
+// Third return type is any error.
+func (s *DataService) DataSchemaById(schema_id uuid.UUID) (DataSchema, bool, error) {
 	schemas_query :=
 		`SELECT _id, _creator, _cardinality, label, description
 		FROM data_schema_ WHERE _id=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, schemas_query, schema_id)
 	schema_rx, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataSchemaRx])
 	if err != nil {
-		s.logger.With(
-			"error", err,
-			"schema", schema_id,
-		).Error("could not get data schema")
-		return DataSchema{}, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DataSchema{}, false, nil
+		} else {
+			s.logger.With(
+				"error", err,
+				"schema", schema_id,
+			).Error("could not get data schema")
+			return DataSchema{}, false, err
+		}
 	}
 
 	fields_query :=
@@ -966,13 +1002,13 @@ func (s *DataService) DataSchemaById(schema_id uuid.UUID) (DataSchema, error) {
 			"error", err,
 			"schema", schema_id,
 		).Error("could not get data schema fields")
-		return DataSchema{}, err
+		return DataSchema{}, false, err
 	}
 
 	fields_rx, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataSchemaFieldRx])
 	if err != nil {
 		s.logger.With("error", err).Error("could not collect data schema fields")
-		return DataSchema{}, err
+		return DataSchema{}, false, err
 	}
 
 	var fields []DataSchemaField
@@ -998,7 +1034,7 @@ func (s *DataService) DataSchemaById(schema_id uuid.UUID) (DataSchema, error) {
 		Fields:      fields,
 	}
 
-	return schema, nil
+	return schema, true, nil
 }
 
 type InvalidSampleDataColumnLabels struct {
@@ -1617,20 +1653,28 @@ type DataOriginRx struct {
 	Active      bool      `db:"active"`
 }
 
-func (s *DataService) DataOriginByLabel(label string) (DataOriginRx, error) {
+// Get a data origin by label.
+// First return value is the origin, if valid.
+// Second return value is whether the origin is valid. i.e. If it was found.
+// Third return value is an error that ocurred.
+func (s *DataService) DataOriginByLabel(label string) (DataOriginRx, bool, error) {
 	query :=
 		`SELECT _id, label, description, active FROM data_origin_
 		WHERE label=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, query, label)
 	origin, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataOriginRx])
 	if err != nil {
-		s.logger.With(
-			"error", err,
-			"label", label,
-		).Error("could not get data origin")
-		return DataOriginRx{}, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DataOriginRx{}, false, nil
+		} else {
+			s.logger.With(
+				"error", err,
+				"label", label,
+			).Error("could not get data origin")
+			return DataOriginRx{}, false, err
+		}
 	}
-	return origin, nil
+	return origin, true, nil
 }
 
 func (s *DataService) DataOriginsByIds(ids []uuid.UUID) ([]DataOriginRx, error) {
@@ -1857,6 +1901,7 @@ type DataSource struct {
 	Source      any
 }
 
+// Get data sources of an externally stored data.
 func (s *DataService) dataValuesByIdExternalSource(
 	data uuid.UUID,
 ) ([]DataSource, error) {
@@ -2046,10 +2091,13 @@ type DataValuesPreview struct {
 }
 
 // DataValuesPreviewById gets values preview associated with a data.
+// First return value is the data preview.
+// Second return value is if teh preview is valid. i.e. Was found.
+// Third return value is any error.
 func (s *DataService) DataValuesPreviewById(
 	data uuid.UUID,
 	limit int,
-) (DataValuesPreview, error) {
+) (DataValuesPreview, bool, error) {
 	type dataStorageInfo struct {
 		Data     uuid.UUID   `db:"data"`
 		DataType uuid.UUID   `db:"type"`
@@ -2063,12 +2111,15 @@ func (s *DataService) DataValuesPreviewById(
 	rows, _ := s.db.Conn.Query(s.ctx, storage_query, data)
 	info, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[dataStorageInfo])
 	if err != nil {
-		s.logger.With(
-			"error", err,
-			"data", data,
-		).Error("could not get data storage info")
-
-		return DataValuesPreview{}, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DataValuesPreview{}, false, nil
+		} else {
+			s.logger.With(
+				"error", err,
+				"data", data,
+			).Error("could not get data storage info")
+			return DataValuesPreview{}, false, err
+		}
 	}
 
 	var preview any
@@ -2081,25 +2132,37 @@ func (s *DataService) DataValuesPreviewById(
 				"data", info.Data,
 				"storage", DataStorageExternal,
 			).Error("could not get data values")
-			return DataValuesPreview{}, err
+			return DataValuesPreview{}, false, err
 		}
 	case DataStorageInternal:
-		data_type_rx, err := s.DataTypeById(info.DataType)
+		data_type_rx, valid, err := s.DataTypeById(info.DataType)
 		if err != nil {
 			s.logger.With(
 				"error", err,
 				"data type", info.DataType,
 			).Error("could not get data type")
-			return DataValuesPreview{}, err
+			return DataValuesPreview{}, false, err
+		}
+		if !valid {
+			s.logger.With(
+				"data type", info.DataType,
+			).Error("could not get data type")
+			return DataValuesPreview{}, false, fmt.Errorf("data type not found")
 		}
 		data_type := data_type_rx.(DataTypeInternal)
-		schema, err := s.DataSchemaById(data_type.Schema)
+		schema, valid, err := s.DataSchemaById(data_type.Schema)
 		if err != nil {
 			s.logger.With(
 				"error", err,
 				"schema", data_type.Schema,
 			).Error("could not get data schema")
-			return DataValuesPreview{}, err
+			return DataValuesPreview{}, false, err
+		}
+		if !valid {
+			s.logger.With(
+				"schema", data_type.Schema,
+			).Error("data schema not found")
+			return DataValuesPreview{}, false, fmt.Errorf("data schema not found")
 		}
 
 		switch schema.Cardinality {
@@ -2110,7 +2173,7 @@ func (s *DataService) DataValuesPreviewById(
 					"error", err,
 					"data", info.Data,
 				).Error("could not get data values")
-				return DataValuesPreview{}, err
+				return DataValuesPreview{}, false, err
 			}
 			preview = DataValuesPreviewInternal{
 				Cardinality: DataSchemaCardinalityMultiple,
@@ -2123,7 +2186,7 @@ func (s *DataService) DataValuesPreviewById(
 					"error", err,
 					"data", info.Data,
 				).Error("could not get data values")
-				return DataValuesPreview{}, err
+				return DataValuesPreview{}, false, err
 			}
 			values := values_rx.Values.([]SchemaFieldValues)
 			preview = DataValuesPreviewInternal{
@@ -2140,9 +2203,10 @@ func (s *DataService) DataValuesPreviewById(
 		Preview: preview,
 	}
 
-	return values, nil
+	return values, true, nil
 }
 
+// Get preview of an internally stored data values.
 func (s *DataService) dataValuesPreviewByIdInternalMultiple(
 	data uuid.UUID,
 	schema DataSchema,
@@ -2347,6 +2411,7 @@ func (s *DataService) DataChildrenRxMap(data []uuid.UUID) (map[uuid.UUID][]DataR
 	return children, nil
 }
 
+// Conver vlaues into a CSV string.
 func (s *DataService) InternalValuesToCsv(fields []SchemaFieldValues) (string, error) {
 	var records strings.Builder
 	writer := csv.NewWriter(&records)
@@ -2762,7 +2827,11 @@ func (s *DataService) save_data_file_path(
 	return file_path.String(), nil
 }
 
-func (s *DataService) DataById(id uuid.UUID) (DataRx, error) {
+// Get data by its id
+// First return value is the data, if valid.
+// Second return value is if the data is valid. i.e. If it was found.
+// Third return value is any error.
+func (s *DataService) DataById(id uuid.UUID) (DataRx, bool, error) {
 	query :=
 		`SELECT _id, _type, _creator_type, timestamp, visibility
 		FROM data_ WHERE _id=$1`
@@ -2772,18 +2841,21 @@ func (s *DataService) DataById(id uuid.UUID) (DataRx, error) {
 			"error", err,
 			"id", id,
 		).Error("could not get data")
-		return DataRx{}, err
+		return DataRx{}, false, err
 	}
 	data, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataRx])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DataRx{}, false, nil
+	}
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"id", id,
 		).Error("could not get data")
-		return DataRx{}, err
+		return DataRx{}, false, err
 	}
 
-	return data, nil
+	return data, true, nil
 }
 
 func (s *DataService) DataByIds(ids []uuid.UUID) ([]DataRx, error) {
@@ -2825,6 +2897,7 @@ func (s *DataService) DataProperties(id uuid.UUID) ([]Property, error) {
 	return properties, nil
 }
 
+// Get properties for the given datat by key.
 func (s *DataService) DataPropertiesByKeys(data uuid.UUID, keys []string) ([]Property, error) {
 	if len(keys) == 0 {
 		return []Property{}, nil
@@ -2864,25 +2937,16 @@ func (s *DataService) DataNotes(id uuid.UUID) ([]Note, error) {
 	return notes, nil
 }
 
-type DataUserPermission string
-
-const (
-	DataUserPermissionOwner            DataUserPermission = "owner"
-	DataUserPermissionRead             DataUserPermission = "read"
-	DataUserPermissionReadValues       DataUserPermission = "read_values"
-	DataUserPermissionNoteCreate       DataUserPermission = "note_create"
-	DataUserPermissionPropertiesModify DataUserPermission = "properties_modify"
-)
-
 type DataUserPermissions struct {
 	Data        uuid.UUID
-	Permissions []DataUserPermission
+	Permissions []DataPermission
 }
 
-func (s *DataService) DataUserPermission(user uuid.UUID, data uuid.UUID) ([]DataUserPermission, error) {
+// Get user permissions for data.
+func (s *DataService) DataUserPermission(user uuid.UUID, data uuid.UUID) ([]DataPermission, error) {
 	type permissionRx struct {
-		Data       uuid.UUID          `db:"_data"`
-		Permission DataUserPermission `db:"_permission"`
+		Data       uuid.UUID      `db:"_data"`
+		Permission DataPermission `db:"_permission"`
 	}
 
 	query :=
@@ -2899,7 +2963,7 @@ func (s *DataService) DataUserPermission(user uuid.UUID, data uuid.UUID) ([]Data
 		return nil, err
 	}
 
-	var permissions []DataUserPermission
+	var permissions []DataPermission
 	for _, rx := range rxs {
 		permissions = append(permissions, rx.Permission)
 	}
@@ -2907,10 +2971,11 @@ func (s *DataService) DataUserPermission(user uuid.UUID, data uuid.UUID) ([]Data
 	return permissions, nil
 }
 
+// Get user permissions for each data.
 func (s *DataService) DataUserPermissions(user uuid.UUID, data_ids []uuid.UUID) ([]DataUserPermissions, error) {
 	type permissionRx struct {
-		Data       uuid.UUID          `db:"_data"`
-		Permission DataUserPermission `db:"_permission"`
+		Data       uuid.UUID      `db:"_data"`
+		Permission DataPermission `db:"_permission"`
 	}
 
 	query :=
@@ -3325,13 +3390,19 @@ func (s *DataService) dataCreateValuesInternal(
 		panic("values must be internal")
 	}
 
-	schema, err := s.DataSchemaById(data_type.Schema)
+	schema, valid, err := s.DataSchemaById(data_type.Schema)
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"schema", data_type.Schema,
 		).Error("could not get data schema")
 		return err
+	}
+	if !valid {
+		s.logger.With(
+			"schema", data_type.Schema,
+		).Error("data schema not found")
+		return fmt.Errorf("data schema not found")
 	}
 
 	field_labels := make([]string, len(schema.Fields))
@@ -3609,15 +3680,6 @@ func extensionIsValidForMediaType(ext string, media_type string) (bool, error) {
 	return false, nil
 }
 
-type DataPermissionKey string
-
-const (
-	DataPermissionKeyOwner            DataPermissionKey = "owner"
-	DataPermissionKeyRead             DataPermissionKey = "read"
-	DataPermissionKeyNoteCreate       DataPermissionKey = "note_create"
-	DataPermissionKeyPropertiesModify DataPermissionKey = "properties_modify"
-)
-
 func (s *DataService) dataInsert(tx pgx.Tx, data []DataCreate) ([]uuid.UUID, error) {
 	data_ids := make([]uuid.UUID, len(data))
 	data_query :=
@@ -3653,7 +3715,7 @@ func (s *DataService) dataCreatePermissions(
 
 	args := make([]any, len(data_ids)+argsOffset)
 	args[0] = owner
-	args[1] = DataPermissionKeyOwner
+	args[1] = DataPermissionOwner
 	var query strings.Builder
 	query.WriteString("INSERT INTO data_user_permission_ (_data, _user, _permission) VALUES ")
 	for idx, id := range data_ids {
@@ -4464,7 +4526,7 @@ func (s *DataService) DataCreator(data uuid.UUID) (DataCreator, error) {
 			return nil, err
 		}
 
-		user, err := s.user_service.UserById(user_id)
+		user, valid, err := s.user_service.UserById(user_id)
 		if err != nil {
 			s.logger.With(
 				"error", err,
@@ -4472,6 +4534,12 @@ func (s *DataService) DataCreator(data uuid.UUID) (DataCreator, error) {
 				"user", user_id,
 			).Error("could not get data creator user")
 			return nil, err
+		}
+		if !valid {
+			s.logger.With(
+				"user", user_id,
+			).Error("user not found")
+			return nil, fmt.Errorf("user not found")
 		}
 		origin, err := s.DataOriginById(origin_id)
 		if err != nil {

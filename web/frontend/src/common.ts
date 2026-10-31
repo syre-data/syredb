@@ -22,9 +22,10 @@ export const QUERY_KEY_DATA_VALUES = "data_values";
 export const QUERY_KEY_DATA_PREVIEW = "data_preview";
 
 export interface BackendError {
+    requestId: string;
+    code: string;
     message: string;
-    cause: object;
-    kind: string;
+    payload: any;
 }
 
 export enum MouseButton {

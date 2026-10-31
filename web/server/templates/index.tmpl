@@ -16,35 +16,37 @@
         </div>
         <div class="text-lg font-bold">{{.AccountName}}</div>
       </div>
-      <div id="login-form-error" class="text-red-600"></div>
       <form id="login-form" class="flex flex-col gap-2">
         <div class="flex flex-col gap-2">
+          <div class="flex flex-col gap-2 items-center">
+            <div>
+              <label>
+                <span class="hidden">Email</span>
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="Email"
+                  autocomplete="email"
+                  class="input-basic"
+                  required
+                />
+              </label>
+            </div>
+            <div>
+              <label>
+                <span class="hidden">Password</span>
+                <input
+                  type="password"
+                  name="password"
+                  placeholder="Password"
+                  autocomplete="current-password"
+                  class="input-basic"
+                  required
+                />
+              </label>
+            </div>
+            <div id="login-form-error" class="text-red-600"></div>
           <div>
-            <label>
-              <span class="hidden">Email</span>
-              <input
-                type="email"
-                name="email"
-                placeholder="Email"
-                autocomplete="email"
-                class="input-basic"
-                required
-              />
-            </label>
-          </div>
-          <div>
-            <label>
-              <span class="hidden">Password</span>
-              <input
-                type="password"
-                name="password"
-                placeholder="Password"
-                autocomplete="current-password"
-                class="input-basic"
-                required
-              />
-            </label>
-          </div>
           <div>
             <label class="whitespace-nowrap">
               <input type="checkbox" name="remember" />
@@ -103,17 +105,16 @@
           btn_submit.disabled = false;
         }
 
-        if (response.status === 401) {
-          err_node.innerText = "Email or password are incorrect.";
-          return;
-        }
-        if (response.status !== 200) {
+        if (response.status === 200) {
+          err_node.innerText = "";
+        } else if (response.status === 401) {
+          err_node.innerText = "Email and password are incorrect.";
+        } else if (response.status === 422) {
+          err_node.innerText = "Email and password can not be empty";
+        } else {
           console.error(response);
           err_node.innerText = "An error occurred, please try again.";
-          return;
         }
-
-        location.reload();
       }
 
       const form = document.getElementById("login-form");

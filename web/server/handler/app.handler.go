@@ -96,7 +96,12 @@ func (h *AppHandler) indexUnauthenticatedHandler(c *echo.Context) error {
 func (h *AppHandler) DbPermissions(c *echo.Context) error {
 	permissions, err := h.app_service.DbPermissionsAll()
 	if err != nil {
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not retrieve permissions",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, permissions)

@@ -43,11 +43,21 @@ func (h *ApiClientHandler) Authenticate(c *echo.Context) error {
 	if err != nil {
 		c.Logger().With(
 			"error", err,
-		).Error("could not bind request data")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not bind request data")
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   nil,
+		})
 	}
 	if creds.Email == "" || creds.Password == "" || time.Now().After(creds.Expiration) {
-		return c.NoContent(http.StatusUnprocessableEntity)
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Credentials are invalid",
+			Payload:   nil,
+		})
 	}
 
 	var user_id uuid.UUID
@@ -57,20 +67,36 @@ func (h *ApiClientHandler) Authenticate(c *echo.Context) error {
 		user_id_query,
 		creds.Email,
 	).Scan(&user_id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return c.NoContent(http.StatusUnauthorized)
+	}
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"email", creds.Email,
 		).Error("could not retrieve user id")
-		return c.NoContent(http.StatusUnauthorized)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not authenticate user",
+			Payload:   nil,
+		})
 	}
 
 	var hash string
 	auth_query := "SELECT auth FROM user_auth_ WHERE _id=$1"
 	err = h.db.Conn.QueryRow(c.Request().Context(), auth_query, user_id).Scan(&hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return c.NoContent(http.StatusUnauthorized)
+	}
 	if err != nil {
 		c.Logger().With("error", err).Error("could not retrieve user auth hash")
-		return c.NoContent(http.StatusUnauthorized)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not authenticate user",
+			Payload:   nil,
+		})
 	}
 
 	authenticated, err := h.auth_service.ComparePasswordAndHash(creds.Password, hash)
@@ -78,8 +104,13 @@ func (h *ApiClientHandler) Authenticate(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"user id", user_id,
-		).Error("could not authenticate user")
-		return c.NoContent(http.StatusInternalServerError)
+		).Error("could not compare passwrod to hash")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_ITEM,
+			Message:   "Could not authenticate user",
+			Payload:   nil,
+		})
 	}
 
 	if !authenticated {
@@ -93,7 +124,12 @@ func (h *ApiClientHandler) Authenticate(c *echo.Context) error {
 			"user", user_id,
 			"expires", creds.Expiration,
 		).Error("could not create user session")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create user session",
+			Payload:   nil,
+		})
 	}
 
 	return c.String(http.StatusOK, token.String())
@@ -105,7 +141,12 @@ func (h *ApiClientHandler) Deactivate(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 		).Info("could not parse request token")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid token",
+			Payload:   nil,
+		})
 	}
 
 	err = h.auth_service.DeactivateSession(token)
@@ -114,7 +155,12 @@ func (h *ApiClientHandler) Deactivate(c *echo.Context) error {
 			"error", err,
 			"token", token,
 		).Error("could not deactivate session token")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not deactivate session",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -142,22 +188,36 @@ func (h *ApiClientHandler) DataType(c *echo.Context) error {
 
 	data_type_label := c.FormValue("data_type")
 	if data_type_label == "" {
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "data_type form value must be set",
+			Payload:   nil,
+		})
 	}
 
 	var data_type service.DataType
 	data_type_id, err := uuid.Parse(data_type_label)
 	if err != nil {
-		data_type, err = h.data_service.DataTypeByLabel(data_type_label)
+		dtype, valid, err := h.data_service.DataTypeByLabel(data_type_label)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
 				"data type", data_type_id,
 			).Error("could not get data type")
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not get data type",
+				Payload:   nil,
+			})
+		}
+		if !valid {
 			return c.NoContent(http.StatusNotFound)
 		}
+		data_type = dtype
 	} else {
-		data_type, err = h.data_service.DataTypeById(data_type_id)
+		dtype, valid, err := h.data_service.DataTypeById(data_type_id)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
@@ -165,6 +225,10 @@ func (h *ApiClientHandler) DataType(c *echo.Context) error {
 			).Error("could not get data type")
 			return c.NoContent(http.StatusNotFound)
 		}
+		if !valid {
+			return c.NoContent(http.StatusNotFound)
+		}
+		data_type = dtype
 	}
 
 	switch data_type.DataStorage() {
@@ -188,13 +252,29 @@ func (h *ApiClientHandler) DataType(c *echo.Context) error {
 
 	case service.DataStorageInternal:
 		dtype := data_type.(service.DataTypeInternal)
-		dschema, err := h.data_service.DataSchemaById(dtype.Schema)
+		dschema, valid, err := h.data_service.DataSchemaById(dtype.Schema)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
 				"data type", dtype.Id,
 			).Error("could not get data schema")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not get data schema",
+				Payload:   nil,
+			})
+		}
+		if !valid {
+			c.Logger().With(
+				"data type", dtype.Id,
+			).Error("data schema not found")
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_ENTITY_NOT_FOUND,
+				Message:   "Data schema not found",
+				Payload:   nil,
+			})
 		}
 
 		fields := make([]schemaField, len(dschema.Fields))
@@ -258,7 +338,12 @@ func (h *ApiClientHandler) DataCreate(c *echo.Context) error {
 	data_str := c.FormValue("data")
 	if data_str == "" {
 		c.Logger().Debug("data not present")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "data form value must be set",
+			Payload:   nil,
+		})
 	}
 	var data dataCreate
 	err := json.Unmarshal([]byte(data_str), &data)
@@ -268,23 +353,40 @@ func (h *ApiClientHandler) DataCreate(c *echo.Context) error {
 			"token", token,
 			"data", data_str,
 		).Error("could not unmarshal data")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   nil,
+		})
 	}
 
 	origin_id, err := uuid.Parse(data.Origin)
 	if err != nil {
-		origin, err := h.data_service.DataOriginByLabel(data.Origin)
+		origin, valid, err := h.data_service.DataOriginByLabel(data.Origin)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
 				"origin", data.Origin,
-			)
-
-			if errors.Is(err, pgx.ErrNoRows) {
-				return c.NoContent(http.StatusBadRequest)
-			} else {
-				return c.NoContent(http.StatusInternalServerError)
-			}
+			).Error("could not get data origin")
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not get data origin",
+				Payload:   nil,
+			})
+		}
+		if !valid {
+			c.Logger().With(
+				"error", err,
+				"origin", data.Origin,
+			).Error("data origin not found")
+			return c.JSON(http.StatusBadRequest, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_ENTITY_NOT_FOUND,
+				Message:   "Data origin not found",
+				Payload:   nil,
+			})
 		}
 
 		origin_id = origin.Id
@@ -297,7 +399,12 @@ func (h *ApiClientHandler) DataCreate(c *echo.Context) error {
 		return h.dataCreateInternal(c, user, origin_id, data)
 	default:
 		c.Logger().With("data", data).Error("invalid data storage")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_ITEM,
+			Message:   "Invalid data storage",
+			Payload:   nil,
+		})
 	}
 }
 
@@ -362,7 +469,12 @@ func (h *ApiClientHandler) dataCreateInternal(
 			"error", err,
 			"user", user,
 		).Error("could not create data")
-		c.NoContent(http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)

@@ -80,7 +80,11 @@ type User struct {
 	DbPermissions []DbPermission
 }
 
-func (s *UserService) UserById(user_id uuid.UUID) (User, error) {
+// Get a user by id.
+// First return value is the user, if valid.
+// Second return value is the validity of the user. i.e. Was the user found?
+// Third return value is a query error.
+func (s *UserService) UserById(user_id uuid.UUID) (User, bool, error) {
 	user := User{Id: user_id}
 	user_query := "SELECT account_status, email, name FROM user_ WHERE _id=$1"
 	err := s.db.Conn.QueryRow(s.ctx, user_query, user_id).Scan(
@@ -88,20 +92,22 @@ func (s *UserService) UserById(user_id uuid.UUID) (User, error) {
 		&user.Email,
 		&user.Name,
 	)
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, false, nil
+	} else if err != nil {
 		s.logger.With(
 			"error", err,
 			"user", user_id,
 		).Error("could not get user")
-		return User{}, err
+		return User{}, false, err
 	}
 
 	user.DbPermissions, err = s.UserPermissions(user_id)
 	if err != nil {
-		return User{}, err
+		return User{}, false, err
 	}
 
-	return user, nil
+	return user, true, nil
 }
 
 func (s *UserService) UserPermissions(user_id uuid.UUID) ([]DbPermission, error) {
@@ -399,6 +405,7 @@ func (s *UserService) UsersById(user_ids []uuid.UUID) ([]User, error) {
 	return users, nil
 }
 
+// Check if a user has the given permission.
 func (s *UserService) UserHasPermission(
 	user uuid.UUID,
 	permission DbPermission,
@@ -409,8 +416,18 @@ func (s *UserService) UserHasPermission(
 	)
 	user_row := s.db.Conn.QueryRow(s.ctx, query, user, permission)
 	err := user_row.Scan()
-	has_permission := err != nil
-	return has_permission, nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		s.logger.With(
+			"error", err,
+			"user", user,
+			"permission", permission,
+		).Error("could not retrieve user permission")
+		return false, err
+	} else {
+		return true, nil
+	}
 }
 
 func (s *UserService) IsDbOwner(
@@ -422,6 +439,15 @@ func (s *UserService) IsDbOwner(
 	)
 	user_row := s.db.Conn.QueryRow(s.ctx, query, user)
 	err := user_row.Scan()
-	has_permission := err != nil
-	return has_permission, nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		s.logger.With(
+			"error", err,
+			"user", user,
+		).Error("could not retrieve user permission")
+		return false, err
+	} else {
+		return true, nil
+	}
 }

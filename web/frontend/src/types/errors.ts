@@ -5,14 +5,26 @@ import * as uuid from "uuid"
 // source: errors.go
 
 export interface AppError {
+  RequestId: string;
   Code: AppErrorCode;
   Message: string;
   Payload: any;
 }
 export type AppErrorCode = string;
-export const AppErrCodeEmailNotSent: AppErrorCode = "USER_EMAIL_NOT_SENT";
-export const AppErrorCodeUserNotAuthenticated: AppErrorCode = "USER_NOT_AUTHENTICATED";
-export const AppErrorCodeRecordNotFound: AppErrorCode = "RECORD_NOT_FOUND";
-export const AppErrorCodeInvalidPassword: AppErrorCode = "INVALID_PASSWORD";
-export type DBErrorCode = string;
-export const DBErrCodeDuplicateRecord: DBErrorCode = "23505";
+export const APP_ERR_EMAIL_NOT_SENT: AppErrorCode = "USER_EMAIL_NOT_SENT";
+export const APP_ERR_USER_NOT_AUTHENTICATED: AppErrorCode = "USER_NOT_AUTHENTICATED";
+export const APP_ERR_COULD_NOT_AUTHENTICATE_USER: AppErrorCode = "COULD_NOT_AUTHENTICATE";
+export const APP_ERR_INVALID_PASSWORD: AppErrorCode = "INVALID_PASSWORD";
+export const APP_ERR_SESSION_NOT_DEACTIVATED: AppErrorCode = "SESSION_NOT_DEACTIVATED";
+export const APP_ERR_SESSION_TOKEN_NOT_CREATED: AppErrorCode = "SESSION_TOKEN_NOT_CREATED";
+export const APP_ERR_INVALID_SESSION_TOKEN: AppErrorCode = "INVALID_SESSION_TOKEN";
+export const APP_ERR_INVALID_UUID: AppErrorCode = "INVALID_UUID";
+export const APP_ERR_DB_QUERY: AppErrorCode = "DB_QUERY";
+export const APP_ERR_RECORD_NOT_FOUND: AppErrorCode = "RECORD_NOT_FOUND";
+export const APP_ERR_ENTITY_NOT_FOUND: AppErrorCode = "ENTITY_NOT_FOUND";
+export const APP_ERR_INVALID_ITEM: AppErrorCode = "INVALID_ITEM";
+export const APP_ERR_INVALID_PAYLOAD: AppErrorCode = "INVALID_PAYLOAD";
+export const APP_ERR_FS_ERROR: AppErrorCode = "FS_ERROR";
+export const APP_ERR_OTHER: AppErrorCode = "ERR_OTHER";
+export type DbErrorCode = string;
+export const DB_ERR_DUPLICATE_RECORD: DbErrorCode = "23505";

@@ -159,6 +159,7 @@ func (s *ProjectService) CreateProject(
 	return project_id, nil
 }
 
+// Get user permissions for a project.
 func (s *ProjectService) ProjectUserPermissions(
 	project uuid.UUID,
 	user uuid.UUID,
@@ -174,13 +175,11 @@ func (s *ProjectService) ProjectUserPermissions(
 	)
 	permissions, err := pgx.CollectRows(rows, pgx.RowTo[ProjectPermission])
 	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			s.logger.With(
-				"error", err,
-				"user", user,
-				"project", project,
-			).Error("could not retrieve project user permissions")
-		}
+		s.logger.With(
+			"error", err,
+			"user", user,
+			"project", project,
+		).Error("could not retrieve project user permissions")
 		return nil, err
 	}
 
@@ -663,10 +662,14 @@ type ProjectWithUserPermission struct {
 	Permissions []ProjectPermission
 }
 
+// Get project resources with permissions.
+// First return value are the project resources, if valid.
+// Second return value is whether the resources are valid. i.e. If the resources were found.
+// Third return value is any error.
 func (s *ProjectService) GetProjectWithUserPermission(
 	user_id uuid.UUID,
 	project_id uuid.UUID,
-) (ProjectWithUserPermission, error) {
+) (ProjectWithUserPermission, bool, error) {
 	var project ProjectWithUserPermission
 	project_query :=
 		"SELECT _id, _creator, label, description, visibility FROM project_ WHERE _id=$1"
@@ -680,20 +683,24 @@ func (s *ProjectService) GetProjectWithUserPermission(
 		pgx.RowToStructByNameLax[ProjectWithUserPermission],
 	)
 	if err != nil {
-		s.logger.With(
-			"error", err,
-			"user", user_id,
-			"project", project_id,
-		).Error("could not get project")
-		return ProjectWithUserPermission{}, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectWithUserPermission{}, true, nil
+		} else {
+			s.logger.With(
+				"error", err,
+				"user", user_id,
+				"project", project_id,
+			).Error("could not get project")
+			return ProjectWithUserPermission{}, false, err
+		}
 	}
 
 	project.Permissions, err = s.ProjectUserPermissions(project_id, user_id)
 	if err != nil {
-		return ProjectWithUserPermission{}, err
+		return ProjectWithUserPermission{}, false, err
 	}
 
-	return project, nil
+	return project, true, nil
 }
 
 type FileInfo struct {

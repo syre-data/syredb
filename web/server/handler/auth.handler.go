@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
 
 	"syredb/database"
@@ -42,24 +44,37 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 	remember := c.FormValue("remember") != ""
 
 	if email == "" || password == "" {
-		return c.NoContent(http.StatusUnprocessableEntity)
+		return c.NoContent(http.StatusUnauthorized)
 	}
 
 	var user_id uuid.UUID
 	user_id_query := "SELECT _id FROM user_ WHERE email=$1"
 	err := h.db.Conn.QueryRow(c.Request().Context(), user_id_query, email).Scan(&user_id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return c.NoContent(http.StatusUnauthorized)
+	}
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"email", email,
 		).Error("could not retrieve user id")
-		return c.NoContent(http.StatusUnauthorized)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not authenticate user",
+			Payload:   nil,
+		})
 	}
 
 	hash, err := h.auth_service.PasswordHash(user_id)
 	if err != nil {
 		c.Logger().With("error", err).Error("could not retrieve user auth hash")
-		return c.NoContent(http.StatusUnauthorized)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_COULD_NOT_AUTHENTICATE_USER,
+			Message:   "Could not authenticate user",
+			Payload:   nil,
+		})
 	}
 
 	authenticated, err := h.auth_service.ComparePasswordAndHash(password, hash)
@@ -68,7 +83,12 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 			"error", err,
 			"user id", user_id,
 		).Error("could not authenticate user")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_OTHER,
+			Message:   "Could not authenticate user",
+			Payload:   nil,
+		})
 	}
 
 	if !authenticated {
@@ -89,7 +109,12 @@ func (h *AuthHandler) Login(c *echo.Context) error {
 			"user", user_id,
 			"expires", session_expiration,
 		).Error("could not create user session")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_SESSION_TOKEN_NOT_CREATED,
+			Message:   "Could not create a session token",
+			Payload:   nil,
+		})
 	}
 
 	registered_claims := jwt.RegisteredClaims{}
@@ -144,7 +169,12 @@ func (h *AuthHandler) Logout(c *echo.Context) error {
 	err = h.auth_service.DeactivateSession(session_token)
 	if err != nil {
 		c.Logger().With("session token", session_token).Error("could not deactivate session")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_SESSION_NOT_DEACTIVATED,
+			Message:   "Could not deactivate session",
+			Payload:   nil,
+		})
 	}
 
 	cookie := &http.Cookie{
@@ -167,7 +197,12 @@ func (h *AuthHandler) Deactivate(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 		).Info("could not parse request token")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_SESSION_TOKEN,
+			Message:   "Invalid session token",
+			Payload:   nil,
+		})
 	}
 
 	err = h.auth_service.DeactivateSession(token)
@@ -176,7 +211,12 @@ func (h *AuthHandler) Deactivate(c *echo.Context) error {
 			"error", err,
 			"token", token,
 		).Error("could not deactivate session token")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_SESSION_NOT_DEACTIVATED,
+			Message:   "Could not deactivate session",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)

@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
 )
 
@@ -60,7 +59,12 @@ func (h *DataHandler) DataTypeCreate(c *echo.Context) error {
 		c.Logger().With(
 			"storage", storage,
 		).Warn("invalid storage")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid storage query",
+			Payload:   nil,
+		})
 	}
 }
 
@@ -81,13 +85,18 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not validate user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data type",
+			Payload:   nil,
+		})
 	}
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insufficient permission to create raw data type")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission to create raw data type")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	var data dataTypeCreateInternal
@@ -97,7 +106,12 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not bind data")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   nil,
+		})
 	}
 
 	var description *string
@@ -109,7 +123,12 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 		).Error("could not create data type")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data type",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -132,13 +151,18 @@ func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not validate user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data type",
+			Payload:   nil,
+		})
 	}
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insufficient permission to create raw data type")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission to create raw data type")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	var data dataTypeCreateExternal
@@ -148,7 +172,12 @@ func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not bind data")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   nil,
+		})
 	}
 
 	var description *string
@@ -162,7 +191,12 @@ func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not create data type")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data type",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -175,18 +209,31 @@ func (h *DataHandler) DataTypeGet(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"user", user_id,
-		).Error("could not parse data type id")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not parse data type id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid data type id query",
+			Payload:   nil,
+		})
 	}
 
-	data_type, err := h.data_service.DataTypeById(data_type_id)
+	data_type, valid, err := h.data_service.DataTypeById(data_type_id)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"user", user_id,
 			"data type", data_type_id,
 		).Error("could not get data type resources")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data type",
+			Payload:   nil,
+		})
+	}
+	if !valid {
+		return c.NoContent(http.StatusNotFound)
 	}
 
 	return c.JSON(http.StatusOK, data_type)
@@ -201,8 +248,13 @@ func (h *DataHandler) DataTypeUpdate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 			"payload", c.Request().Body,
-		).Error("could not bind update")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not bind update")
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   nil,
+		})
 	}
 
 	err = h.data_service.DataTypeUpdate(update)
@@ -212,7 +264,12 @@ func (h *DataHandler) DataTypeUpdate(c *echo.Context) error {
 			"user", user_id,
 			"udpate", update,
 		).Error("could not update data type")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -226,7 +283,12 @@ func (h *DataHandler) DataTypesGetAll(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not get data types")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data types",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, schemas)
@@ -241,7 +303,12 @@ func (h *DataHandler) DataSchemasGetAll(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not get data schemas")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data schemas",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, schemas)
@@ -273,8 +340,8 @@ func (h *DataHandler) DataSchemaCreate(c *echo.Context) error {
 	if !has_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Debug("insufficient permissions to create data schema")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permissions to create data schema")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	err = h.data_service.DataSchemaCreate(user_id, data_schema)
@@ -283,7 +350,12 @@ func (h *DataHandler) DataSchemaCreate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not create data schema")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data schema",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -296,8 +368,13 @@ func (h *DataHandler) DataSchemaResources(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"data schema id", c.QueryParam("id"),
-		).Error("could not parse data schema id")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not parse data schema id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid id query",
+			Payload:   nil,
+		})
 	}
 
 	resources, err := h.data_service.DataSchemaGetResources(data_schema_id)
@@ -307,7 +384,12 @@ func (h *DataHandler) DataSchemaResources(c *echo.Context) error {
 			"user", user_id,
 			"data schema", data_schema_id,
 		).Error("could not get data schema resources")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data schema",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, resources)
@@ -322,8 +404,13 @@ func (h *DataHandler) DataSchemaUpdate(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"request", c.Request().Body,
-		).Error("could not bind request to update")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not bind request to update")
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   nil,
+		})
 	}
 
 	err = h.data_service.DataSchemaUpdate(update)
@@ -333,7 +420,12 @@ func (h *DataHandler) DataSchemaUpdate(c *echo.Context) error {
 			"user", user_id,
 			"update", update,
 		).Error("could not update data schema")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data schema",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -347,8 +439,13 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 			"id", c.QueryParam("id"),
-		).Warn("could not parse id")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not parse id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid id query",
+			Payload:   nil,
+		})
 	}
 	var project_id uuid.UUID
 	project_id_str := c.QueryParam("project")
@@ -358,17 +455,27 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 			c.Logger().With(
 				"error", err,
 				"project", project_id_str,
-			).Warn("could not parse project id")
-			return c.NoContent(http.StatusBadRequest)
+			).Info("could not parse project id")
+			return c.JSON(http.StatusUnprocessableEntity, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_UUID,
+				Message:   "Invalid project query",
+				Payload:   nil,
+			})
 		}
 	}
 
-	data_rx, err := h.data_service.DataById(data_id)
+	data_rx, valid, err := h.data_service.DataById(data_id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return c.NoContent(http.StatusNotFound)
-		}
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
+	}
+	if !valid {
+		return c.NoContent(http.StatusNotFound)
 	}
 
 	if data_rx.Visibility != service.VisibilityPublic {
@@ -382,7 +489,12 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 				"data", data_id,
 				"user", user_id,
 			).Error("could not get data user permissions")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not get data",
+				Payload:   nil,
+			})
 		}
 		if permissions[0].Data != data_id {
 			c.Logger().With(
@@ -397,18 +509,22 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 			c.Logger().With(
 				"data", data_id,
 				"user", user_id,
-			).Warn("insufficient permissions")
-			return c.NoContent(http.StatusUnauthorized)
+			).Info("insufficient permissions")
+			return c.NoContent(http.StatusForbidden)
 		}
 	}
 
 	var data_type_label string
-	data_type, err := h.data_service.DataTypeById(data_rx.Type)
+	data_type, valid, err := h.data_service.DataTypeById(data_rx.Type)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"data", data_rx,
 		).Error("could not get data type")
+	} else if !valid {
+		c.Logger().With(
+			"data", data_rx,
+		).Error("data type not found")
 	} else {
 		switch data_type.DataStorage() {
 		case service.DataStorageExternal:
@@ -428,7 +544,12 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 			"error", err,
 			"data", data_id,
 		).Error("could not get data values")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	switch values.Storage {
@@ -536,7 +657,12 @@ func (h *DataHandler) downloadDataValuesSingleInternal(
 		c.Logger().With(
 			"error", err,
 		).Error("could not transform values to csv")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	c.Response().Header().Set(
@@ -599,7 +725,12 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 					"error", err,
 					"file", src.Path,
 				).Error("could not read file")
-				return c.NoContent(http.StatusInternalServerError)
+				return c.JSON(http.StatusInternalServerError, AppError{
+					RequestId: requestId(c),
+					Code:      APP_ERR_FS_ERROR,
+					Message:   "Could not get data",
+					Payload:   nil,
+				})
 			}
 
 			var project_label string
@@ -634,7 +765,12 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 		c.Logger().With(
 			"error", err,
 		).Error("could not create temporary data file")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 	defer tmpfile.Close()
 
@@ -653,7 +789,15 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 				filename,
 			)
 			if err != nil {
-				return c.NoContent(http.StatusInternalServerError)
+				c.Logger().With(
+					"error", err,
+				).Error("could not create zip archive")
+				return c.JSON(http.StatusInternalServerError, AppError{
+					RequestId: requestId(c),
+					Code:      APP_ERR_FS_ERROR,
+					Message:   "Could not get data",
+					Payload:   nil,
+				})
 			}
 		}
 	} else {
@@ -670,7 +814,15 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 					filename,
 				)
 				if err != nil {
-					return c.NoContent(http.StatusInternalServerError)
+					c.Logger().With(
+						"error", err,
+					).Error("could not create zip archive")
+					return c.JSON(http.StatusInternalServerError, AppError{
+						RequestId: requestId(c),
+						Code:      APP_ERR_FS_ERROR,
+						Message:   "Could not get data",
+						Payload:   nil,
+					})
 				}
 			case service.DataSourceCardinalityMultiple:
 				srcs := val.Source.([]service.SourceFileInfo)
@@ -684,7 +836,15 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 						filename,
 					)
 					if err != nil {
-						return c.NoContent(http.StatusInternalServerError)
+						c.Logger().With(
+							"error", err,
+						).Error("could not create zip archive")
+						return c.JSON(http.StatusInternalServerError, AppError{
+							RequestId: requestId(c),
+							Code:      APP_ERR_FS_ERROR,
+							Message:   "Could not get data",
+							Payload:   nil,
+						})
 					}
 				}
 			default:
@@ -719,7 +879,12 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 			"error", err,
 			"project", project_id,
 		).Error("could not close archive")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	stat, err := tmpfile.Stat()
@@ -728,7 +893,12 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 			"error", err,
 			"project", project_id,
 		).Error("could not stat archive")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	buf := make([]byte, stat.Size())
@@ -738,7 +908,12 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 			"error", err,
 			"project", project_id,
 		).Error("could not read archive file")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	c.Response().Header().Set(
@@ -805,8 +980,13 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"project", c.QueryParam("project"),
-		).Debug("could not parse project id")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not parse project id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid project query",
+			Payload:   nil,
+		})
 	}
 
 	tmpfile, err := os.CreateTemp("", "")
@@ -814,7 +994,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 		).Error("could not create temporary data file")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 	defer tmpfile.Close()
 
@@ -835,7 +1020,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 			"error", err,
 			"project", project_id,
 		).Error("could not get user data")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 	data_ids := make([]uuid.UUID, len(data))
 	for idx, d := range data {
@@ -849,7 +1039,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 			"project", project_id,
 			"data", data_ids,
 		).Error("could not get data user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	filtered := make([]service.ProjectDataWithMembership, 0, len(data))
@@ -870,8 +1065,8 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 
 			has_permission := false
 			for _, perm := range data_permissions[perm_idx].Permissions {
-				if perm == service.DataUserPermissionOwner ||
-					perm == service.DataUserPermissionReadValues {
+				if perm == service.DataPermissionOwner ||
+					perm == service.DataPermissionReadValues {
 					has_permission = true
 					break
 				}
@@ -894,7 +1089,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 			"error", err,
 			"data", filtered_ids,
 		).Error("could not get data values")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 	data_type_ids := make([]uuid.UUID, 0, len(filtered))
 	for _, d := range filtered {
@@ -921,7 +1121,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 			c.Logger().With(
 				"data", data_id,
 			).Error("invalid data")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_ENTITY_NOT_FOUND,
+				Message:   "Could not get data",
+				Payload:   nil,
+			})
 		}
 		timestamp := data[data_idx].Data.Timestamp
 
@@ -1036,7 +1241,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 							"error", err,
 							"data", vals.Data,
 						).Error("zip archive could not create file")
-						return c.NoContent(http.StatusInternalServerError)
+						return c.JSON(http.StatusInternalServerError, AppError{
+							RequestId: requestId(c),
+							Code:      APP_ERR_FS_ERROR,
+							Message:   "Could not get data",
+							Payload:   nil,
+						})
 					}
 
 					continue
@@ -1075,7 +1285,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 							"error", err,
 							"source", src,
 						).Error("zip archive could not create file")
-						return c.NoContent(http.StatusInternalServerError)
+						return c.JSON(http.StatusInternalServerError, AppError{
+							RequestId: requestId(c),
+							Code:      APP_ERR_FS_ERROR,
+							Message:   "Could not get data",
+							Payload:   nil,
+						})
 					}
 				case service.DataSourceCardinalityMultiple:
 					infos := src.Source.([]service.SourceFileInfo)
@@ -1097,7 +1312,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 								"error", err,
 								"data", vals.Data,
 							).Error("zip archive could not create file")
-							return c.NoContent(http.StatusInternalServerError)
+							return c.JSON(http.StatusInternalServerError, AppError{
+								RequestId: requestId(c),
+								Code:      APP_ERR_FS_ERROR,
+								Message:   "Could not get data",
+								Payload:   nil,
+							})
 						}
 					}
 				default:
@@ -1114,7 +1334,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 					"error", err,
 					"data", vals.Data,
 				).Error("could not convert data values to csv")
-				return c.NoContent(http.StatusInternalServerError)
+				return c.JSON(http.StatusInternalServerError, AppError{
+					RequestId: requestId(c),
+					Code:      APP_ERR_OTHER,
+					Message:   "Could not get data",
+					Payload:   nil,
+				})
 			}
 
 			filename := fmt.Sprintf(
@@ -1135,7 +1360,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 					"error", err,
 					"data", vals.Data,
 				).Error("could not write data to archive file")
-				return c.NoContent(http.StatusInternalServerError)
+				return c.JSON(http.StatusInternalServerError, AppError{
+					RequestId: requestId(c),
+					Code:      APP_ERR_FS_ERROR,
+					Message:   "Could not get data",
+					Payload:   nil,
+				})
 			}
 		default:
 			panic(fmt.Sprintf("unexpected service.DataStorage: %#v", vals.Storage))
@@ -1154,7 +1384,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 			"user", user_id,
 			"project", project_id,
 		).Error("could not close archive")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	stat, err := tmpfile.Stat()
@@ -1164,7 +1399,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 			"user", user_id,
 			"project", project_id,
 		).Error("could not stat archive")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	buf := make([]byte, stat.Size())
@@ -1175,7 +1415,12 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 			"user", user_id,
 			"project", project_id,
 		).Error("could not read archive file")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	c.Response().Header().Set(
@@ -1197,8 +1442,13 @@ func (h *DataHandler) DownloadDataSource(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 			"data", c.QueryParam("data"),
-		).Warn("could not parse id")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not parse id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid data query",
+			Payload:   nil,
+		})
 	}
 	source_label := c.QueryParam("source")
 	if source_label == "" {
@@ -1206,7 +1456,12 @@ func (h *DataHandler) DownloadDataSource(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Warn("source not present")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Missing source query",
+			Payload:   nil,
+		})
 	}
 	index := -1
 	index_str := c.QueryParam("index")
@@ -1217,14 +1472,24 @@ func (h *DataHandler) DownloadDataSource(c *echo.Context) error {
 				"error", err,
 				"index", index_str,
 			).Warn("invalid index")
-			return c.NoContent(http.StatusBadRequest)
+			return c.JSON(http.StatusUnprocessableEntity, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_ITEM,
+				Message:   "Invalid index query",
+				Payload:   nil,
+			})
 		}
 		if index_val < 0 {
 			c.Logger().With(
 				"error", err,
 				"index", index_val,
 			).Warn("invalid index")
-			return c.NoContent(http.StatusBadRequest)
+			return c.JSON(http.StatusBadRequest, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_ITEM,
+				Message:   "Invalid index query",
+				Payload:   nil,
+			})
 		}
 		index = index_val
 	}
@@ -1237,17 +1502,27 @@ func (h *DataHandler) DownloadDataSource(c *echo.Context) error {
 			c.Logger().With(
 				"error", err,
 				"project", project_id_str,
-			).Warn("could not parse project id")
-			return c.NoContent(http.StatusBadRequest)
+			).Info("could not parse project id")
+			return c.JSON(http.StatusUnprocessableEntity, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_UUID,
+				Message:   "Invalid project query",
+				Payload:   nil,
+			})
 		}
 	}
 
-	data_rx, err := h.data_service.DataById(data_id)
+	data_rx, valid, err := h.data_service.DataById(data_id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return c.NoContent(http.StatusNotFound)
-		}
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
+	}
+	if !valid {
+		return c.NoContent(http.StatusNotFound)
 	}
 
 	if data_rx.Visibility != service.VisibilityPublic {
@@ -1261,7 +1536,12 @@ func (h *DataHandler) DownloadDataSource(c *echo.Context) error {
 				"data", data_id,
 				"user", user_id,
 			).Error("could not get data user permissions")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not get data",
+				Payload:   nil,
+			})
 		}
 		if permissions[0].Data != data_id {
 			c.Logger().With(
@@ -1276,8 +1556,8 @@ func (h *DataHandler) DownloadDataSource(c *echo.Context) error {
 			c.Logger().With(
 				"data", data_id,
 				"user", user_id,
-			).Warn("insufficient permissions")
-			return c.NoContent(http.StatusUnauthorized)
+			).Info("insufficient permissions")
+			return c.NoContent(http.StatusForbidden)
 		}
 	}
 
@@ -1287,16 +1567,25 @@ func (h *DataHandler) DownloadDataSource(c *echo.Context) error {
 			"error", err,
 			"data", data_id,
 		).Error("could not get data values")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	var data_type_label string
-	data_type, err := h.data_service.DataTypeById(data_rx.Type)
+	data_type, valid, err := h.data_service.DataTypeById(data_rx.Type)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"data", data_rx,
 		).Error("could not get data type")
+	} else if !valid {
+		c.Logger().With(
+			"data", data_rx,
+		).Error("data type not found")
 	} else {
 		switch data_type.DataStorage() {
 		case service.DataStorageExternal:
@@ -1378,7 +1667,12 @@ func (h *DataHandler) DownloadDataSource(c *echo.Context) error {
 					"sources", srcs,
 					"index", index,
 				).Error("source with index not found")
-				return c.NoContent(http.StatusBadRequest)
+				return c.JSON(http.StatusBadRequest, AppError{
+					RequestId: requestId(c),
+					Code:      APP_ERR_ENTITY_NOT_FOUND,
+					Message:   "Could not get data",
+					Payload:   nil,
+				})
 			}
 
 			return h.downloadDataSourceSingle(
@@ -1421,7 +1715,12 @@ func (h *DataHandler) downloadDataSourceSingle(
 			"error", err,
 			"file", src.Path,
 		).Error("could not read file")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	filename := downloadDataSourceSingleFilename(
@@ -1458,7 +1757,12 @@ func (h *DataHandler) downloadDataSourceMultiple(
 		c.Logger().With(
 			"error", err,
 		).Error("could not create temporary data file")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 	defer tmpfile.Close()
 
@@ -1493,7 +1797,12 @@ func (h *DataHandler) downloadDataSourceMultiple(
 				"error", err,
 				"source", src,
 			).Error("could not write file to archive")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_FS_ERROR,
+				Message:   "Could not get data",
+				Payload:   nil,
+			})
 		}
 	}
 
@@ -1502,7 +1811,12 @@ func (h *DataHandler) downloadDataSourceMultiple(
 		c.Logger().With(
 			"error", err,
 		).Error("could not close archive")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	stat, err := tmpfile.Stat()
@@ -1510,7 +1824,12 @@ func (h *DataHandler) downloadDataSourceMultiple(
 		c.Logger().With(
 			"error", err,
 		).Error("could not stat archive")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	buf := make([]byte, stat.Size())
@@ -1519,7 +1838,12 @@ func (h *DataHandler) downloadDataSourceMultiple(
 		c.Logger().With(
 			"error", err,
 		).Error("could not read archive file")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_FS_ERROR,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	filename := downloadDataSourceMultipleArchiveName(
@@ -1656,7 +1980,12 @@ func (h *DataHandler) DataTypeTransformsGetAll(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not get data type transforms")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data type transforms",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, transforms)
@@ -1681,13 +2010,18 @@ func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not get user role")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data type transform",
+			Payload:   nil,
+		})
 	}
 	if !has_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Debug("insufficient permissions to create transform")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permissions to create transform")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	var data transformData
@@ -1696,7 +2030,12 @@ func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 		c.Logger().With(
 			"user", user_id,
 		).Error("could not bind data type transform")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   nil,
+		})
 	}
 
 	cmd, err := data_type_transform_command_from_file_ext(filepath.Ext(data.Script.Filename))
@@ -1705,7 +2044,12 @@ func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 			"user", user_id,
 			"file name", data.Script.Filename,
 		).Error("could not get data type transform command")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_ITEM,
+			Message:   "Unsupported transform script",
+			Payload:   nil,
+		})
 	}
 
 	transform := service.DataTypeTransformCreate{
@@ -1724,7 +2068,12 @@ func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not create transform")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data type transform",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -1764,6 +2113,10 @@ type DataIngestSourceInfo struct {
 }
 
 func (h *DataHandler) DataIngest(c *echo.Context) error {
+	type appErrPayload struct {
+		details string
+	}
+
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	sufficient_permission, err := h.user_service.UserHasPermission(
 		user_id,
@@ -1774,13 +2127,18 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not get user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not ingest data",
+			Payload:   nil,
+		})
 	}
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Debug("insufficient permission to create data")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission to create data")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	project_id := uuid.Nil
@@ -1791,8 +2149,13 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 			c.Logger().With(
 				"error", err,
 				"id", c.Param("id"),
-			).Debug("could not parse project id")
-			return c.NoContent(http.StatusBadRequest)
+			).Info("could not parse project id")
+			return c.JSON(http.StatusUnprocessableEntity, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_UUID,
+				Message:   "Invalid project query",
+				Payload:   nil,
+			})
 		}
 
 		sufficient_permission_project, err := h.project_service.UserHasProjectPermission(
@@ -1806,24 +2169,36 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 				"user", user_id,
 				"project", project_id,
 			).Error("could not get user project permissions")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not ingest data",
+				Payload:   nil,
+			})
 		}
 		if !sufficient_permission_project {
 			c.Logger().With(
 				"user", user_id,
 				"project", project_id,
-			).Debug("insufficient permission to create project data")
-			return c.NoContent(http.StatusUnauthorized)
+			).Info("insufficient permission to create project data")
+			return c.NoContent(http.StatusForbidden)
 		}
 	}
 
-	origin_web_client, err := h.data_service.DataOriginByLabel(service.DATA_ORIGIN_WEB_CLIENT_LABEL)
-	if err != nil {
+	origin_web_client, valid, err := h.data_service.DataOriginByLabel(service.DATA_ORIGIN_WEB_CLIENT_LABEL)
+	if err != nil || !valid {
+		// NB: web client data origin should always exist
+		// if not, something has gone wrong with the database state
 		c.Logger().With(
 			"error", err,
 			"user", user_id,
 		).Error("could not get web client data origin")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data origin",
+			Payload:   nil,
+		})
 	}
 
 	var info []DataIngest
@@ -1833,7 +2208,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 			"error", err,
 			"data", c.FormValue("data"),
 		).Debug("could not parse data")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_ITEM,
+			Message:   "Could not ingest data",
+			Payload:   appErrPayload{details: "Data is invalid"},
+		})
 	}
 
 	var project_labels []string
@@ -1844,7 +2224,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 				"error", err,
 				"data", c.FormValue("data"),
 			).Debug("could not parse data")
-			return c.NoContent(http.StatusBadRequest)
+			return c.JSON(http.StatusUnprocessableEntity, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_ITEM,
+				Message:   "Could not ingest data",
+				Payload:   appErrPayload{details: "Project labels are invalid"},
+			})
 		}
 		if len(project_labels) != len(info) {
 			c.Logger().With(
@@ -1852,7 +2237,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 				"data", info,
 				"project labels", project_labels,
 			).Debug("invalid project labels")
-			return c.NoContent(http.StatusBadRequest)
+			return c.JSON(http.StatusBadRequest, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not get data",
+				Payload:   appErrPayload{details: "Project labels are invalid"},
+			})
 		}
 	}
 
@@ -1868,7 +2258,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 			"error", err,
 			"data types", data_type_ids,
 		).Error("could not get data types")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not ingest data",
+			Payload:   nil,
+		})
 	}
 	data_types_by_idx := make([]int, len(info))
 	for idx, datum := range info {
@@ -1895,7 +2290,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 		).Warn("could not get data source path")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not ingest data",
+			Payload:   nil,
+		})
 	}
 
 	form, err := c.MultipartForm()
@@ -1903,7 +2303,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 		).Error("could not cast request body to multipart form")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Could not ingest data",
+			Payload:   appErrPayload{details: "Could not parse data"},
+		})
 	}
 
 	source_info := make([]map[uuid.UUID]DataIngestSourceInfo, len(info))
@@ -1947,8 +2352,13 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 						c.Logger().With(
 							"source", source,
 							"field", field,
-						).Warn("invalid source cardinality")
-						return c.NoContent(http.StatusBadRequest)
+						).Info("invalid source cardinality")
+						return c.JSON(http.StatusUnprocessableEntity, AppError{
+							RequestId: requestId(c),
+							Code:      APP_ERR_INVALID_ITEM,
+							Message:   "Could not ingest data",
+							Payload:   appErrPayload{details: "Invalid field"},
+						})
 					}
 
 					file, err := c.FormFile(name)
@@ -1958,7 +2368,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 							"source", source,
 							"file", name,
 						).Warn("could not get form file")
-						return c.NoContent(http.StatusBadRequest)
+						return c.JSON(http.StatusUnprocessableEntity, AppError{
+							RequestId: requestId(c),
+							Code:      APP_ERR_ENTITY_NOT_FOUND,
+							Message:   "Could not ingest data",
+							Payload:   appErrPayload{details: "Missing data file"},
+						})
 					}
 
 					filename := fmt.Sprintf("%s.%s", rand.Text(), file.Filename)
@@ -1984,7 +2399,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 							"source", source,
 							"field", field,
 						).Warn("invalid source cardinality")
-						return c.NoContent(http.StatusBadRequest)
+						return c.JSON(http.StatusUnprocessableEntity, AppError{
+							RequestId: requestId(c),
+							Code:      APP_ERR_INVALID_ITEM,
+							Message:   "Could not ingest data",
+							Payload:   appErrPayload{details: "Invalid field"},
+						})
 					}
 
 					files, exists := form.File[name]
@@ -1993,7 +2413,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 							"source", source,
 							"file", name,
 						).Warn("could not get form file")
-						return c.NoContent(http.StatusBadRequest)
+						return c.JSON(http.StatusUnprocessableEntity, AppError{
+							RequestId: requestId(c),
+							Code:      APP_ERR_ENTITY_NOT_FOUND,
+							Message:   "Could not ingest data",
+							Payload:   appErrPayload{details: "Data file not found"},
+						})
 					}
 
 					source_file_info := make([]service.SourceFileInfo, 0, len(files))
@@ -2052,7 +2477,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 			"error", err,
 			"schemas", schema_ids,
 		).Error("could not get data schemas")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not ingest data",
+			Payload:   nil,
+		})
 	}
 
 	for idx, datum := range data {
@@ -2065,7 +2495,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 				c.Logger().With(
 					"error", err,
 				).Warn("invalid data sources")
-				return c.NoContent(http.StatusBadRequest)
+				return c.JSON(http.StatusUnprocessableEntity, AppError{
+					RequestId: requestId(c),
+					Code:      APP_ERR_INVALID_ITEM,
+					Message:   "Could not ingest data",
+					Payload:   appErrPayload{details: "Invalid data values"},
+				})
 			}
 		case service.DataStorageInternal:
 			dt := data_type.(service.DataTypeInternal)
@@ -2081,7 +2516,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 				c.Logger().With(
 					"error", err,
 				).Warn("invalid data schema")
-				return c.NoContent(http.StatusBadRequest)
+				return c.JSON(http.StatusUnprocessableEntity, AppError{
+					RequestId: requestId(c),
+					Code:      APP_ERR_INVALID_ITEM,
+					Message:   "Could not ingest data",
+					Payload:   appErrPayload{details: "Invalid data schema"},
+				})
 			}
 		default:
 			panic("unexpected service.DataStorage")
@@ -2105,7 +2545,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 						"source", key,
 					).Error("could nto save file")
 					removeFiles(saved_files, c.Logger())
-					return c.NoContent(http.StatusInternalServerError)
+					return c.JSON(http.StatusInternalServerError, AppError{
+						RequestId: requestId(c),
+						Code:      APP_ERR_FS_ERROR,
+						Message:   "Could not ingest data",
+						Payload:   appErrPayload{details: "Could not save data file"},
+					})
 				}
 				saved_files = append(saved_files, path)
 			case service.DataSourceCardinalityMultiple:
@@ -2120,7 +2565,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 							"source", key,
 						).Error("could nto save file")
 						removeFiles(saved_files, c.Logger())
-						return c.NoContent(http.StatusInternalServerError)
+						return c.JSON(http.StatusInternalServerError, AppError{
+							RequestId: requestId(c),
+							Code:      APP_ERR_FS_ERROR,
+							Message:   "Could not ingest data",
+							Payload:   appErrPayload{details: "Could not save data file"},
+						})
 					}
 					saved_files = append(saved_files, path)
 				}
@@ -2138,7 +2588,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 			"data", info,
 		).Error("could not create data")
 		removeFiles(saved_files, c.Logger())
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not ingest data",
+			Payload:   appErrPayload{details: "Could not create data"},
+		})
 	}
 
 	if project_id != uuid.Nil {
@@ -2162,7 +2617,12 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 				"project", project_id,
 				"data", data_ids,
 			).Error("could not create project data memberships")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not ingest data",
+				Payload:   appErrPayload{details: "Could not add data to project"},
+			})
 		}
 	}
 
@@ -2178,7 +2638,12 @@ func (h *DataHandler) OrphanedData(c *echo.Context) error {
 			"error", err,
 			"user", user,
 		).Error("could not get orphaned data")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, data)
@@ -2203,17 +2668,30 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 		c.Logger().With(
 			"user", user,
 			"data", data_str,
-		).Error("could not parse id as uuid")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not parse id as uuid")
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid id query",
+			Payload:   nil,
+		})
 	}
 
-	data_rx, err := h.data_service.DataById(data_id)
+	data_rx, valid, err := h.data_service.DataById(data_id)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"data", data_id,
 		).Error("could not get data")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
+	}
+	if !valid {
+		return c.NoContent(http.StatusNotFound)
 	}
 
 	user_data_permissions, err := h.data_service.DataUserPermission(user, data_id)
@@ -2222,15 +2700,20 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			"error", err,
 			"data", data_id,
 		).Error("could not get data user permission")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	has_permission := slices.Contains(
 		user_data_permissions,
-		service.DataUserPermissionOwner,
+		service.DataPermissionOwner,
 	) || slices.Contains(
 		user_data_permissions,
-		service.DataUserPermissionRead,
+		service.DataPermissionRead,
 	)
 
 	if !has_permission {
@@ -2243,7 +2726,12 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 				"error", err,
 				"user", user,
 			).Error("could not get user permissions")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not get data",
+				Payload:   nil,
+			})
 		}
 
 		has_permission = has_read_all
@@ -2253,18 +2741,35 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 		c.Logger().With(
 			"user", user,
 			"data", data_id,
-		).Debug("insufficient permission")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission")
+		return c.NoContent(http.StatusForbidden)
 	}
 
-	data_type, err := h.data_service.DataTypeById(data_rx.Type)
+	data_type, valid, err := h.data_service.DataTypeById(data_rx.Type)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"data", data_rx,
 			"user", user,
 		).Error("could not get data type")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
+	}
+	if !valid {
+		c.Logger().With(
+			"data", data_rx,
+			"user", user,
+		).Error("data type not found")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_ENTITY_NOT_FOUND,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	properties, err := h.data_service.DataProperties(data_id)
@@ -2274,7 +2779,12 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			"data", data_id,
 			"user", user,
 		).Error("could not get data properties")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	notes, err := h.data_service.DataNotes(data_id)
@@ -2284,7 +2794,12 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			"data", data_id,
 			"user", user,
 		).Error("could not get data notes")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	creator, err := h.data_service.DataCreator(data_id)
@@ -2294,7 +2809,12 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			"data", data_id,
 			"user", user,
 		).Error("could not get data origin")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	project_resources, err := h.data_service.DataProjectsResources(data_id)
@@ -2304,7 +2824,12 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			"data", data_id,
 			"user", user,
 		).Error("could not get data project resources")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	user_is_db_owner, err := h.user_service.IsDbOwner(user)
@@ -2314,7 +2839,12 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			"data", data_id,
 			"user", user,
 		).Error("could not get user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 	if !user_is_db_owner {
 		project_permission_ids := make([]uuid.UUID, 0, len(project_resources))
@@ -2331,7 +2861,12 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 				"projects", project_permission_ids,
 				"user", user,
 			).Error("could not get project user permissions")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not get data",
+				Payload:   nil,
+			})
 		}
 
 		filtered := make([]service.DataProjectResources, 0, len(project_resources))
@@ -2368,7 +2903,12 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			"data", data_id,
 			"user", user,
 		).Error("could not get users")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	resources := DataResources{
@@ -2392,10 +2932,15 @@ func (h *DataHandler) DataUpdate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("invalid update")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Could not update data",
+			Payload:   nil,
+		})
 	}
 
-	sufficient_permission, err := h.user_service.UserHasDataPermission(
+	sufficient_permission, err := h.data_service.UserHasDataPermission(
 		user_id,
 		update.Id,
 		service.DataPermissionModify,
@@ -2405,13 +2950,18 @@ func (h *DataHandler) DataUpdate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not validate user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data",
+			Payload:   nil,
+		})
 	}
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insufficient permission to modify data")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission to modify data")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	err = h.data_service.DataUpdate(update)
@@ -2421,7 +2971,12 @@ func (h *DataHandler) DataUpdate(c *echo.Context) error {
 			"user", user_id,
 			"update", update,
 		).Error("could not update data")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -2436,10 +2991,15 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("invalid update")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Could not update data properties",
+			Payload:   nil,
+		})
 	}
 
-	sufficient_permission, err := h.user_service.UserHasDataPermission(
+	sufficient_permission, err := h.data_service.UserHasDataPermission(
 		user_id,
 		update.Id,
 		service.DataPermissionPropertiesModify,
@@ -2449,13 +3009,18 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not validate user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data properties",
+			Payload:   nil,
+		})
 	}
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insufficient permission to update data properties")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission to update data properties")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	for _, property := range update.Create {
@@ -2465,7 +3030,12 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 				"error", err,
 				"property", property,
 			).Error("incompatible property type and value")
-			return c.NoContent(http.StatusBadRequest)
+			return c.JSON(http.StatusUnprocessableEntity, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_ITEM,
+				Message:   "Could not update data properties",
+				Payload:   `{details: "Invalid property value"}`,
+			})
 		}
 	}
 
@@ -2475,7 +3045,12 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 			c.Logger().With(
 				"key", property.Key,
 			).Error("duplicate key in property update value")
-			return c.NoContent(http.StatusBadRequest)
+			return c.JSON(http.StatusUnprocessableEntity, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_PAYLOAD,
+				Message:   "Could not update data",
+				Payload:   `{details: "Property key duplicated"}`,
+			})
 		}
 
 		update_keys[idx] = property.Key
@@ -2487,7 +3062,12 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 			"data", update.Id,
 			"keys", update_keys,
 		).Error("could not get updated data properties")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data properties",
+			Payload:   nil,
+		})
 	}
 	for _, property := range update.ValuesUpdate {
 		idx_base := slices.IndexFunc(update_properties, func(base service.Property) bool {
@@ -2509,7 +3089,12 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 				"error", err,
 				"property", property,
 			).Error("incompatible property type and value")
-			return c.NoContent(http.StatusBadRequest)
+			return c.JSON(http.StatusUnprocessableEntity, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_ITEM,
+				Message:   "Could not update data properties",
+				Payload:   `{details: "Invalid property values"}`,
+			})
 		}
 	}
 
@@ -2520,7 +3105,12 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 			"user", user_id,
 			"update", update,
 		).Error("could not update data properties")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data properties",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -2580,7 +3170,6 @@ type DataNotesCreate struct {
 }
 
 func (h *DataHandler) DataNotesCreate(c *echo.Context) error {
-
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	var notes DataNotesCreate
 	err := c.Bind(&notes)
@@ -2589,10 +3178,15 @@ func (h *DataHandler) DataNotesCreate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("invalid data")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Could not create data notes",
+			Payload:   nil,
+		})
 	}
 
-	sufficient_permission, err := h.user_service.UserHasDataPermission(
+	sufficient_permission, err := h.data_service.UserHasDataPermission(
 		user_id,
 		notes.Id,
 		service.DataPermissionNoteCreate,
@@ -2602,13 +3196,18 @@ func (h *DataHandler) DataNotesCreate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not validate user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data notes",
+			Payload:   nil,
+		})
 	}
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insufficient permission to create data notes")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission to create data notes")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	err = h.data_service.DataNotesCreate(notes.Id, user_id, notes.Notes)
@@ -2619,7 +3218,12 @@ func (h *DataHandler) DataNotesCreate(c *echo.Context) error {
 			"data", notes.Id,
 			"notes", notes.Notes,
 		).Error("could not create data notes")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data notes",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -2633,7 +3237,12 @@ func (h *DataHandler) DataOrigins(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not get data origins")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data origins",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, origins)
@@ -2650,13 +3259,18 @@ func (h *DataHandler) DataOriginCreate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not validate user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data origin",
+			Payload:   nil,
+		})
 	}
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insufficient permission to create data origin")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission to create data origin")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	var origin service.DataOriginCreate
@@ -2667,7 +3281,12 @@ func (h *DataHandler) DataOriginCreate(c *echo.Context) error {
 			"user", user_id,
 			"data origin", c.Request().Body,
 		).Error("invalid data origin")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Could not create data origin",
+			Payload:   nil,
+		})
 	}
 
 	err = h.data_service.DataOriginCreate(origin)
@@ -2677,7 +3296,12 @@ func (h *DataHandler) DataOriginCreate(c *echo.Context) error {
 			"user", user_id,
 			"data origin", origin,
 		).Error("could not create data origin")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create data origin",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -2691,8 +3315,13 @@ func (h *DataHandler) DataOriginGet(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 			"data origin id", c.Param("id"),
-		).Error("could not get data origin id")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not get data origin id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid id query",
+			Payload:   nil,
+		})
 	}
 
 	origins, err := h.data_service.DataOriginById(origin_id)
@@ -2702,7 +3331,12 @@ func (h *DataHandler) DataOriginGet(c *echo.Context) error {
 			"user", user_id,
 			"data origin", origin_id,
 		).Error("could not get data origin")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data origin",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, origins)
@@ -2719,13 +3353,18 @@ func (h *DataHandler) DataOriginUpdate(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not validate user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data origin",
+			Payload:   nil,
+		})
 	}
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insufficient permission to create data origin")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission to create data origin")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	var update service.DataOriginRx
@@ -2736,7 +3375,12 @@ func (h *DataHandler) DataOriginUpdate(c *echo.Context) error {
 			"user", user_id,
 			"update", update,
 		).Error("invalid data origin update")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Could not udpate data origin",
+			Payload:   nil,
+		})
 	}
 
 	err = h.data_service.DataOriginUpdate(update)
@@ -2746,7 +3390,12 @@ func (h *DataHandler) DataOriginUpdate(c *echo.Context) error {
 			"user", user_id,
 			"update", update,
 		).Error("could not get data origin")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data origin",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -2757,7 +3406,12 @@ func (h *DataHandler) DataValues(c *echo.Context) error {
 	data_id_str := c.QueryParam("id")
 	if data_id_str == "" {
 		c.Logger().With("user", user_id).Warn("data id not present")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_ITEM,
+			Message:   "Missing id query",
+			Payload:   nil,
+		})
 	}
 	data_id, err := uuid.Parse(data_id_str)
 	if err != nil {
@@ -2765,8 +3419,13 @@ func (h *DataHandler) DataValues(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 			"data id", data_id_str,
-		).Warn("invalid data id")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("invalid data id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid id query",
+			Payload:   nil,
+		})
 	}
 
 	permissions, err := h.data_service.DataUserPermission(user_id, data_id)
@@ -2776,15 +3435,20 @@ func (h *DataHandler) DataValues(c *echo.Context) error {
 			"data", data_id,
 			"user", user_id,
 		).Error("could not get user data permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
-	has_permission := slices.Contains(permissions, service.DataUserPermissionReadValues) ||
-		slices.Contains(permissions, service.DataUserPermissionOwner)
+	has_permission := slices.Contains(permissions, service.DataPermissionReadValues) ||
+		slices.Contains(permissions, service.DataPermissionOwner)
 	if !has_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insufficient permission to create data origin")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission to create data origin")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	values, err := h.data_service.DataValuesById(data_id)
@@ -2793,7 +3457,12 @@ func (h *DataHandler) DataValues(c *echo.Context) error {
 			"error", err,
 			"data", data_id,
 		).Error("could not get data values")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
 
 	if values.Storage == service.DataStorageExternal {
@@ -2825,7 +3494,12 @@ func (h *DataHandler) DataValuesPreview(c *echo.Context) error {
 	data_id_str := c.QueryParam("id")
 	if data_id_str == "" {
 		c.Logger().With("user", user_id).Warn("data id not present")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "id query must be present",
+			Payload:   nil,
+		})
 	}
 	data_id, err := uuid.Parse(data_id_str)
 	if err != nil {
@@ -2833,35 +3507,51 @@ func (h *DataHandler) DataValuesPreview(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 			"data id", data_id_str,
-		).Warn("invalid data id")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("invalid data id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid id query",
+			Payload:   nil,
+		})
 	}
 
-	permissions, err := h.data_service.DataUserPermission(user_id, data_id)
+	has_permission, err := h.data_service.UserHasDataPermission(user_id, data_id, service.DataPermissionReadValues)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"data", data_id,
 			"user", user_id,
 		).Error("could not get user data permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
 	}
-	has_permission := slices.Contains(permissions, service.DataUserPermissionReadValues) ||
-		slices.Contains(permissions, service.DataUserPermissionOwner)
 	if !has_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Error("insufficient permission to create data origin")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission to create data origin")
+		return c.NoContent(http.StatusForbidden)
 	}
 
-	preview, err := h.data_service.DataValuesPreviewById(data_id, previewInternalMultipleLimitDefault)
+	preview, valid, err := h.data_service.DataValuesPreviewById(data_id, previewInternalMultipleLimitDefault)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"data", data_id,
 		).Error("could not get data preview")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data",
+			Payload:   nil,
+		})
+	}
+	if !valid {
+		return c.NoContent(http.StatusNotFound)
 	}
 
 	if preview.Storage == service.DataStorageExternal {

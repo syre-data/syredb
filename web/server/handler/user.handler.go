@@ -10,7 +10,6 @@ import (
 	"syredb/service"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/labstack/echo/v5"
 )
@@ -48,40 +47,62 @@ func (h *UserHandler) UserGet(c *echo.Context) error {
 				"error", err,
 				"user", auth_user_id,
 				"id", user_id_str,
-			).Error("could not parse user id")
-			return c.NoContent(http.StatusBadRequest)
+			).Info("could not parse user id")
+			return c.JSON(http.StatusUnprocessableEntity, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_UUID,
+				Message:   "Invalid id query",
+				Payload:   nil,
+			})
 		}
 		user_id = parsed
 	}
 
-	user, err := h.user_service.UserById(user_id)
+	user, valid, err := h.user_service.UserById(user_id)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"user", auth_user_id,
 		).Error("could not get user from session token")
-		return c.NoContent(http.StatusUnauthorized)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get user",
+			Payload:   nil,
+		})
 	}
 
-	return c.JSON(http.StatusOK, user)
+	if valid {
+		return c.JSON(http.StatusOK, user)
+	} else {
+		return c.NoContent(http.StatusOK)
+	}
 }
 
-func (h *UserHandler) guard_user_has_permission(c *echo.Context, permission service.DbPermission) error {
+func (h *UserHandler) guardUserHasPermission(c *echo.Context, permission service.DbPermission) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	is_owner, err := h.user_service.UserHasPermission(user_id, permission)
+	has_permission, err := h.user_service.UserHasPermission(user_id, permission)
 	if err != nil {
 		c.Logger().With("error", err).Error("could not verify user permission")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not verify user permission",
+			Payload:   nil,
+		})
 	}
-	if !is_owner {
-		return c.NoContent(http.StatusUnauthorized)
+	if !has_permission {
+		c.Logger().With(
+			"user", user_id,
+		).Info("insufficient permission for project resources")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	return nil
 }
 
 func (h *UserHandler) UsersAll(c *echo.Context) error {
-	err := h.guard_user_has_permission(c, service.DbPermissionUserModify)
+	err := h.guardUserHasPermission(c, service.DbPermissionUserModify)
 	if err != nil {
 		return err
 	}
@@ -89,14 +110,19 @@ func (h *UserHandler) UsersAll(c *echo.Context) error {
 	users, err := h.user_service.AllUsers()
 	if err != nil {
 		c.Logger().With("error", err).Error("could not get user")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not verify user permission",
+			Payload:   c.Get("request_id"),
+		})
 	}
 
 	return c.JSON(http.StatusOK, users)
 }
 
 func (h *UserHandler) UserCreate(c *echo.Context) error {
-	err := h.guard_user_has_permission(c, service.DbPermissionUserCreate)
+	err := h.guardUserHasPermission(c, service.DbPermissionUserCreate)
 	if err != nil {
 		return err
 	}
@@ -109,23 +135,34 @@ func (h *UserHandler) UserCreate(c *echo.Context) error {
 			"user", user,
 			"request body", c.Request().Body,
 		).Error("could not bind request data")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Could not create user",
+			Payload:   nil,
+		})
 	}
 
 	user.Password = rand.Text()
 	user_id, err := h.user_service.CreateUser(user)
 	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"user", user,
-		).Error("could not create user")
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
-			if pgErr.Code == string(DBErrCodeDuplicateRecord) {
+			if pgErr.Code == string(DB_ERR_DUPLICATE_RECORD) {
 				return c.NoContent(http.StatusConflict)
 			}
+		} else {
+			c.Logger().With(
+				"error", err,
+				"user", user,
+			).Error("could not create user")
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not create user",
+				Payload:   nil,
+			})
 		}
-		return c.NoContent(http.StatusInternalServerError)
 	}
 
 	const subject = "SyreDB | Welcome!"
@@ -140,40 +177,51 @@ func (h *UserHandler) UserCreate(c *echo.Context) error {
 	err = h.app_service.SendMail(user.Email, subject, message)
 	if err != nil {
 		c.Logger().With("error", err).Error("could not send user creation email")
-		pwd_err := AppError{
-			Code:    AppErrCodeEmailNotSent,
+		return c.JSON(http.StatusInternalServerError, AppError{
+			Code:    APP_ERR_EMAIL_NOT_SENT,
 			Payload: user.Password,
-		}
-		return c.JSON(http.StatusInternalServerError, pwd_err)
+		})
 	}
 
 	return c.JSON(http.StatusOK, user_id)
 }
 
 func (h *UserHandler) UserUpdate(c *echo.Context) error {
-	err := h.guard_user_has_permission(c, service.DbPermissionUserModify)
+	err := h.guardUserHasPermission(c, service.DbPermissionUserModify)
 	if err != nil {
 		return err
 	}
 
 	update := new(service.User)
 	err = c.Bind(update)
-	c.Logger().With("update", update).Error("UPDATE")
 	if err != nil {
 		c.Logger().With("error", err).Error("could not bind request data")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   nil,
+		})
 	}
 	err = h.user_service.UserUpdate(*update)
 	if err != nil {
-		c.Logger().With("error", err)
-		return c.NoContent(http.StatusInternalServerError)
+		c.Logger().With(
+			"error", err,
+			"update", update,
+		).Error("could not update user")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update user",
+			Payload:   nil,
+		})
 	}
 
 	return nil
 }
 
 func (h *UserHandler) DeactivateUser(c *echo.Context) error {
-	err := h.guard_user_has_permission(c, service.DbPermissionUserModify)
+	err := h.guardUserHasPermission(c, service.DbPermissionUserModify)
 	if err != nil {
 		return err
 	}
@@ -181,17 +229,36 @@ func (h *UserHandler) DeactivateUser(c *echo.Context) error {
 
 	user_to_deactivate, err := uuid.Parse(c.FormValue("user"))
 	if err != nil {
-		return c.NoContent(http.StatusUnprocessableEntity)
+		c.Logger().With(
+			"active user", user_id,
+			"deactivate user", c.FormValue("user"),
+		).Info("could not parse user id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid user query",
+			Payload:   nil,
+		})
 	}
 
-	// SAFETY: User shall not be able to deactivate themselves.
+	// SAFETY: User must not be able to deactivate themselves.
 	if user_id == user_to_deactivate {
-		return c.NoContent(http.StatusUnprocessableEntity)
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_LOGICAL,
+			Message:   "A user can not deactivate themselves",
+			Payload:   nil,
+		})
 	}
 
 	err = h.user_service.DeactivateUser(user_to_deactivate)
 	if err != nil {
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not deactivate user",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -202,7 +269,7 @@ func (h *UserHandler) PasswordReset(c *echo.Context) error {
 		User uuid.UUID
 	}
 
-	err := h.guard_user_has_permission(c, service.DbPermissionUserModify)
+	err := h.guardUserHasPermission(c, service.DbPermissionUserModify)
 	if err != nil {
 		return err
 	}
@@ -210,22 +277,41 @@ func (h *UserHandler) PasswordReset(c *echo.Context) error {
 	var payload payloadData
 	err = c.Bind(&payload)
 	if err != nil {
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   payload,
+		})
 	}
 
-	user, err := h.user_service.UserById(payload.User)
+	user, valid, err := h.user_service.UserById(payload.User)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return c.NoContent(http.StatusUnprocessableEntity)
-		} else {
-			return c.NoContent(http.StatusInternalServerError)
-		}
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get user",
+			Payload:   nil,
+		})
+	}
+	if !valid {
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_ENTITY_NOT_FOUND,
+			Message:   "User does not exist",
+			Payload:   nil,
+		})
 	}
 
 	password := rand.Text()
 	err = h.user_service.PasswordUpdate(user.Id, password)
 	if err != nil {
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Password could not be updated",
+			Payload:   payload,
+		})
 	}
 
 	const subject = "SyreDB | Password reset"
@@ -240,11 +326,10 @@ func (h *UserHandler) PasswordReset(c *echo.Context) error {
 	err = h.app_service.SendMail(user.Email, subject, message)
 	if err != nil {
 		c.Logger().With("error", err).Error("could not send password reset email")
-		pwd_err := AppError{
-			Code:    AppErrCodeEmailNotSent,
+		return c.JSON(http.StatusInternalServerError, AppError{
+			Code:    APP_ERR_EMAIL_NOT_SENT,
 			Payload: password,
-		}
-		return c.JSON(http.StatusInternalServerError, pwd_err)
+		})
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -262,20 +347,25 @@ func (h *UserHandler) PasswordUpdate(c *echo.Context) error {
 	var payload payloadData
 	err := c.Bind(&payload)
 	if err != nil {
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   payload,
+		})
 	}
 
-	c.Logger().Error("TEST", "payload", payload)
 	valid, err := h.user_service.Authenticate(user_id, payload.Current)
 	if err != nil {
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not authenticate user",
+			Payload:   nil,
+		})
 	}
 	if !valid {
-		pwd_err := AppError{
-			Code:    AppErrorCodeInvalidPassword,
-			Message: "Current password is invalid",
-		}
-		return c.JSON(http.StatusUnauthorized, pwd_err)
+		return c.NoContent(http.StatusUnauthorized)
 	}
 
 	password := payload.Update
@@ -289,16 +379,20 @@ func (h *UserHandler) PasswordUpdate(c *echo.Context) error {
 		!upperCase.MatchString(password) ||
 		!numberPtrn.MatchString(password) ||
 		!specialChar.MatchString(password) {
-		pwd_err := AppError{
-			Code:    AppErrorCodeUserNotAuthenticated,
+		return c.JSON(http.StatusBadRequest, AppError{
+			Code:    APP_ERR_INVALID_PASSWORD,
 			Message: "New password is invalid",
-		}
-		return c.JSON(http.StatusUnauthorized, pwd_err)
+		})
 	}
 
 	err = h.user_service.PasswordUpdate(user_id, password)
 	if err != nil {
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update password",
+			Payload:   payload,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)

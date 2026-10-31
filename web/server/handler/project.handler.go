@@ -1,13 +1,11 @@
 package handler
 
 import (
-	"errors"
 	"net/http"
 	"syredb/database"
 	"syredb/service"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
 )
 
@@ -38,7 +36,12 @@ func (h *ProjectHandler) GetUserProjects(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not get user projects")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not retrieve user projects",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, projects)
@@ -51,29 +54,43 @@ func (h *ProjectHandler) GetProjectWithUserPermission(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"id", c.Param("id"),
-		).Error("could not parse project id")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not parse project id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid id query",
+			Payload:   nil,
+		})
 	}
 
-	project, err := h.project_service.GetProjectWithUserPermission(user_id, project_id)
+	project, valid, err := h.project_service.GetProjectWithUserPermission(user_id, project_id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			c.Logger().With(
-				"user", user_id,
-				"project", project_id,
-			).Error("insufficient user permission")
-			return c.NoContent(http.StatusUnauthorized)
-		} else {
-
-			c.Logger().With(
-				"error", err,
-				"user", user_id,
-				"project", project_id,
-			).Error("could not get project")
-			return c.NoContent(http.StatusInternalServerError)
-		}
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"project", project_id,
+		).Error("could not get project")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get project",
+			Payload:   nil,
+		})
 	}
-
+	if !valid {
+		c.Logger().With(
+			"user", user_id,
+			"project", project_id,
+		).Info("project not found")
+		return c.NoContent(http.StatusNotFound)
+	}
+	if len(project.Permissions) == 0 {
+		c.Logger().With(
+			"user", user_id,
+			"project", project_id,
+		).Info("insufficient user permission")
+		return c.NoContent(http.StatusForbidden)
+	}
 	return c.JSON(http.StatusOK, project)
 }
 
@@ -85,12 +102,18 @@ func (h *ProjectHandler) CreateProject(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not get user permission")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create project",
+			Payload:   nil,
+		})
 	}
 	if !has_permission {
 		c.Logger().With(
 			"user", user_id,
-		).Debug("insufficient permissions to create data schema")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permissions to create data schema")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	var project service.ProjectCreate
@@ -110,7 +133,12 @@ func (h *ProjectHandler) CreateProject(c *echo.Context) error {
 			"project", project,
 			"request body", c.Request().Body,
 		).Error("could not create project")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not create project",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, id)
@@ -123,8 +151,13 @@ func (h *ProjectHandler) ProjectResources(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"id", c.Param("id"),
-		).Error("could not parse project id")
-		return c.NoContent(http.StatusBadRequest)
+		).Info("could not parse project id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid project query",
+			Payload:   nil,
+		})
 	}
 
 	sufficient_permission, err := h.project_service.UserHasProjectPermission(
@@ -138,14 +171,19 @@ func (h *ProjectHandler) ProjectResources(c *echo.Context) error {
 			"user", user_id,
 			"project", project_id,
 		).Error("could not get user project permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get project resources",
+			Payload:   nil,
+		})
 	}
 	if !sufficient_permission {
 		c.Logger().With(
 			"user", user_id,
 			"project", project_id,
-		).Error("insufficient permission for project resources")
-		return c.NoContent(http.StatusUnauthorized)
+		).Info("insufficient permission for project resources")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	resources, err := h.project_service.GetProjectResources(user_id, project_id)
@@ -155,7 +193,12 @@ func (h *ProjectHandler) ProjectResources(c *echo.Context) error {
 			"user", user_id,
 			"project", project_id,
 		).Error("could not get project resources")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get project resources",
+			Payload:   nil,
+		})
 	}
 
 	return c.JSON(http.StatusOK, resources)
@@ -176,7 +219,12 @@ func (h *ProjectHandler) AddData(c *echo.Context) error {
 			"error", err,
 			"user", user_id,
 		).Error("could not bind payload")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   nil,
+		})
 	}
 
 	has_permission, err := h.project_service.UserHasProjectPermission(
@@ -190,10 +238,18 @@ func (h *ProjectHandler) AddData(c *echo.Context) error {
 			"user", user_id,
 			"project", payload.Project,
 		).Error("could not get project user permissions")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not add data",
+			Payload:   nil,
+		})
 	}
 	if !has_permission {
-		return c.NoContent(http.StatusUnauthorized)
+		c.Logger().With(
+			"user", user_id,
+		).Info("insufficient permission")
+		return c.NoContent(http.StatusForbidden)
 	}
 
 	err = h.project_service.DataMembershipCreate(
@@ -208,7 +264,12 @@ func (h *ProjectHandler) AddData(c *echo.Context) error {
 			"user", user_id,
 			"data", payload,
 		).Error("could not create project data membership")
-		return c.NoContent(http.StatusInternalServerError)
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not add data",
+			Payload:   nil,
+		})
 	}
 
 	return c.NoContent(http.StatusOK)

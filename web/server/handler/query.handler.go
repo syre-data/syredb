@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"syredb/database"
 	"syredb/query"
@@ -39,7 +40,12 @@ func (h *QueryHandler) DataSearch(c *echo.Context) error {
 		c.Logger().With(
 			"user", user_id,
 		).Error("could not bind data search query")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Invalid request payload",
+			Payload:   nil,
+		})
 	}
 
 	exprs, err := query.Parse(searchQuery.Query)
@@ -49,7 +55,12 @@ func (h *QueryHandler) DataSearch(c *echo.Context) error {
 			"user", user_id,
 			"query", searchQuery.Query,
 		).Error("could not parse serach query")
-		return c.NoContent(http.StatusBadRequest)
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_ITEM,
+			Message:   "Invalid query",
+			Payload:   fmt.Sprintf("{details: %v}", err),
+		})
 	}
 
 	var data []uuid.UUID
@@ -61,7 +72,12 @@ func (h *QueryHandler) DataSearch(c *echo.Context) error {
 				"user", user_id,
 				"query", searchQuery.Query,
 			).Error("could not query data")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not query data",
+				Payload:   nil,
+			})
 		}
 	} else {
 		data, err = h.query_service.SearchProjectData(user_id, searchQuery.Project, exprs)
@@ -72,7 +88,12 @@ func (h *QueryHandler) DataSearch(c *echo.Context) error {
 				"project", searchQuery.Project,
 				"query", searchQuery.Query,
 			).Error("could not query project data")
-			return c.NoContent(http.StatusInternalServerError)
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not query data",
+				Payload:   nil,
+			})
 		}
 	}
 
