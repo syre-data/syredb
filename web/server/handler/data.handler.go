@@ -2669,7 +2669,7 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			"user", user,
 			"data", data_str,
 		).Info("could not parse id as uuid")
-		return c.JSON(http.StatusBadRequest, AppError{
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
 			RequestId: requestId(c),
 			Code:      APP_ERR_INVALID_UUID,
 			Message:   "Invalid id query",
@@ -2694,7 +2694,7 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 		return c.NoContent(http.StatusNotFound)
 	}
 
-	user_data_permissions, err := h.data_service.DataUserPermission(user, data_id)
+	has_permission, err := h.data_service.UserHasDataPermission(user, data_id, service.DataPermissionRead)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -2707,14 +2707,6 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			Payload:   nil,
 		})
 	}
-
-	has_permission := slices.Contains(
-		user_data_permissions,
-		service.DataPermissionOwner,
-	) || slices.Contains(
-		user_data_permissions,
-		service.DataPermissionRead,
-	)
 
 	if !has_permission {
 		has_read_all, err := h.user_service.UserHasPermission(

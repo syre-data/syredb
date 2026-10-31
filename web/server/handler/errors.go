@@ -3,7 +3,11 @@ package handler
 import "github.com/labstack/echo/v5"
 
 func requestId(c *echo.Context) string {
-	return requestId(c)
+	id := c.Request().Header.Get(echo.HeaderXRequestID)
+	if id == "" {
+		id = c.Response().Header().Get(echo.HeaderXRequestID)
+	}
+	return id
 }
 
 type AppError struct {

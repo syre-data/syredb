@@ -72,11 +72,11 @@ func (h *UserHandler) UserGet(c *echo.Context) error {
 		})
 	}
 
-	if valid {
-		return c.JSON(http.StatusOK, user)
-	} else {
-		return c.NoContent(http.StatusOK)
+	if !valid {
+		return c.NoContent(http.StatusNotFound)
 	}
+
+	return c.JSON(http.StatusOK, user)
 }
 
 func (h *UserHandler) guardUserHasPermission(c *echo.Context, permission service.DbPermission) error {

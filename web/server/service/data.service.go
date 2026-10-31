@@ -197,19 +197,26 @@ func (s *DataService) UserHasDataPermission(
 	data uuid.UUID,
 	permission DataPermission,
 ) (bool, error) {
-	query := fmt.Sprintf(
-		`SELECT 1 FROM data_user_permission_ 
-		WHERE _user=$1 AND _data=$2 _permission=ANY('{%s, $3}')`,
-		DataPermissionOwner,
-	)
-	err := s.db.Conn.QueryRow(s.ctx, query, user, data, permission).Scan()
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
+	query :=
+		`SELECT EXISTS(SELECT 1 
+		FROM data_user_permission_ 
+		WHERE _user=$1 AND _data=$2 AND _permission=ANY($3)
+		)`
+
+	var exists bool
+	err := s.db.Conn.QueryRow(
+		s.ctx,
+		query,
+		user,
+		data,
+		[]DataPermission{DataPermissionOwner, permission},
+	).Scan(&exists)
+
 	if err != nil {
 		return false, err
 	}
-	return true, nil
+
+	return exists, nil
 }
 
 func (s *DataService) DataTypesAll() ([]DataType, error) {

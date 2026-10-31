@@ -337,7 +337,7 @@ function dataGet(data_id: uuid.UUIDTypes): Promise<any> {
     params.set("id", uuidToString(data_id));
     return fetch(`/api/data?${params}`, {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as any);
+    }).then(async (resp) => await resp.json());
 }
 
 function dataUpdate(update: types.DataUpdate): Promise<Response> {

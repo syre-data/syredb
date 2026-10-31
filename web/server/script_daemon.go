@@ -1695,7 +1695,7 @@ func (d *ScriptDaemon) dataCreate(
 
 	owners_query := fmt.Sprintf(
 		"SELECT _user FROM data_user_permission_ WHERE _data=$1 AND _permission='%s'",
-		service.DataPermissionKeyOwner,
+		service.DataPermissionOwner,
 	)
 	rows, err := tx.Query(d.ctx, owners_query, payload)
 	data_owners, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
@@ -1776,7 +1776,7 @@ func (d *ScriptDaemon) dataCreate(
 			&permission_query,
 			"($1, $%d, '%s')",
 			idx_arg+1,
-			service.DataPermissionKeyOwner,
+			service.DataPermissionOwner,
 		)
 
 		permission_args[idx_arg] = owner

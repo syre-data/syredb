@@ -410,44 +410,48 @@ func (s *UserService) UserHasPermission(
 	user uuid.UUID,
 	permission DbPermission,
 ) (bool, error) {
-	query := fmt.Sprintf(
-		"SELECT 1 FROM db_user_permission_ WHERE _user=$1 AND _permission=ANY('{%s, $2}')",
-		DbPermissionOwner,
-	)
-	user_row := s.db.Conn.QueryRow(s.ctx, query, user, permission)
-	err := user_row.Scan()
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	} else if err != nil {
+	query :=
+		`SELECT EXISTS(SELECT 1 
+		FROM db_user_permission_ WHERE _user=$1 AND _permission=ANY($2)
+		)`
+
+	var exists bool
+	err := s.db.Conn.QueryRow(
+		s.ctx,
+		query,
+		user,
+		[]DbPermission{DbPermissionOwner, permission},
+	).Scan(&exists)
+
+	if err != nil {
 		s.logger.With(
 			"error", err,
 			"user", user,
 			"permission", permission,
 		).Error("could not retrieve user permission")
 		return false, err
-	} else {
-		return true, nil
 	}
+
+	return exists, nil
 }
 
 func (s *UserService) IsDbOwner(
 	user uuid.UUID,
 ) (bool, error) {
-	query := fmt.Sprintf(
-		"SELECT 1 FROM db_user_permission_ WHERE _user=$1 AND _permission='%s'",
-		DbPermissionOwner,
-	)
-	user_row := s.db.Conn.QueryRow(s.ctx, query, user)
-	err := user_row.Scan()
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	} else if err != nil {
+	query :=
+		`SELECT EXISTS(SELECT 1 
+		FROM db_user_permission_ WHERE _user=$1 AND _permission=$2
+		)`
+
+	var exists bool
+	err := s.db.Conn.QueryRow(s.ctx, query, user, DbPermissionOwner).Scan(&exists)
+	if err != nil {
 		s.logger.With(
 			"error", err,
 			"user", user,
 		).Error("could not retrieve user permission")
 		return false, err
-	} else {
-		return true, nil
 	}
+
+	return exists, nil
 }
