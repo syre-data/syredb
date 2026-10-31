@@ -25,6 +25,9 @@ export default function () {
 }
 
 function LoadError({ resetErrorBoundary, error }: FallbackProps) {
+    const err = error as types.AppError;
+    console.error(err);
+
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}

@@ -33,6 +33,9 @@ export default function () {
 }
 
 function DataSchemaCreateError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as types.AppError;
+    console.error(err);
+
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}

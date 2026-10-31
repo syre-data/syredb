@@ -15,6 +15,7 @@ import {
     DataStorageExternal,
     DataStorageInternal,
     DbPermissionDataTypeModify,
+    type AppError,
     type DataType,
     type DataTypeExternal,
     type DataTypeExternalSourceRx,
@@ -43,7 +44,10 @@ export default function () {
     );
 }
 
-function DataTypeError({ resetErrorBoundary }: FallbackProps) {
+function DataTypeError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as AppError;
+    console.error(err);
+
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}

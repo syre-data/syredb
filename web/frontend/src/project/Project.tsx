@@ -16,6 +16,7 @@ import {
     DataSourceCardinalitySingle,
     DataStorageExternal,
     DataStorageInternal,
+    type AppError,
     type DataSource,
     type DataStorage,
     type DataType,
@@ -65,6 +66,9 @@ export default function () {
 }
 
 function ProjectError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as AppError;
+    console.error(err);
+
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}

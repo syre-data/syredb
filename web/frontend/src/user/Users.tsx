@@ -66,11 +66,13 @@ function Loading() {
 }
 
 function UserListError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as common.BackendError;
+    const err = error as types.AppError;
+    console.error(err);
+
     return (
         <div className="flex flex-col gap-2 items-center pt-2">
             <div>Could not get users</div>
-            <div className="text-red-600">{err.message}</div>
+            <div className="text-red-600">{err.Message}</div>
             <div>
                 <button
                     type="button"

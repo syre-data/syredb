@@ -68,7 +68,7 @@ function UserProjects() {
 }
 
 function UserProjectsError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
-    const err = error as common.BackendError;
+    const err = error as common.ServerError;
     console.error(err);
 
     return (
@@ -158,7 +158,7 @@ function OrphanedData() {
 }
 
 function OrphanedDataError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
-    const err = error as common.BackendError;
+    const err = error as common.ServerError;
     console.error(err);
 
     return (

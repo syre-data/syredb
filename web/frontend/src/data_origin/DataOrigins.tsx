@@ -1,7 +1,8 @@
-import { MouseButton, QUERY_KEY_DATA, QUERY_KEY_DATA_ORIGINS } from "@/common";
+import { MouseButton, QUERY_KEY_DATA_ORIGINS } from "@/common";
 import { Loading, SuspenseError } from "@/components";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
+import type { AppError } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
 import { Suspense, type MouseEvent } from "react";
@@ -19,6 +20,9 @@ export default function () {
 }
 
 function DataOriginsError({ resetErrorBoundary, error }: FallbackProps) {
+    const err = error as AppError;
+    console.error(err);
+
     return (
         <SuspenseError resetErrorBoundary={resetErrorBoundary}>
             "Could not load data origins"

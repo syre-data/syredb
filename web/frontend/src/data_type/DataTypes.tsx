@@ -26,7 +26,7 @@ export default function () {
 }
 
 function DataTypesError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
-    const err = error as common.BackendError;
+    const err = error as common.ServerError;
     console.error(err);
 
     return (

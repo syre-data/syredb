@@ -7,7 +7,7 @@ import * as uuid from "uuid";
 import icon from "@/icon";
 import * as common from "@/common";
 import user_service from "@/service/user.service";
-import { DbPermissionUserModify } from "@/types";
+import { DbPermissionUserModify, type AppError } from "@/types";
 import { Context } from "@/AppStateContext";
 
 export default function () {
@@ -26,6 +26,9 @@ export default function () {
 }
 
 function UserError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as AppError;
+    console.error(err);
+
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}

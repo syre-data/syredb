@@ -21,13 +21,6 @@ export const QUERY_KEY_DATA_ORIGIN = "data_origin";
 export const QUERY_KEY_DATA_VALUES = "data_values";
 export const QUERY_KEY_DATA_PREVIEW = "data_preview";
 
-export interface BackendError {
-    requestId: string;
-    code: string;
-    message: string;
-    payload: any;
-}
-
 export enum MouseButton {
     Primary = 0,
     Secondary = 2,

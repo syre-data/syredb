@@ -10,6 +10,7 @@ import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import {
     DbPermissionTransformCreate,
+    type AppError,
     type DataType,
     type DataTypeTransform,
     type DataTypeTransformRx,
@@ -30,6 +31,9 @@ export default function () {
 }
 
 function DataTypeTransformsError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as AppError;
+    console.error(err);
+
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}

@@ -30,6 +30,7 @@ const (
 	APP_ERR_INVALID_ITEM                AppErrorCode = "INVALID_ITEM"
 	APP_ERR_INVALID_PAYLOAD             AppErrorCode = "INVALID_PAYLOAD"
 	APP_ERR_FS_ERROR                    AppErrorCode = "FS_ERROR"
+	APP_ERR_LOGICAL                     AppErrorCode = "ERR_LOGICAL"
 	APP_ERR_OTHER                       AppErrorCode = "ERR_OTHER"
 )
 

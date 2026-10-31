@@ -50,6 +50,9 @@ export default function () {
 }
 
 function UserEditError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as types.AppError;
+    console.error(err);
+
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}

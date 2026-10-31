@@ -10,6 +10,7 @@ import Icon from "@/icon";
 import {
     DbPermissionDataSchemaCreate,
     DbPermissionDataSchemaModify,
+    type AppError,
     type DataSchema,
 } from "@/types";
 import { Context } from "@/AppStateContext";
@@ -25,6 +26,9 @@ export default function () {
 }
 
 function DataSchemaError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as AppError;
+    console.error(err);
+
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}

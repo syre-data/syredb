@@ -36,7 +36,9 @@ export default function App() {
 }
 
 function AppError({ error, resetErrorBoundary }: FallbackProps) {
-    console.error(error);
+    const err = error as types.AppError;
+    console.error(err);
+
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}
@@ -68,6 +70,9 @@ function ProvideAppState({ children }: ProvideAppStateProps) {
 }
 
 function LoadUserError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as types.AppError;
+    console.error(err);
+
     return (
         <SuspenseError
             resetErrorBoundary={resetErrorBoundary}

@@ -27,6 +27,7 @@ import {
     ValueTypeTimestamp,
     ValueTypeUint,
     VisibilityPublic,
+    type AppError,
     type DataCreator,
     type DataCreatorTransformInfo,
     type DataCreatorType,
@@ -72,6 +73,9 @@ export default function () {
 }
 
 function LoadError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as AppError;
+    console.error(err);
+
     return (
         <SuspenseError resetErrorBoundary={resetErrorBoundary}>
             Could not load data
@@ -492,6 +496,9 @@ function ProjectItem({ resources }: ProjectItemProps) {
 }
 
 function ValuesError({ error, resetErrorBoundary }: FallbackProps) {
+    const err = error as AppError;
+    console.error(err);
+
     return (
         <SuspenseError resetErrorBoundary={resetErrorBoundary}>
             Could not load data values

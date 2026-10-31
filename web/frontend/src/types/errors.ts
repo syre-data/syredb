@@ -25,6 +25,7 @@ export const APP_ERR_ENTITY_NOT_FOUND: AppErrorCode = "ENTITY_NOT_FOUND";
 export const APP_ERR_INVALID_ITEM: AppErrorCode = "INVALID_ITEM";
 export const APP_ERR_INVALID_PAYLOAD: AppErrorCode = "INVALID_PAYLOAD";
 export const APP_ERR_FS_ERROR: AppErrorCode = "FS_ERROR";
+export const APP_ERR_LOGICAL: AppErrorCode = "ERR_LOGICAL";
 export const APP_ERR_OTHER: AppErrorCode = "ERR_OTHER";
 export type DbErrorCode = string;
 export const DB_ERR_DUPLICATE_RECORD: DbErrorCode = "23505";
