@@ -8,7 +8,7 @@ import * as common from "../common";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import project_service from "@/service/project.service";
 import data_service from "@/service/data.service";
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
 
 export default function () {
     return (
@@ -68,17 +68,12 @@ function UserProjects() {
 }
 
 function UserProjectsError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
-    const err = error as common.ServerError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center"
-        >
-            <div>Could not get your projects</div>
-            <div>{err.message}</div>
-        </SuspenseError>
+            error={error as types.AppError}
+            title={"Could not load your projects"}
+        />
     );
 }
 
@@ -158,17 +153,12 @@ function OrphanedData() {
 }
 
 function OrphanedDataError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
-    const err = error as common.ServerError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center"
-        >
-            <div>Could not get orphaned data</div>
-            <div>{err.message}</div>
-        </SuspenseError>
+            error={error as types.AppError}
+            title={"Could not get orphaned data"}
+        />
     );
 }
 

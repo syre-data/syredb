@@ -6,13 +6,17 @@ import isEmail from "validator/lib/isEmail";
 import { StatusCodes } from "http-status-codes";
 import icon from "../icon";
 import * as common from "@/common";
-import * as types from "@/types";
 import user_service from "@/service/user.service";
 import app_service from "@/service/app.service";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { SuspenseError } from "@/components";
+import { StandardError } from "@/components";
 import { Loading } from "@/components";
+import {
+    APP_ERR_EMAIL_NOT_SENT,
+    DbPermissionOwner,
+    type AppError,
+} from "@/types";
 
 export default function () {
     return (
@@ -25,16 +29,12 @@ export default function () {
 }
 
 function LoadError({ resetErrorBoundary, error }: FallbackProps) {
-    const err = error as types.AppError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center pt-4"
-        >
-            <div>Could not load database permissions</div>
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load database permissions"}
+        />
     );
 }
 
@@ -123,19 +123,19 @@ function UserCreate() {
                 return;
             }
 
-            const err = (await resp.json()) as types.AppError;
-            if (err.Code == types.AppErrCodeEmailNotSent) {
-                setPassword(err.Payload);
+            const err = (await resp.json()) as AppError;
+            if (err.code === APP_ERR_EMAIL_NOT_SENT) {
+                setPassword(err.payload);
                 return;
             }
 
-            setError(err.Message);
+            setError(err.message);
             btn_submit.disabled = false;
         });
     }
 
     const owner_permission = db_permissions.find(
-        (permission) => permission.Id === types.DbPermissionOwner,
+        (permission) => permission.Id === DbPermissionOwner,
     )!;
     return (
         <div className="flex flex-col gap-2 items-center">
@@ -210,8 +210,7 @@ function UserCreate() {
                             {db_permissions
                                 .filter(
                                     (permission) =>
-                                        permission.Id !==
-                                        types.DbPermissionOwner,
+                                        permission.Id !== DbPermissionOwner,
                                 )
                                 .map((permission) => (
                                     <label

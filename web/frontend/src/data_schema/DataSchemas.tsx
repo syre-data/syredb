@@ -1,4 +1,4 @@
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Suspense, useContext, useState, type MouseEvent } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
@@ -26,16 +26,12 @@ export default function () {
 }
 
 function DataSchemaError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as AppError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center pt-4"
-        >
-            Could not load data schemas
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load data schemas"}
+        />
     );
 }
 

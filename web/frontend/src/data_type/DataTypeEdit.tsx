@@ -6,7 +6,7 @@ import {
     QUERY_KEY_DATA_TYPE,
     QUERY_KEY_DATA_TYPES,
 } from "@/common";
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import {
@@ -14,13 +14,11 @@ import {
     DataSourceCardinalitySingle,
     DataStorageExternal,
     DataStorageInternal,
-    DbPermissionDataTypeCreate,
     DbPermissionDataTypeModify,
     type AppError,
     type DataType,
     type DataTypeExternal,
     type DataTypeInternal,
-    type DataTypeSourceUpdate,
     type DataTypeUpdate,
 } from "@/types";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
@@ -63,16 +61,12 @@ export default function () {
 }
 
 function DataTypeError({ resetErrorBoundary, error }: FallbackProps) {
-    const err = error as AppError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center pt-4"
-        >
-            Could not load data type resources
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load data type resources"}
+        />
     );
 }
 

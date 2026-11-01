@@ -2,7 +2,6 @@ import classNames from "classnames";
 import { useState } from "react";
 import type { SubmitEvent, MouseEvent } from "react";
 import * as common from "@/common";
-import * as types from "@/types";
 import { useNavigate } from "react-router";
 import project_service from "@/service/project.service";
 

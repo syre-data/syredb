@@ -4,13 +4,7 @@ import Icon from "@/icon";
 import userService from "@/service/user.service";
 import classNames from "classnames";
 import { StatusCodes } from "http-status-codes";
-import {
-    useContext,
-    useState,
-    type InputEvent,
-    type MouseEvent,
-    type SubmitEvent,
-} from "react";
+import { useContext, useState, type MouseEvent, type SubmitEvent } from "react";
 import { useNavigate } from "react-router";
 
 export default function () {

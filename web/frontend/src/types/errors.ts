@@ -5,10 +5,10 @@ import * as uuid from "uuid"
 // source: errors.go
 
 export interface AppError {
-  RequestId: string;
-  Code: AppErrorCode;
-  Message: string;
-  Payload: any;
+  requestId: string;
+  code: AppErrorCode;
+  message: string;
+  payload: any;
 }
 export type AppErrorCode = string;
 export const APP_ERR_EMAIL_NOT_SENT: AppErrorCode = "USER_EMAIL_NOT_SENT";

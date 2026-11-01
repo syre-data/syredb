@@ -1,5 +1,6 @@
 import { uuidToString } from "@/common";
 import * as types from "@/types";
+import { OK, StatusCodes } from "http-status-codes";
 import * as uuid from "uuid";
 
 function dataTypesGetAll(): Promise<types.DataType[]> {
@@ -337,7 +338,14 @@ function dataGet(data_id: uuid.UUIDTypes): Promise<any> {
     params.set("id", uuidToString(data_id));
     return fetch(`/api/data?${params}`, {
         credentials: "same-origin",
-    }).then(async (resp) => await resp.json());
+    }).then(async (resp) => {
+        const body = await resp.json();
+        if (resp.status === StatusCodes.OK) {
+            return Promise.resolve(body);
+        } else {
+            return Promise.reject(body);
+        }
+    });
 }
 
 function dataUpdate(update: types.DataUpdate): Promise<Response> {

@@ -5,7 +5,7 @@ import {
     ErrorBoundary,
     type FallbackProps as ErrorBoundaryProps,
 } from "react-error-boundary";
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
 import { Suspense, useContext, type MouseEvent } from "react";
 import * as types from "@/types";
 import icon from "@/icon";
@@ -26,17 +26,12 @@ export default function () {
 }
 
 function DataTypesError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
-    const err = error as common.ServerError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center pt-4"
-        >
-            <div>Could not get data types</div>
-            <div>{err.message}</div>
-        </SuspenseError>
+            error={error as types.AppError}
+            title={"Could not load data types"}
+        />
     );
 }
 

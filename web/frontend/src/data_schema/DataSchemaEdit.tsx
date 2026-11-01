@@ -5,15 +5,12 @@ import {
     type MouseEvent,
     type SubmitEvent,
     type ChangeEvent,
-    useState,
-    useRef,
     useContext,
 } from "react";
-import { useNavigate, useParams, Link, Navigate } from "react-router";
+import { useNavigate, useParams, Navigate } from "react-router";
 import Loading from "../components/Loading";
-import { SuspenseError } from "@/components";
+import { StandardError } from "@/components";
 import type { FallbackProps } from "react-error-boundary";
-import * as types from "@/types";
 import * as uuid from "uuid";
 import data_service from "@/service/data.service";
 import icon from "@/icon";
@@ -21,9 +18,19 @@ import * as common from "@/common";
 import dataService from "@/service/data.service";
 import { StatusCodes } from "http-status-codes";
 import { Context } from "@/AppStateContext";
+import {
+    DbPermissionDataSchemaModify,
+    PropertyTypeFloat,
+    PropertyTypeInt,
+    PropertyTypeString,
+    PropertyTypeTimestamp,
+    PropertyTypeUint,
+    ValueTypeBoolean,
+    type AppError,
+    type ValueType,
+} from "@/types";
 
 export default function () {
-    const navigate = useNavigate();
     const { data_schema_id } = useParams();
     if (!data_schema_id) {
         return <Navigate to="/" replace />;
@@ -32,7 +39,7 @@ export default function () {
     const ctx = useContext(Context);
     const user = ctx.user;
     const canModifySchema = common.hasDbPermission(
-        types.DbPermissionDataSchemaModify,
+        DbPermissionDataSchemaModify,
         user.DbPermissions,
     );
     if (!canModifySchema) {
@@ -50,17 +57,15 @@ export default function () {
 }
 
 function DataSchemaError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as types.AppError;
+    const err = error as AppError;
     console.error(err);
 
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="pt-4 text-center"
-        >
-            <div>Could not load data schema</div>
-            <div>{err.Message}</div>
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load data schema"}
+        />
     );
 }
 
@@ -231,19 +236,19 @@ function DataSchema({ data_schema_id }: DataSchemaProps) {
     );
 }
 
-function value_type_to_string(data_type: types.ValueType): string {
+function value_type_to_string(data_type: ValueType): string {
     switch (data_type) {
-        case types.PropertyTypeString:
+        case PropertyTypeString:
             return "string";
-        case types.PropertyTypeInt:
+        case PropertyTypeInt:
             return "int";
-        case types.PropertyTypeUint:
+        case PropertyTypeUint:
             return "uint";
-        case types.PropertyTypeFloat:
+        case PropertyTypeFloat:
             return "float";
-        case types.ValueTypeBoolean:
+        case ValueTypeBoolean:
             return "boolean";
-        case types.PropertyTypeTimestamp:
+        case PropertyTypeTimestamp:
             return "timestamp";
     }
 }

@@ -1,5 +1,5 @@
 import { MouseButton, QUERY_KEY_DATA_ORIGINS } from "@/common";
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import type { AppError } from "@/types";
@@ -25,13 +25,12 @@ export default function () {
 }
 
 function DataOriginError({ resetErrorBoundary, error }: FallbackProps) {
-    const err = error as AppError;
-    console.error(err);
-
     return (
-        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
-            Could not load data origins
-        </SuspenseError>
+        <StandardError
+            resetErrorBoundary={resetErrorBoundary}
+            error={error as AppError}
+            title={"Could not load data origins"}
+        />
     );
 }
 

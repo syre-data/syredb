@@ -12,8 +12,7 @@ import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
 import {
-    DataCreatorTypeTransform,
-    DataCreatorTypeUser,
+    APP_ERR_INVALID_UUID,
     DataSchemaCardinalityMultiple,
     DataSchemaCardinalitySingle,
     DataSourceCardinalityMultiple,
@@ -30,7 +29,6 @@ import {
     type AppError,
     type DataCreator,
     type DataCreatorTransformInfo,
-    type DataCreatorType,
     type DataCreatorUserInfo,
     type DataProjectResources,
     type DataRx,
@@ -74,11 +72,26 @@ export default function () {
 
 function LoadError({ error, resetErrorBoundary }: FallbackProps) {
     const err = error as AppError;
-    console.error(err);
+    console.log(err);
+
+    let message = err.message;
+    switch (err.code) {
+        case APP_ERR_INVALID_UUID:
+            message = "Invalid data id";
+            break;
+    }
 
     return (
-        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
-            Could not load data
+        <SuspenseError
+            resetErrorBoundary={resetErrorBoundary}
+            className="h-screen w-screen flex flex-col items-center justify-center"
+        >
+            <div className="py-2 text-center">
+                <div className="text-lg">Could not load data</div>
+                <div className="text-syre-red-700 dark:text-syre-red-400">
+                    {message}
+                </div>
+            </div>
         </SuspenseError>
     );
 }

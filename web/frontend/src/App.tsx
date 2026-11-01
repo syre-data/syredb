@@ -13,7 +13,7 @@ import Loading from "./components/Loading";
 import { ErrorBoundary } from "react-error-boundary";
 import * as common from "@/common";
 import user_service from "@/service/user.service";
-import { SuspenseError } from "./components";
+import { StandardError } from "./components";
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -36,16 +36,12 @@ export default function App() {
 }
 
 function AppError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as types.AppError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="pt-4 text-center"
-        >
-            <div>An error occurred</div>
-        </SuspenseError>
+            error={error as types.AppError}
+            title={"An error occured"}
+        />
     );
 }
 
@@ -74,12 +70,11 @@ function LoadUserError({ error, resetErrorBoundary }: FallbackProps) {
     console.error(err);
 
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="pt-4 text-center"
-        >
-            <div>Could not get user</div>
-        </SuspenseError>
+            error={error as types.AppError}
+            title={"Could not get user"}
+        />
     );
 }
 

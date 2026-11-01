@@ -5,12 +5,10 @@ import { useEffect } from "react";
 export default function () {
     useEffect(() => {
         authService.logout().then((res) => {
-            console.debug(res);
             if (res.status === StatusCodes.OK) {
-                console.debug("LOGOUT");
                 window.location.replace("/");
             } else {
-                console.debug("ERROR");
+                console.error(res);
             }
         });
     }, []);

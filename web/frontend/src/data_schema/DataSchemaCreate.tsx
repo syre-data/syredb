@@ -4,18 +4,31 @@ import { Navigate, useNavigate } from "react-router";
 import * as common from "@/common";
 import data_service from "@/service/data.service";
 import icon from "@/icon";
-import * as types from "@/types";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
 import dataService from "@/service/data.service";
 import { Context } from "@/AppStateContext";
+import {
+    DataSchemaCardinalityMultiple,
+    DataSchemaCardinalitySingle,
+    DbPermissionDataSchemaCreate,
+    ValueTypeBoolean,
+    ValueTypeFloat,
+    ValueTypeInt,
+    ValueTypeString,
+    ValueTypeTimestamp,
+    ValueTypeUint,
+    type AppError,
+    type DataSchemaCreate,
+    type DataSchemaField,
+} from "@/types";
 
 export default function () {
     const ctx = useContext(Context);
     const user = ctx.user;
     const canCreateSchema = common.hasDbPermission(
-        types.DbPermissionDataSchemaCreate,
+        DbPermissionDataSchemaCreate,
         user.DbPermissions,
     );
     if (!canCreateSchema) {
@@ -33,16 +46,12 @@ export default function () {
 }
 
 function DataSchemaCreateError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as types.AppError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center pt-4"
-        >
-            Could not load resources
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load resources"}
+        />
     );
 }
 
@@ -222,7 +231,7 @@ function DataSchemaCreate() {
                     Label: label,
                     DType: dtype,
                     Description: description,
-                } satisfies types.DataSchemaField);
+                } satisfies DataSchemaField);
             }
         }
         if (fields.length === 0) {
@@ -245,7 +254,7 @@ function DataSchemaCreate() {
             Schema: fields,
             Label: label,
             Description: description,
-        } satisfies types.DataSchemaCreate;
+        } satisfies DataSchemaCreate;
 
         await data_service
             .dataSchemaCreate(data_schema)
@@ -303,22 +312,14 @@ function DataSchemaCreate() {
                                     name="cardinality"
                                     aria-placeholder="Cardinality"
                                     className="input-basic"
-                                    defaultValue={
-                                        types.DataSchemaCardinalityMultiple
-                                    }
+                                    defaultValue={DataSchemaCardinalityMultiple}
                                 >
                                     <option
-                                        value={
-                                            types.DataSchemaCardinalityMultiple
-                                        }
+                                        value={DataSchemaCardinalityMultiple}
                                     >
                                         Multiple
                                     </option>
-                                    <option
-                                        value={
-                                            types.DataSchemaCardinalitySingle
-                                        }
-                                    >
+                                    <option value={DataSchemaCardinalitySingle}>
                                         Single
                                     </option>
                                 </select>
@@ -448,14 +449,12 @@ function ColumnSchema({ schema, onRemove, onChangeLabel }: ColumnSchemaProps) {
                         defaultValue="string"
                         className="input-basic invalid:ring-red-600"
                     >
-                        <option value={types.ValueTypeString}>String</option>
-                        <option value={types.ValueTypeInt}>Int</option>
-                        <option value={types.ValueTypeUint}>Uint</option>
-                        <option value={types.ValueTypeFloat}>Float</option>
-                        <option value={types.ValueTypeBoolean}>Boolean</option>
-                        <option value={types.ValueTypeTimestamp}>
-                            Timestamp
-                        </option>
+                        <option value={ValueTypeString}>String</option>
+                        <option value={ValueTypeInt}>Int</option>
+                        <option value={ValueTypeUint}>Uint</option>
+                        <option value={ValueTypeFloat}>Float</option>
+                        <option value={ValueTypeBoolean}>Boolean</option>
+                        <option value={ValueTypeTimestamp}>Timestamp</option>
                     </select>
                 </label>
             </div>

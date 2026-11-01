@@ -2,7 +2,8 @@ import { useParams, redirect } from "react-router";
 import { ErrorBoundary } from "react-error-boundary";
 import type { FallbackProps } from "react-error-boundary";
 import { Suspense } from "react";
-import SuspenseError from "@/components/SuspenseError";
+import { StandardError } from "@/components/SuspenseError";
+import type { AppError } from "@/types";
 
 export default function () {
     const { project_id } = useParams();
@@ -24,16 +25,12 @@ function Loading() {
 }
 
 function ProjectSettingsError({ error, resetErrorBoundary }: FallbackProps) {
-    console.error(error);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="flex flex-col gap-2 items-center pt-4"
-        >
-            <div>Could not load project</div>
-            <div>{error.message}</div>
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load project"}
+        />
     );
 }
 

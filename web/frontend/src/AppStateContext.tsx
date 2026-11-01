@@ -1,12 +1,12 @@
 import { createContext } from "react";
 import type { ActionDispatch } from "react";
-import * as types from "@/types";
 import * as uuid from "uuid";
+import { AccountStatusDeactivated, type User } from "./types";
 
 export class State {
-    user: types.User;
+    user: User;
 
-    constructor(user: types.User) {
+    constructor(user: User) {
         this.user = user;
     }
 }
@@ -16,12 +16,12 @@ export const Context = createContext(
         Id: uuid.NIL,
         Email: "",
         Name: "",
-        AccountStatus: types.AccountStatusDeactivated,
+        AccountStatus: AccountStatusDeactivated,
         DbPermissions: [],
     }),
 );
 export const Dispatch = createContext<ActionDispatch<[Action]>>(() => {});
-export type Action = { type: "set_user"; payload: types.User };
+export type Action = { type: "set_user"; payload: User };
 
 export function Reducer(prevState: State, action: Action): State {
     switch (action.type) {

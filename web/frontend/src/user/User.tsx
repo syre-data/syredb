@@ -1,4 +1,4 @@
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Suspense, useContext, type MouseEvent } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
@@ -26,16 +26,12 @@ export default function () {
 }
 
 function UserError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as AppError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center pt-4"
-        >
-            <div>Could not load user.</div>
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load user"}
+        />
     );
 }
 

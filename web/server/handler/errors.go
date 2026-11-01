@@ -11,10 +11,10 @@ func requestId(c *echo.Context) string {
 }
 
 type AppError struct {
-	RequestId string
-	Code      AppErrorCode
-	Message   string
-	Payload   any
+	RequestId string       `json:"requestId"`
+	Code      AppErrorCode `json:"code"`
+	Message   string       `json:"message"`
+	Payload   any          `json:"payload"`
 }
 
 type AppErrorCode string

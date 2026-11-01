@@ -3,10 +3,10 @@ import {
     QUERY_KEY_DATA_TYPE_TRANSFORMS,
     QUERY_KEY_DATA_TYPES,
 } from "@/common";
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
-import type { DataTypeTransformCreate, DataTypeTransformRx } from "@/types";
+import type { AppError, DataTypeTransformCreate } from "@/types";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { StatusCodes } from "http-status-codes";
 import {
@@ -16,7 +16,7 @@ import {
     type SubmitEvent,
 } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 
 export default function () {
     return (
@@ -33,12 +33,11 @@ function DataTypeTransformCreateError({
     resetErrorBoundary,
 }: FallbackProps) {
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center pt-4"
-        >
-            <div>Could not load data type transforms</div>
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load data type transforms"}
+        />
     );
 }
 

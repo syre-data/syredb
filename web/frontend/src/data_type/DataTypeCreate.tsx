@@ -1,16 +1,24 @@
 import type { ChangeEvent, MouseEvent, SubmitEvent } from "react";
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useState } from "react";
 import { useNavigate } from "react-router";
 import * as common from "@/common";
-import data_service from "@/service/data.service";
 import icon from "@/icon";
-import * as types from "@/types";
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError, SuspenseError } from "@/components";
 import dataService from "@/service/data.service";
 import * as uuid from "uuid";
 import { StatusCodes } from "http-status-codes";
+import {
+    DataSourceCardinalityMultiple,
+    DataSourceCardinalitySingle,
+    DataStorageExternal,
+    DataStorageInternal,
+    type AppError,
+    type DataSchema,
+    type DataSourceCardinality,
+    type DataStorage,
+} from "@/types";
 
 export default function () {
     return (
@@ -23,23 +31,19 @@ export default function () {
 }
 
 function DataTypeCreateError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as types.AppError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center pt-4"
-        >
-            Could not load resources
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load resources"}
+        />
     );
 }
 
 interface DataTypeSourceInput {
     id: number;
     label: string;
-    storage: types.DataStorage;
+    storage: DataStorage;
 }
 
 function DataTypeCreate() {
@@ -53,7 +57,7 @@ function DataTypeCreate() {
     });
     const navigate = useNavigate();
 
-    const [storage, setStorage] = useState(types.DataStorageInternal);
+    const [storage, setStorage] = useState(DataStorageInternal);
 
     function cancel(e: MouseEvent<HTMLButtonElement>) {
         if (e.button != common.MouseButton.Primary) {
@@ -131,13 +135,13 @@ function DataTypeCreate() {
                 .map((ext) => ext.trim())
                 .filter((ext) => ext.length > 0);
 
-            let cardinality: types.DataSourceCardinality;
+            let cardinality: DataSourceCardinality;
             switch (cardinality_str) {
-                case types.DataSourceCardinalitySingle:
-                    cardinality = types.DataSourceCardinalitySingle;
+                case DataSourceCardinalitySingle:
+                    cardinality = DataSourceCardinalitySingle;
                     break;
-                case types.DataSourceCardinalityMultiple:
-                    cardinality = types.DataSourceCardinalityMultiple;
+                case DataSourceCardinalityMultiple:
+                    cardinality = DataSourceCardinalityMultiple;
                     break;
                 default:
                     const input = document.getElementById(
@@ -153,7 +157,7 @@ function DataTypeCreate() {
                 Label: label,
                 Description: description,
                 MediaTypes: media_types,
-            } satisfies types.ExternalSourceCreate);
+            } satisfies ExternalSourceCreate);
         }
 
         dataService
@@ -190,14 +194,14 @@ function DataTypeCreate() {
         }
 
         switch (storage) {
-            case types.DataStorageInternal:
+            case DataStorageInternal:
                 await create_data_type_storage_internal(
                     data,
                     label,
                     description,
                 );
                 break;
-            case types.DataStorageExternal:
+            case DataStorageExternal:
                 await create_data_type_storage_external(
                     data,
                     label,
@@ -262,12 +266,12 @@ function DataTypeCreate() {
                                     type="radio"
                                     id={`storage[internal]`}
                                     name={`storage`}
-                                    value={types.DataStorageInternal}
+                                    value={DataStorageInternal}
                                     onChange={(_) =>
-                                        setStorage(types.DataStorageInternal)
+                                        setStorage(DataStorageInternal)
                                     }
                                     defaultChecked={
-                                        storage === types.DataStorageInternal
+                                        storage === DataStorageInternal
                                     }
                                     className="input-basic"
                                 />
@@ -278,12 +282,12 @@ function DataTypeCreate() {
                                     type="radio"
                                     id={`storage[external]`}
                                     name={`storage`}
-                                    value={types.DataStorageExternal}
+                                    value={DataStorageExternal}
                                     onChange={(_) =>
-                                        setStorage(types.DataStorageExternal)
+                                        setStorage(DataStorageExternal)
                                     }
                                     defaultChecked={
-                                        storage === types.DataStorageExternal
+                                        storage === DataStorageExternal
                                     }
                                     className="input-basic"
                                 />
@@ -291,7 +295,7 @@ function DataTypeCreate() {
                             </label>
                         </fieldset>
                     </div>
-                    {storage === types.DataStorageInternal ? (
+                    {storage === DataStorageInternal ? (
                         <StorageInternal dataSchemas={data_schemas} />
                     ) : (
                         <StorageExternal />
@@ -308,7 +312,7 @@ function DataTypeCreate() {
 }
 
 interface StorageInternalProps {
-    dataSchemas: types.DataSchema[];
+    dataSchemas: DataSchema[];
 }
 function StorageInternal({ dataSchemas }: StorageInternalProps) {
     return (
@@ -357,7 +361,7 @@ function StorageExternal({}: SourcesListProps) {
         const source = {
             id,
             label: "",
-            storage: types.DataStorageInternal,
+            storage: DataStorageInternal,
         } satisfies DataTypeSourceInput;
         setSources([...sources, source]);
     }
@@ -480,7 +484,7 @@ function StorageExternal({}: SourcesListProps) {
                                                 id={`source[${idx}][cardinality][single]`}
                                                 name={`source[${idx}][cardinality]`}
                                                 value={
-                                                    types.DataSourceCardinalitySingle
+                                                    DataSourceCardinalitySingle
                                                 }
                                                 defaultChecked={true}
                                             />
@@ -492,7 +496,7 @@ function StorageExternal({}: SourcesListProps) {
                                                 id={`source[${idx}][cardinality][multiple]`}
                                                 name={`source[${idx}][cardinality]`}
                                                 value={
-                                                    types.DataSourceCardinalityMultiple
+                                                    DataSourceCardinalityMultiple
                                                 }
                                             />
                                             <span className="pl-2">

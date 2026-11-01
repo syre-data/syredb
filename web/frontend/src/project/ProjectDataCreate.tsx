@@ -11,7 +11,7 @@ import {
     InputPropertyValue,
     Loading,
     SelectPropertyType,
-    SuspenseError,
+    StandardError,
 } from "@/components";
 import {
     stringToPropertyValue,
@@ -37,6 +37,7 @@ import {
     ValueTypeTimestamp,
     ValueTypeUint,
     VisibilityPrivate,
+    type AppError,
     type DataNoteCreate,
     type DataSchema,
     type DataSchemaField,
@@ -89,14 +90,13 @@ export default function () {
     );
 }
 
-function ProjectDataCreateError({ resetErrorBoundary }: FallbackProps) {
+function ProjectDataCreateError({ resetErrorBoundary, error }: FallbackProps) {
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="pt-4 text-center"
-        >
-            <div>Could not load project data</div>
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load project data"}
+        />
     );
 }
 

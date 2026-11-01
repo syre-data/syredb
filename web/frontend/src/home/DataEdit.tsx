@@ -8,7 +8,7 @@ import {
     InputPropertyValue,
     Loading,
     SelectPropertyType,
-    SuspenseError,
+    StandardError,
 } from "@/components";
 import {
     stringToPropertyValue,
@@ -42,7 +42,6 @@ import { useForm } from "@tanstack/react-form";
 import {
     QueryClient,
     useMutation,
-    useQuery,
     useQueryClient,
     useSuspenseQuery,
 } from "@tanstack/react-query";
@@ -69,13 +68,12 @@ export default function () {
 }
 
 function LoadError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as AppError;
-    console.error(err);
-
     return (
-        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
-            Could not load data
-        </SuspenseError>
+        <StandardError
+            resetErrorBoundary={resetErrorBoundary}
+            error={error as AppError}
+            title={"Could not load data"}
+        />
     );
 }
 

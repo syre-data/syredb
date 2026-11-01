@@ -1,4 +1,4 @@
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import {
     Suspense,
@@ -18,9 +18,15 @@ import app_service from "@/service/app.service";
 import user_service from "@/service/user.service";
 import isEmail from "validator/lib/isEmail";
 import { StatusCodes } from "http-status-codes";
-import * as types from "@/types";
 import Icon from "@/icon";
 import { Context } from "@/AppStateContext";
+import {
+    APP_ERR_EMAIL_NOT_SENT,
+    DbPermissionOwner,
+    DbPermissionUserModify,
+    type AppError,
+    type User,
+} from "@/types";
 
 export default function () {
     const { user_id: user_id_value } = useParams();
@@ -32,7 +38,7 @@ export default function () {
     const ctx = useContext(Context);
     const user = ctx.user;
     const canModifyUsers = common.hasDbPermission(
-        types.DbPermissionUserModify,
+        DbPermissionUserModify,
         user.DbPermissions,
     );
     if (!canModifyUsers) {
@@ -50,16 +56,12 @@ export default function () {
 }
 
 function UserEditError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as types.AppError;
-    console.error(err);
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center pt-4"
-        >
-            <div>Could not load user.</div>
-        </SuspenseError>
+            error={error as AppError}
+            title={"Could not load user"}
+        />
     );
 }
 
@@ -82,7 +84,7 @@ function UserEdit({ user_id }: UserEditProps) {
     const [pending, setPending] = useState(false);
 
     const owner_permission = db_permissions.find(
-        (permission) => permission.Id === types.DbPermissionOwner,
+        (permission) => permission.Id === DbPermissionOwner,
     )!;
 
     function cancel(e: MouseEvent<HTMLButtonElement>) {
@@ -192,8 +194,8 @@ function UserEdit({ user_id }: UserEditProps) {
                 return;
             }
 
-            const err = (await resp.json()) as types.AppError;
-            setError(err.Message);
+            const err = (await resp.json()) as AppError;
+            setError(err.message);
             btn_submit.disabled = false;
         });
         setPending(false);
@@ -268,8 +270,7 @@ function UserEdit({ user_id }: UserEditProps) {
                             {db_permissions
                                 .filter(
                                     (permission) =>
-                                        permission.Id !==
-                                        types.DbPermissionOwner,
+                                        permission.Id !== DbPermissionOwner,
                                 )
                                 .map((permission) => (
                                     <label
@@ -337,7 +338,7 @@ function UserEdit({ user_id }: UserEditProps) {
 }
 
 interface PasswordResetProps {
-    user: types.User;
+    user: User;
 }
 function PasswordReset({ user }: PasswordResetProps) {
     const [pending, setPending] = useState(false);
@@ -364,10 +365,10 @@ function PasswordReset({ user }: PasswordResetProps) {
                     return;
                 }
 
-                const err = (await resp.json()) as types.AppError;
-                if (err.Code == types.AppErrCodeEmailNotSent) {
+                const err = (await resp.json()) as AppError;
+                if (err.code === APP_ERR_EMAIL_NOT_SENT) {
                     setMessage(
-                        `Could not send user email. Alert them their new password is ${err.Payload}`,
+                        `Could not send user email. Alert them their new password is ${err.payload}`,
                     );
                 } else {
                     console.debug(err);
