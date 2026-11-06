@@ -10,6 +10,7 @@ import (
 	"math"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -118,7 +119,7 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 	if len(data.Description) > 0 {
 		description = &data.Description
 	}
-	err = h.data_service.DataTypeCreateInternal(user_id, data.Label, description, data.Schema)
+	id, err := h.data_service.DataTypeCreateInternal(user_id, data.Label, description, data.Schema)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -131,7 +132,11 @@ func (h *DataHandler) DataTypeCreateInternal(c *echo.Context) error {
 		})
 	}
 
-	return c.NoContent(http.StatusOK)
+	res := ResourceCreated{Id: id}
+	loc := url.URL{Path: "/api/data-type"}
+	loc.RawQuery = res.ToUrlQuery().Encode()
+	c.Response().Header().Set(echo.HeaderLocation, loc.String())
+	return c.JSON(http.StatusCreated, res)
 }
 
 func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
@@ -185,7 +190,7 @@ func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 		description = &data.Description
 	}
 
-	err = h.data_service.DataTypeCreateExternal(user_id, data.Label, description, data.Sources)
+	id, err := h.data_service.DataTypeCreateExternal(user_id, data.Label, description, data.Sources)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -199,7 +204,11 @@ func (h *DataHandler) DataTypeCreateExternal(c *echo.Context) error {
 		})
 	}
 
-	return c.NoContent(http.StatusOK)
+	res := ResourceCreated{Id: id}
+	loc := url.URL{Path: "/api/data-type"}
+	loc.RawQuery = res.ToUrlQuery().Encode()
+	c.Response().Header().Set(echo.HeaderLocation, loc.String())
+	return c.JSON(http.StatusCreated, res)
 }
 
 func (h *DataHandler) DataTypeGet(c *echo.Context) error {
@@ -344,7 +353,7 @@ func (h *DataHandler) DataSchemaCreate(c *echo.Context) error {
 		return c.NoContent(http.StatusForbidden)
 	}
 
-	err = h.data_service.DataSchemaCreate(user_id, data_schema)
+	id, err := h.data_service.DataSchemaCreate(user_id, data_schema)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -358,7 +367,11 @@ func (h *DataHandler) DataSchemaCreate(c *echo.Context) error {
 		})
 	}
 
-	return c.NoContent(http.StatusOK)
+	res := ResourceCreated{Id: id}
+	loc := url.URL{Path: "/api/data-schema"}
+	loc.RawQuery = res.ToUrlQuery().Encode()
+	c.Response().Header().Set(echo.HeaderLocation, loc.String())
+	return c.JSON(http.StatusCreated, res)
 }
 
 func (h *DataHandler) DataSchemaResources(c *echo.Context) error {
@@ -578,6 +591,8 @@ func (h *DataHandler) DownloadDataValuesSingle(c *echo.Context) error {
 	}
 }
 
+// Create file name for the given data.
+// If project_id is nil, project info is not included in the file name.
 func (h *DataHandler) downloadDataValuesInternalFilename(
 	logger *slog.Logger,
 	project_id uuid.UUID,
@@ -597,7 +612,7 @@ func (h *DataHandler) downloadDataValuesInternalFilename(
 		}
 	}
 
-	project, project_err := h.project_service.ProjectById(project_id)
+	project, project_valid, project_err := h.project_service.ProjectById(project_id)
 	if project_err != nil {
 		logger.With(
 			"error", project_err,
@@ -606,7 +621,7 @@ func (h *DataHandler) downloadDataValuesInternalFilename(
 		).Error("could not get project data membership")
 	}
 
-	membership, membership_err := h.project_service.DataMembership(project_id, data_id)
+	membership, membership_valid, membership_err := h.project_service.DataMembership(project_id, data_id)
 	if membership_err != nil {
 		logger.With(
 			"error", membership_err,
@@ -615,15 +630,22 @@ func (h *DataHandler) downloadDataValuesInternalFilename(
 		).Error("could not get project data membership")
 
 		return fmt.Sprintf("%s.csv", data_id)
+	} else if !membership_valid {
+		logger.With(
+			"project", project_id,
+			"data", data_id,
+		).Error("project data membership not found")
+
+		return fmt.Sprintf("%s.csv", data_id)
 	}
 
-	if project_err == nil && membership_err == nil {
+	if project_valid && membership_valid {
 		return fmt.Sprintf(
 			"%s.%s.csv",
 			sanitizeStringForFilename(project.Label),
 			sanitizeStringForFilename(*membership.Label),
 		)
-	} else if membership_err != nil && membership.Label != nil {
+	} else if membership_valid && membership.Label != nil {
 		return fmt.Sprintf(
 			"%s.csv",
 			sanitizeStringForFilename(*membership.Label),
@@ -692,26 +714,42 @@ func (h *DataHandler) downloadDataValuesSingleExternal(
 	var project *service.Project
 	var membership *service.ProjectDataMembershipRx
 	if project_id != uuid.Nil {
-		project_rx, err := h.project_service.ProjectById(project_id)
-		if err == nil {
-			project = &project_rx
-		} else {
+		project_rx, project_valid, err := h.project_service.ProjectById(project_id)
+		if err != nil {
 			c.Logger().With(
 				"error", err,
 				"project", project_id,
 				"data", data_id,
-			).Error("could not get project data membership")
+			).Error("could not get project")
+		} else if !project_valid {
+			c.Logger().With(
+				"project", project_id,
+			).Info("project not found")
+		} else {
+			project = &project_rx
 		}
 
-		membership_rx, err := h.project_service.DataMembership(project_id, data_id)
-		if err == nil {
-			membership = &membership_rx
-		} else {
+		membership_rx, membership_valid, err := h.project_service.DataMembership(project_id, data_id)
+		if err != nil {
 			c.Logger().With(
 				"error", err,
 				"project", project_id,
 				"data", data_id,
 			).Error("could not get project data membership")
+		} else if !membership_valid {
+			c.Logger().With(
+				"project", project_id,
+				"data", data_id,
+			).Info("project data membership not found")
+		} else {
+			membership = &membership_rx
+
+			if !project_valid {
+				c.Logger().With(
+					"project", project_id,
+					"data", data_id,
+				).Warn("project data membership exists for invalid project")
+			}
 		}
 	}
 
@@ -956,7 +994,7 @@ func downloadDataValuesExternalIndividualFilename(
 		)
 	} else if project_label == "" && project_data_label != "" {
 		return fmt.Sprintf(
-			"%s.%s.%s%s",
+			"%s.%s%s",
 			sanitizeStringForFilename(data_type_label),
 			formatTimeForFilename(timestamp),
 			ext,
@@ -1004,12 +1042,14 @@ func (h *DataHandler) DownloadProjectDataValuesAll(c *echo.Context) error {
 	defer tmpfile.Close()
 
 	var project_label string
-	project, err := h.project_service.ProjectById(project_id)
+	project, project_valid, err := h.project_service.ProjectById(project_id)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
 			"project", project_id,
 		).Error("could not get project")
+	} else if !project_valid {
+		c.Logger().With("project", project_id).Info("project noot found")
 	} else {
 		project_label = project.Label
 	}
@@ -1602,26 +1642,35 @@ func (h *DataHandler) DownloadDataSource(c *echo.Context) error {
 	var project *service.Project
 	var membership *service.ProjectDataMembershipRx
 	if project_id != uuid.Nil {
-		project_rx, err := h.project_service.ProjectById(project_id)
-		if err == nil {
-			project = &project_rx
-		} else {
+		project_rx, project_valid, err := h.project_service.ProjectById(project_id)
+		if err != nil {
 			c.Logger().With(
 				"error", err,
 				"project", project_id,
 				"data", data_id,
 			).Error("could not get project data membership")
+		} else if !project_valid {
+			c.Logger().With(
+				"project", project_id,
+			).Info("project not found")
+		} else {
+			project = &project_rx
 		}
 
-		membership_rx, err := h.project_service.DataMembership(project_id, data_id)
-		if err == nil {
-			membership = &membership_rx
-		} else {
+		membership_rx, membership_valid, err := h.project_service.DataMembership(project_id, data_id)
+		if err != nil {
 			c.Logger().With(
 				"error", err,
 				"project", project_id,
 				"data", data_id,
 			).Error("could not get project data membership")
+		} else if !membership_valid {
+			c.Logger().With(
+				"project", project_id,
+				"data", data_id,
+			).Info("project data membership not found")
+		} else {
+			membership = &membership_rx
 		}
 	}
 
@@ -2062,7 +2111,7 @@ func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 		Args:        []string{},
 		Script:      data.Script,
 	}
-	_, err = h.data_service.DataTypeTransformCreate(transform)
+	id, err := h.data_service.DataTypeTransformCreate(transform)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -2076,7 +2125,9 @@ func (h *DataHandler) DataTypeTransformCreate(c *echo.Context) error {
 		})
 	}
 
-	return c.NoContent(http.StatusOK)
+	// TODO: If add endpoint to get single data type transform, add Location header.
+	res := ResourceCreated{Id: id}
+	return c.JSON(http.StatusCreated, res)
 }
 
 func data_type_transform_command_from_file_ext(ext string) (string, error) {
@@ -2626,7 +2677,7 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 		}
 	}
 
-	return c.NoContent(http.StatusOK)
+	return c.JSON(http.StatusCreated, ResourceCreatedMultiple{Ids: data_ids})
 }
 
 func (h *DataHandler) OrphanedData(c *echo.Context) error {
@@ -3202,7 +3253,7 @@ func (h *DataHandler) DataNotesCreate(c *echo.Context) error {
 		return c.NoContent(http.StatusForbidden)
 	}
 
-	err = h.data_service.DataNotesCreate(notes.Id, user_id, notes.Notes)
+	ids, err := h.data_service.DataNotesCreate(notes.Id, user_id, notes.Notes)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -3218,7 +3269,7 @@ func (h *DataHandler) DataNotesCreate(c *echo.Context) error {
 		})
 	}
 
-	return c.NoContent(http.StatusOK)
+	return c.JSON(http.StatusCreated, ResourceCreatedMultiple{Ids: ids})
 }
 
 func (h *DataHandler) DataOrigins(c *echo.Context) error {
@@ -3281,7 +3332,7 @@ func (h *DataHandler) DataOriginCreate(c *echo.Context) error {
 		})
 	}
 
-	err = h.data_service.DataOriginCreate(origin)
+	id, err := h.data_service.DataOriginCreate(origin)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -3296,7 +3347,11 @@ func (h *DataHandler) DataOriginCreate(c *echo.Context) error {
 		})
 	}
 
-	return c.NoContent(http.StatusOK)
+	res := ResourceCreated{Id: id}
+	loc := url.URL{Path: "/api/data-origin"}
+	loc.RawQuery = res.ToUrlQuery().Encode()
+	c.Response().Header().Set(echo.HeaderLocation, loc.String())
+	return c.JSON(http.StatusCreated, res)
 }
 
 func (h *DataHandler) DataOriginGet(c *echo.Context) error {
@@ -3316,7 +3371,7 @@ func (h *DataHandler) DataOriginGet(c *echo.Context) error {
 		})
 	}
 
-	origins, err := h.data_service.DataOriginById(origin_id)
+	origins, valid, err := h.data_service.DataOriginById(origin_id)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -3329,6 +3384,13 @@ func (h *DataHandler) DataOriginGet(c *echo.Context) error {
 			Message:   "Could not get data origin",
 			Payload:   nil,
 		})
+	}
+	if !valid {
+		c.Logger().With(
+			"user", user_id,
+			"data origin", origin_id,
+		).Error("could not get data origin")
+		return c.NoContent(http.StatusNotFound)
 	}
 
 	return c.JSON(http.StatusOK, origins)

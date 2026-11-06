@@ -63,21 +63,28 @@ type Project struct {
 	Visibility  Visibility `db:"visibility"`
 }
 
-func (s *ProjectService) ProjectById(id uuid.UUID) (Project, error) {
+// Get a project by tis id.
+// First return value is the project, if valid.
+// Second return value is whether the project is valid. i.e. Was found.
+// Thrid return value is any error.
+func (s *ProjectService) ProjectById(id uuid.UUID) (Project, bool, error) {
 	query :=
 		`SELECT _id, _creator, label, description, visibility FROM project_ 
 		WHERE _id=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, query, id)
 	project, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Project])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Project{}, false, nil
+	}
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"project", id,
 		).Error("could not get project")
-		return Project{}, err
+		return Project{}, false, err
 	}
 
-	return project, nil
+	return project, true, nil
 }
 
 func (s *ProjectService) GetUserProjects(user uuid.UUID) ([]Project, error) {
@@ -784,22 +791,29 @@ func (s *ProjectService) DataMembershipCreate(
 	return nil
 }
 
-func (s *ProjectService) DataMembership(project uuid.UUID, data uuid.UUID) (ProjectDataMembershipRx, error) {
+// Get project membership data for a data.
+// First return value is the project data membership, if valid.
+// Second return value is whether the membership is valid. i.e. If it was found.
+// Third return value is any error.
+func (s *ProjectService) DataMembership(project uuid.UUID, data uuid.UUID) (ProjectDataMembershipRx, bool, error) {
 	query :=
 		`SELECT _project, _data, _creator, label FROM project_data_membership_
 		WHERE _project=$1 AND _data=$2`
 	rows, _ := s.db.Conn.Query(s.ctx, query, project, data)
 	membership, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[ProjectDataMembershipRx])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ProjectDataMembershipRx{}, false, nil
+	}
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"project", project,
 			"data", data,
 		).Error("could not get project data membership")
-		return ProjectDataMembershipRx{}, err
+		return ProjectDataMembershipRx{}, false, err
 	}
 
-	return membership, nil
+	return membership, true, nil
 }
 
 func (s *ProjectService) DataMemberships(project uuid.UUID, data []uuid.UUID) ([]ProjectDataMembershipRx, error) {

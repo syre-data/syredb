@@ -104,7 +104,7 @@ func (h *ApiClientHandler) Authenticate(c *echo.Context) error {
 		c.Logger().With(
 			"error", err,
 			"user id", user_id,
-		).Error("could not compare passwrod to hash")
+		).Error("could not compare password to hash")
 		return c.JSON(http.StatusInternalServerError, AppError{
 			RequestId: requestId(c),
 			Code:      APP_ERR_INVALID_ITEM,
@@ -114,7 +114,7 @@ func (h *ApiClientHandler) Authenticate(c *echo.Context) error {
 	}
 
 	if !authenticated {
-		return echo.ErrUnauthorized
+		return c.NoContent(http.StatusUnauthorized)
 	}
 
 	token, err := h.auth_service.CreateSession(user_id, creds.Expiration)
@@ -157,7 +157,7 @@ func (h *ApiClientHandler) Deactivate(c *echo.Context) error {
 		).Error("could not deactivate session token")
 		return c.JSON(http.StatusInternalServerError, AppError{
 			RequestId: requestId(c),
-			Code:      APP_ERR_DB_QUERY,
+			Code:      APP_ERR_SESSION_NOT_DEACTIVATED,
 			Message:   "Could not deactivate session",
 			Payload:   nil,
 		})
@@ -361,9 +361,10 @@ func (h *ApiClientHandler) DataCreate(c *echo.Context) error {
 		})
 	}
 
+	var origin service.DataOriginRx
 	origin_id, err := uuid.Parse(data.Origin)
 	if err != nil {
-		origin, valid, err := h.data_service.DataOriginByLabel(data.Origin)
+		orig, valid, err := h.data_service.DataOriginByLabel(data.Origin)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
@@ -388,17 +389,53 @@ func (h *ApiClientHandler) DataCreate(c *echo.Context) error {
 				Payload:   nil,
 			})
 		}
+		origin = orig
+	} else {
+		orig, valid, err := h.data_service.DataOriginById(origin_id)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"origin", data.Origin,
+			).Error("could not get data origin")
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not get data origin",
+				Payload:   nil,
+			})
+		}
+		if !valid {
+			c.Logger().With(
+				"error", err,
+				"origin", data.Origin,
+			).Error("data origin not found")
+			return c.JSON(http.StatusBadRequest, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_ENTITY_NOT_FOUND,
+				Message:   "Data origin not found",
+				Payload:   nil,
+			})
+		}
+		origin = orig
+	}
 
-		origin_id = origin.Id
+	if !origin.Active {
+		c.Logger().With("data origin", data.Origin).Info("data origin not active")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_ITEM,
+			Message:   "Data origin is inactive",
+			Payload:   nil,
+		})
 	}
 
 	switch data.Storage {
 	case service.DataStorageExternal:
-		return h.dataCreateExternal(c, user, origin_id, data)
+		return h.dataCreateExternal(c, user, origin.Id, data)
 	case service.DataStorageInternal:
-		return h.dataCreateInternal(c, user, origin_id, data)
+		return h.dataCreateInternal(c, user, origin.Id, data)
 	default:
-		c.Logger().With("data", data).Error("invalid data storage")
+		c.Logger().With("data", data).Info("invalid data storage")
 		return c.JSON(http.StatusBadRequest, AppError{
 			RequestId: requestId(c),
 			Code:      APP_ERR_INVALID_ITEM,
@@ -463,7 +500,7 @@ func (h *ApiClientHandler) dataCreateInternal(
 			Values:  values,
 		},
 	}
-	_, err := h.data_service.DataCreate([]service.DataCreate{create}, user)
+	ids, err := h.data_service.DataCreate([]service.DataCreate{create}, user)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -477,5 +514,5 @@ func (h *ApiClientHandler) dataCreateInternal(
 		})
 	}
 
-	return c.NoContent(http.StatusOK)
+	return c.JSON(http.StatusCreated, ResourceCreatedMultiple{Ids: ids})
 }

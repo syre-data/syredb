@@ -650,11 +650,11 @@ func (s *DataService) DataTypeCreateInternal(
 	label string,
 	description *string,
 	data_schema uuid.UUID,
-) error {
+) (uuid.UUID, error) {
 	tx, err := s.db.Conn.Begin(s.ctx)
 	if err != nil {
 		s.logger.With("error", err).Error("could not begin transaction")
-		return err
+		return uuid.Nil, err
 	}
 	defer tx.Rollback(s.ctx)
 
@@ -666,7 +666,7 @@ func (s *DataService) DataTypeCreateInternal(
 		description,
 	)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
 	storage_query := "INSERT INTO data_type_schema_ (_data_type, _schema) VALUES ($1, $2)"
@@ -676,16 +676,16 @@ func (s *DataService) DataTypeCreateInternal(
 			"error", err,
 			"data schema", data_schema,
 		).Error("could not create data type storage")
-		return err
+		return uuid.Nil, err
 	}
 
 	err = tx.Commit(s.ctx)
 	if err != nil {
 		s.logger.With("error", err).Error("could not commit data type create transaction")
-		return err
+		return uuid.Nil, err
 	}
 
-	return nil
+	return type_id, nil
 }
 
 func (s *DataService) DataTypeCreateExternal(
@@ -693,11 +693,11 @@ func (s *DataService) DataTypeCreateExternal(
 	label string,
 	description *string,
 	sources []DataTypeSourceCreate,
-) error {
+) (uuid.UUID, error) {
 	tx, err := s.db.Conn.Begin(s.ctx)
 	if err != nil {
 		s.logger.With("error", err).Error("could not begin transaction")
-		return err
+		return uuid.Nil, err
 	}
 	defer tx.Rollback(s.ctx)
 
@@ -710,7 +710,7 @@ func (s *DataService) DataTypeCreateExternal(
 	err = tx.QueryRow(s.ctx, query, creator, label, description).Scan(&id)
 	if err != nil {
 		s.logger.With("error", err).Error("could not create data type")
-		return err
+		return uuid.Nil, err
 	}
 
 	_, err = s.dataTypeSourcesCreate(tx, id, sources)
@@ -718,16 +718,16 @@ func (s *DataService) DataTypeCreateExternal(
 		s.logger.With(
 			"error", err,
 		).Error("could not create data type sources")
-		return err
+		return uuid.Nil, err
 	}
 
 	err = tx.Commit(s.ctx)
 	if err != nil {
 		s.logger.With("error", err).Error("could not commit data type create transaction")
-		return err
+		return uuid.Nil, err
 	}
 
-	return nil
+	return id, nil
 }
 
 type DataTypeSourceUpdate struct {
@@ -1088,39 +1088,39 @@ type DataSchemaCreate struct {
 	Description string
 }
 
-func (s *DataService) DataSchemaCreate(user_id uuid.UUID, data_schema DataSchemaCreate) error {
+func (s *DataService) DataSchemaCreate(user_id uuid.UUID, data_schema DataSchemaCreate) (uuid.UUID, error) {
 	has_permission, err := s.user_service.UserHasPermission(user_id, DbPermissionDataSchemaCreate)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	if !has_permission {
 		s.logger.With("user", user_id).Debug(
 			"insufficient permissions to create data schema for user",
 		)
-		return &InsufficientPermissionsError{}
+		return uuid.Nil, &InsufficientPermissionsError{}
 	}
 
 	err = validate_data_schema_storage_table_column_labels(data_schema.Schema)
 	if err != nil {
 		s.logger.With("error", err).Error("invalid data schema column labels")
-		return err
+		return uuid.Nil, err
 	}
 
 	tx, err := s.db.Conn.Begin(s.ctx)
 	if err != nil {
 		s.logger.With("error", err).Error("could not begin transaction to create data schema")
-		return err
+		return uuid.Nil, err
 	}
 	defer tx.Rollback(s.ctx)
 
 	schema_id, err := s.data_schema_create(tx, user_id, data_schema)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
 	err = s.dataSchemaCreateSchema(tx, schema_id, data_schema.Schema)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
 	err = s.dataSchemaStorageTableCreate(
@@ -1130,16 +1130,16 @@ func (s *DataService) DataSchemaCreate(user_id uuid.UUID, data_schema DataSchema
 		data_schema.Schema,
 	)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
 	err = tx.Commit(s.ctx)
 	if err != nil {
 		s.logger.With("error", err).Error("could not commit transaction to create data schema")
-		return err
+		return uuid.Nil, err
 	}
 
-	return nil
+	return schema_id, nil
 }
 
 func (s *DataService) data_schema_create(
@@ -1700,20 +1700,27 @@ func (s *DataService) DataOriginsByIds(ids []uuid.UUID) ([]DataOriginRx, error) 
 	return origins, nil
 }
 
-func (s *DataService) DataOriginById(id uuid.UUID) (DataOriginRx, error) {
+// Get a data origin by its id.
+// First return value is the data origin, if valid.
+// Second return value is whether the data origin is valid. i.e. If it was found.
+// Third return value is any error.
+func (s *DataService) DataOriginById(id uuid.UUID) (DataOriginRx, bool, error) {
 	query :=
 		`SELECT _id, label, description, active FROM data_origin_
 		WHERE _id=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, query, id)
 	origin, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[DataOriginRx])
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DataOriginRx{}, false, nil
+		}
 		s.logger.With(
 			"error", err,
 			"ids", id,
 		).Error("could not get data origin")
-		return DataOriginRx{}, err
+		return DataOriginRx{}, false, err
 	}
-	return origin, nil
+	return origin, true, nil
 }
 
 func (s *DataService) DataOriginsAll() ([]DataOriginRx, error) {
@@ -1735,19 +1742,20 @@ type DataOriginCreate struct {
 	Active      bool
 }
 
-func (s *DataService) DataOriginCreate(origin DataOriginCreate) error {
+func (s *DataService) DataOriginCreate(origin DataOriginCreate) (uuid.UUID, error) {
+	var id uuid.UUID
 	query :=
 		`INSERT INTO data_origin_ (label, description, active)
-		VALUES ($1, $2, $3)`
-	_, err := s.db.Conn.Exec(s.ctx, query, origin.Label, origin.Description, origin.Active)
+		VALUES ($1, $2, $3) RETURNING _id`
+	err := s.db.Conn.QueryRow(s.ctx, query, origin.Label, origin.Description, origin.Active).Scan(&id)
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"origin", origin,
 		).Error("could not create data origin")
-		return err
+		return uuid.Nil, err
 	}
-	return nil
+	return id, nil
 }
 
 func (s *DataService) DataOriginUpdate(update DataOriginRx) error {
@@ -3287,6 +3295,8 @@ type DataCreateValuesSources struct {
 	Sources     []SourceFileInfo
 }
 
+// Create data.
+// All-or-nothing transaction.
 func (s *DataService) DataCreate(
 	data []DataCreate,
 	owner uuid.UUID,
@@ -4234,9 +4244,9 @@ type DataNoteCreate struct {
 }
 
 // All or nothing
-func (s *DataService) DataNotesCreate(data uuid.UUID, creator uuid.UUID, notes []DataNoteCreate) error {
+func (s *DataService) DataNotesCreate(data uuid.UUID, creator uuid.UUID, notes []DataNoteCreate) ([]uuid.UUID, error) {
 	if len(notes) == 0 {
-		return nil
+		return []uuid.UUID{}, nil
 	}
 
 	const argsOffset = 2
@@ -4267,17 +4277,19 @@ func (s *DataService) DataNotesCreate(data uuid.UUID, creator uuid.UUID, notes [
 			idx_content+1,
 		)
 	}
+	query.WriteString(" RETURNING _id")
 
-	_, err := s.db.Conn.Exec(s.ctx, query.String(), args...)
+	rows, _ := s.db.Conn.Query(s.ctx, query.String(), args...)
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"notes", notes,
 		).Error("could not create data notes")
-		return err
+		return nil, err
 	}
 
-	return nil
+	return ids, nil
 }
 
 type DataWithOrigin struct {
@@ -4548,8 +4560,8 @@ func (s *DataService) DataCreator(data uuid.UUID) (DataCreator, error) {
 			).Error("user not found")
 			return nil, fmt.Errorf("user not found")
 		}
-		origin, err := s.DataOriginById(origin_id)
-		if err != nil {
+		origin, valid, err := s.DataOriginById(origin_id)
+		if err != nil || !valid {
 			s.logger.With(
 				"error", err,
 				"data", data,

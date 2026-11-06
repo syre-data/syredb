@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"syredb/database"
 	"syredb/service"
@@ -183,7 +184,11 @@ func (h *UserHandler) UserCreate(c *echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, user_id)
+	res := ResourceCreated{Id: user_id}
+	loc := url.URL{Path: "/api/user"}
+	loc.RawQuery = res.ToUrlQuery().Encode()
+	c.Response().Header().Set(echo.HeaderLocation, loc.String())
+	return c.JSON(http.StatusCreated, res)
 }
 
 func (h *UserHandler) UserUpdate(c *echo.Context) error {

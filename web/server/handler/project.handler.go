@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"syredb/database"
 	"syredb/service"
 
@@ -141,7 +142,11 @@ func (h *ProjectHandler) CreateProject(c *echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, id)
+	res := ResourceCreated{Id: id}
+	loc := url.URL{Path: "/api/project"}
+	loc.RawQuery = res.ToUrlQuery().Encode()
+	c.Response().Header().Set(echo.HeaderLocation, loc.String())
+	return c.JSON(http.StatusCreated, res)
 }
 
 func (h *ProjectHandler) ProjectResources(c *echo.Context) error {
