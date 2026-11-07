@@ -71,7 +71,7 @@ function UserProjectsError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
     return (
         <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            error={error as types.AppError}
+            error={error as Error}
             title={"Could not load your projects"}
         />
     );
@@ -156,7 +156,7 @@ function OrphanedDataError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
     return (
         <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            error={error as types.AppError}
+            error={error as Error}
             title={"Could not get orphaned data"}
         />
     );

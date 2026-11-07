@@ -1,19 +1,26 @@
 import { uuidToString } from "@/common";
+import { AppError } from "@/errors";
 import * as types from "@/types";
-import { OK, StatusCodes } from "http-status-codes";
 import * as uuid from "uuid";
 
 function dataTypesGetAll(): Promise<types.DataType[]> {
     return fetch("/api/data-types", {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataType[]);
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.DataType[];
+    });
 }
 
 function dataTypeCreateInternal(
     label: string,
     description: string,
     schema: uuid.UUIDTypes,
-): Promise<Response> {
+): Promise<uuid.UUIDTypes> {
     const params = new URLSearchParams();
     params.set("storage", types.DataStorageInternal);
     const data = {
@@ -27,6 +34,14 @@ function dataTypeCreateInternal(
         method: "post",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        const body = (await res.json()) as ResourceCreated;
+        return body.id;
     });
 }
 
@@ -48,6 +63,14 @@ function dataTypeCreateExternal(
         method: "post",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        const body = (await res.json()) as ResourceCreated;
+        return body.id;
     });
 }
 
@@ -58,41 +81,76 @@ function dataTypeGet(
     params.append("id", data_type.toString());
     return fetch(`/api/data-type?${params}`, {
         credentials: "same-origin",
-    }).then(async (resp) => await resp.json());
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return await res.json();
+    });
 }
 
-function dataTypeUpdate(update: types.DataTypeUpdate): Promise<Response> {
+function dataTypeUpdate(update: types.DataTypeUpdate): Promise<null> {
     return fetch(`/api/data-type`, {
         credentials: "same-origin",
         method: "put",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(update),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
 function dataSchemasGetAll(): Promise<types.DataSchema[]> {
     return fetch("/api/data-schemas", {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataSchema[]);
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.DataSchema[];
+    });
 }
 
 function downloadProjectDataAll(
     project: uuid.UUIDTypes,
     hierarchy: types.SaveDataHierarchy,
-): Promise<Response> {
+): Promise<null> {
     const params = new URLSearchParams();
     params.append("id", project.toString());
     params.append("hierarchy", hierarchy);
     return fetch(`/api/sample-data/project?${params}`, {
         credentials: "same-origin",
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
-function downloadDataSingle(data: uuid.UUIDTypes): Promise<Response> {
+function downloadDataSingle(data: uuid.UUIDTypes): Promise<null> {
     const params = new URLSearchParams();
     params.append("id", uuidToString(data));
     return fetch(`/resource/data?${params}`, {
         credentials: "same-origin",
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
@@ -107,12 +165,19 @@ function downloadDataMultiple(
 function downloadDataSource(
     data: uuid.UUIDTypes,
     source: string,
-): Promise<Response> {
+): Promise<null> {
     const params = new URLSearchParams();
     params.append("data", uuidToString(data));
     params.append("source", source);
     return fetch(`/resource/data/source?${params}`, {
         credentials: "same-origin",
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
@@ -120,31 +185,52 @@ function downloadDataSourceIndex(
     data: uuid.UUIDTypes,
     source: string,
     index: number,
-): Promise<Response> {
+): Promise<null> {
     const params = new URLSearchParams();
     params.append("data", uuidToString(data));
     params.append("source", source);
     params.append("index", index.toString());
     return fetch(`/resource/data/source?${params}`, {
         credentials: "same-origin",
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
-function dataSchemaCreate(schema: types.DataSchemaCreate): Promise<Response> {
+function dataSchemaCreate(schema: types.DataSchemaCreate): Promise<null> {
     return fetch("/api/data-schema", {
         credentials: "same-origin",
         method: "post",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(schema),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
-function dataSchemaUpdate(update: types.DataSchemaUpdate): Promise<Response> {
+function dataSchemaUpdate(update: types.DataSchemaUpdate): Promise<null> {
     return fetch("/api/data-schema", {
         credentials: "same-origin",
         method: "put",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(update),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
@@ -167,7 +253,7 @@ async function parseDataFileToSchemaCsv(
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
 
-        reader.onload = (e) => {
+        reader.onload = (_) => {
             let content;
             if (reader.result === null) {
                 reject("NO_CONTENT");
@@ -268,20 +354,41 @@ function dataSchemaResourcesGet(
     params.append("id", uuidToString(data_schema_id));
     return fetch(`/api/data-schema?${params}`, {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataSchemaResources);
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.DataSchemaResources;
+    });
 }
 
 function dataTypeTransformsGetAll(): Promise<types.DataTypeTransform[]> {
     return fetch("/api/data-type-transforms", {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataTypeTransform[]);
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.DataTypeTransform[];
+    });
 }
 
-function dataTypeTransformCreate(data: FormData): Promise<Response> {
+function dataTypeTransformCreate(data: FormData): Promise<null> {
     return fetch("/api/data-type-transform", {
         credentials: "same-origin",
         method: "post",
         body: data,
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
@@ -302,7 +409,7 @@ function projectDataCreate(
     data: DataIngest[],
     labels: string[],
     sourceFiles: [string, File | FileList][],
-) {
+): Promise<null> {
     const params = new URLSearchParams();
     params.set("project", uuidToString(project));
 
@@ -323,44 +430,72 @@ function projectDataCreate(
         credentials: "same-origin",
         method: "post",
         body,
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
 function orphanedData(): Promise<types.OrphanedDataResources> {
     return fetch("/api/data/orphaned", {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.OrphanedDataResources);
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.OrphanedDataResources;
+    });
 }
 
 // TODO: Should be a `handler.DataResources` but it isn't being created by `tygo`.
-function dataGet(data_id: uuid.UUIDTypes): Promise<any> {
+function dataGet(data_id: uuid.UUIDTypes): Promise<types.DataResource> {
     const params = new URLSearchParams();
     params.set("id", uuidToString(data_id));
     return fetch(`/api/data?${params}`, {
         credentials: "same-origin",
-    }).then(async (resp) => {
-        const body = await resp.json();
-        if (resp.status === StatusCodes.OK) {
-            return Promise.resolve(body);
-        } else {
-            return Promise.reject(body);
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
         }
+
+        return (await res.json()) as types.DataResource;
     });
 }
 
-function dataUpdate(update: types.DataUpdate): Promise<Response> {
+function dataUpdate(update: types.DataUpdate): Promise<null> {
     return fetch("/api/data", {
         credentials: "same-origin",
         method: "put",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(update),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
 function dataOrigins(): Promise<types.DataOriginRx[]> {
     return fetch("/api/data-origins", {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataOriginRx[]);
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.DataOriginRx[];
+    });
 }
 
 function dataOriginById(
@@ -370,24 +505,45 @@ function dataOriginById(
     params.set("id", uuidToString(data_origin_id));
     return fetch(`/api/data-origin?${params}`, {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataOriginRx);
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.DataOriginRx;
+    });
 }
 
-function dataOriginCreate(origin: types.DataOriginCreate): Promise<Response> {
+function dataOriginCreate(origin: types.DataOriginCreate): Promise<null> {
     return fetch("/api/data-origin", {
         credentials: "same-origin",
         method: "post",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(origin),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
-function dataOriginUpdate(update: types.DataOriginRx): Promise<Response> {
+function dataOriginUpdate(update: types.DataOriginRx): Promise<null> {
     return fetch("/api/data-origin", {
         credentials: "same-origin",
         method: "put",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(update),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
@@ -396,7 +552,14 @@ function dataValues(data: uuid.UUIDTypes): Promise<any> {
     params.set("id", uuidToString(data));
     return fetch(`/api/data/values?${params}`, {
         credentials: "same-origin",
-    }).then(async (resp) => await resp.json());
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return await res.json();
+    });
 }
 
 function dataPreview(data: uuid.UUIDTypes): Promise<types.DataValuesPreview> {
@@ -404,33 +567,67 @@ function dataPreview(data: uuid.UUIDTypes): Promise<types.DataValuesPreview> {
     params.set("id", uuidToString(data));
     return fetch(`/api/data/values/preview?${params}`, {
         credentials: "same-origin",
-    }).then(async (resp) => (await resp.json()) as types.DataValuesPreview);
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.DataValuesPreview;
+    });
 }
 
-function propertiesUpdate(update: types.DataPropertiesUpdate) {
+function propertiesUpdate(update: types.DataPropertiesUpdate): Promise<null> {
     return fetch(`/api/data/properties`, {
         credentials: "same-origin",
         method: "put",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(update),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
-function notesCreate(data: uuid.UUIDTypes, notes: types.DataNoteCreate[]) {
+function notesCreate(
+    data: uuid.UUIDTypes,
+    notes: types.DataNoteCreate[],
+): Promise<null> {
     return fetch(`/api/data/notes`, {
         credentials: "same-origin",
         method: "post",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ Id: uuidToString(data), Notes: notes }),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
-function search(project: uuid.UUIDTypes, query: string) {
+function search(
+    project: uuid.UUIDTypes,
+    query: string,
+): Promise<uuid.UUIDTypes[]> {
     return fetch("/api/data/search", {
         credentials: "same-origin",
         method: "post",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project, query }),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as uuid.UUIDTypes[];
     });
 }
 

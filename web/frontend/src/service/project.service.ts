@@ -1,11 +1,17 @@
+import { AppError } from "@/errors";
 import * as types from "@/types";
 import type { UUIDTypes } from "uuid";
 
 function getUserProjects(): Promise<types.Project[]> {
     return fetch("/api/projects", {
         credentials: "same-origin",
-    }).then(async (resp) => {
-        return (await resp.json()) as types.Project[];
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.Project[];
     });
 }
 
@@ -15,8 +21,13 @@ function createProject(project: types.ProjectCreate): Promise<UUIDTypes> {
         method: "post",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(project),
-    }).then(async (resp) => {
-        return (await resp.json()) as UUIDTypes;
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as UUIDTypes;
     });
 }
 
@@ -27,8 +38,13 @@ function getProjectResources(
     params.set("project", project.toString());
     return fetch(`/api/project/resources?${params}`, {
         credentials: "same-origin",
-    }).then(async (resp) => {
-        return (await resp.json()) as types.ProjectResources;
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.ProjectResources;
     });
 }
 
@@ -39,21 +55,33 @@ function getProjectWithUserPermission(
     params.set("id", project.toString());
     return fetch(`/api/project?${params}`, {
         credentials: "same-origin",
-    }).then(
-        async (resp) => (await resp.json()) as types.ProjectWithUserPermission,
-    );
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.ProjectWithUserPermission;
+    });
 }
 
 function dataMembershipCreate(
     project: UUIDTypes,
     data: UUIDTypes,
     label?: string,
-): Promise<Response> {
+): Promise<null> {
     return fetch("/api/project/data", {
         credentials: "same-origin",
         method: "post",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project, data, label }),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return null;
     });
 }
 
