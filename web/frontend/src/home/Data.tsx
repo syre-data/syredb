@@ -71,7 +71,7 @@ export default function () {
 }
 
 function LoadError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as AppError;
+    const err = error as Error;
     console.log(err);
 
     let message = err.message;
@@ -509,7 +509,7 @@ function ProjectItem({ resources }: ProjectItemProps) {
 }
 
 function ValuesError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as AppError;
+    const err = error as Error;
     console.error(err);
 
     return (

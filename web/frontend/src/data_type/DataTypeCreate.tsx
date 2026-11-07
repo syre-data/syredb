@@ -34,7 +34,7 @@ function DataTypeCreateError({ error, resetErrorBoundary }: FallbackProps) {
     return (
         <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            error={error as AppError}
+            error={error as Error}
             title={"Could not load resources"}
         />
     );

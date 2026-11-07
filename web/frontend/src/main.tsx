@@ -7,24 +7,36 @@ import { formDevtoolsPlugin } from "@tanstack/react-form-devtools";
 import "./style.css";
 import App from "./App";
 
-const container = document.getElementById("root");
-const root = createRoot(container!);
+async function main() {
+    if (import.meta.env.DEV) {
+        const { worker } = await import("./_mocks/browser");
 
-root.render(
-    <React.StrictMode>
-        <App />
-        <TanStackDevtools
-            plugins={[
-                // {
-                //     name: "TanStack Query",
-                //     render: <ReactQueryDevtoolsPanel />,
-                // },
-                // {
-                //     name: "TanStack Router",
-                //     render: <TanStackRouterDevtoolsPanel />,
-                // },
-                formDevtoolsPlugin(),
-            ]}
-        />
-    </React.StrictMode>,
-);
+        await worker.start({
+            onUnhandledFrame: "bypass",
+        });
+    }
+
+    const container = document.getElementById("root");
+    const root = createRoot(container!);
+
+    root.render(
+        <React.StrictMode>
+            <App />
+            <TanStackDevtools
+                plugins={[
+                    // {
+                    //     name: "TanStack Query",
+                    //     render: <ReactQueryDevtoolsPanel />,
+                    // },
+                    // {
+                    //     name: "TanStack Router",
+                    //     render: <TanStackRouterDevtoolsPanel />,
+                    // },
+                    formDevtoolsPlugin(),
+                ]}
+            />
+        </React.StrictMode>,
+    );
+}
+
+await main();

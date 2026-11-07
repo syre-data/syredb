@@ -57,13 +57,13 @@ export default function () {
 }
 
 function DataSchemaError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as AppError;
+    const err = error as Error;
     console.error(err);
 
     return (
         <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            error={error as AppError}
+            error={error as Error}
             title={"Could not load data schema"}
         />
     );

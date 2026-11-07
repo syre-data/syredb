@@ -15,4 +15,18 @@ export class AppError extends Error {
         this.requestId = data.requestId;
         this.payload = data.payload;
     }
+
+    override toString() {
+        const info = { code: this.cause, payload: this.payload };
+        return `[request: ${this.requestId}] ${this.message} ${JSON.stringify(info)}`;
+    }
+
+    toObject() {
+        return {
+            requestId: this.requestId,
+            cause: this.cause,
+            message: this.message,
+            payload: this.payload,
+        };
+    }
 }

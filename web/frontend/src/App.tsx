@@ -14,6 +14,7 @@ import { ErrorBoundary } from "react-error-boundary";
 import * as common from "@/common";
 import user_service from "@/service/user.service";
 import { StandardError } from "./components";
+import { Toaster } from "sonner";
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -29,6 +30,7 @@ export default function App() {
             <ErrorBoundary FallbackComponent={AppError}>
                 <ProvideAppState>
                     <Home />
+                    <Toaster />
                 </ProvideAppState>
             </ErrorBoundary>
         </QueryClientProvider>
@@ -39,7 +41,7 @@ function AppError({ error, resetErrorBoundary }: FallbackProps) {
     return (
         <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            error={error as types.AppError}
+            error={error as Error}
             title={"An error occured"}
         />
     );
@@ -66,13 +68,10 @@ function ProvideAppState({ children }: ProvideAppStateProps) {
 }
 
 function LoadUserError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as types.AppError;
-    console.error(err);
-
     return (
         <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            error={error as types.AppError}
+            error={error as Error}
             title={"Could not get user"}
         />
     );

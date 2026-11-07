@@ -32,7 +32,7 @@ function LoadError({ resetErrorBoundary, error }: FallbackProps) {
     return (
         <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            error={error as AppError}
+            error={error as Error}
             title={"Could not load database permissions"}
         />
     );
@@ -123,7 +123,7 @@ function UserCreate() {
                 return;
             }
 
-            const err = (await resp.json()) as AppError;
+            const err = (await resp.json()) as Error;
             if (err.code === APP_ERR_EMAIL_NOT_SENT) {
                 setPassword(err.payload);
                 return;

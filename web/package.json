@@ -6,6 +6,6 @@
     "dev:backend": "cd backend && air"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^10.0"
   }
 }

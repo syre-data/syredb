@@ -9,6 +9,8 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import project_service from "@/service/project.service";
 import data_service from "@/service/data.service";
 import { Loading, StandardError } from "@/components";
+import { toast } from "sonner";
+import { AppError } from "@/errors";
 
 export default function () {
     return (
@@ -152,14 +154,17 @@ function OrphanedData() {
     );
 }
 
-function OrphanedDataError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
-    return (
-        <StandardError
-            resetErrorBoundary={resetErrorBoundary}
-            error={error as Error}
-            title={"Could not get orphaned data"}
-        />
-    );
+function OrphanedDataError({ error }: ErrorBoundaryProps) {
+    if (error instanceof AppError) {
+        console.error("SyreDB error", error.toObject());
+    } else {
+        console.error(error);
+    }
+
+    toast.error("Could not get orphaned data", {
+        cancel: { label: "Cancel", onClick: () => {} },
+    });
+    return null;
 }
 
 function OrphanedDataContent() {

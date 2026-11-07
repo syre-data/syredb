@@ -3,6 +3,7 @@ import type { MouseEvent } from "react";
 import { Link } from "react-router";
 import icon from "@/icon";
 import { AppError } from "@/errors";
+import { toast, type ExternalToast } from "sonner";
 
 interface SuspenseErrorProps {
     resetErrorBoundary: (...args: unknown[]) => void;
@@ -57,7 +58,7 @@ export function StandardError({
     error,
     title,
 }: StandardErrorProps) {
-    console.error(error);
+    console.error(error.toString());
 
     let content = <GenericError title={title} error={error} />;
     if (error instanceof AppError) {

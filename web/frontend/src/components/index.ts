@@ -1,6 +1,6 @@
 import Loading from "./Loading";
 import { InputPropertyValue, SelectPropertyType } from "./Property";
-import { SuspenseError, StandardError } from "./SuspenseError";
+import { SuspenseError, StandardError } from "./Error";
 
 export {
     Loading,

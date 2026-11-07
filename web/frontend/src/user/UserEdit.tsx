@@ -59,7 +59,7 @@ function UserEditError({ error, resetErrorBoundary }: FallbackProps) {
     return (
         <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            error={error as AppError}
+            error={error as Error}
             title={"Could not load user"}
         />
     );
@@ -194,7 +194,7 @@ function UserEdit({ user_id }: UserEditProps) {
                 return;
             }
 
-            const err = (await resp.json()) as AppError;
+            const err = (await resp.json()) as Error;
             setError(err.message);
             btn_submit.disabled = false;
         });
@@ -365,7 +365,7 @@ function PasswordReset({ user }: PasswordResetProps) {
                     return;
                 }
 
-                const err = (await resp.json()) as AppError;
+                const err = (await resp.json()) as Error;
                 if (err.code === APP_ERR_EMAIL_NOT_SENT) {
                     setMessage(
                         `Could not send user email. Alert them their new password is ${err.payload}`,

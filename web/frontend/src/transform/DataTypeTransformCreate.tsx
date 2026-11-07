@@ -35,7 +35,7 @@ function DataTypeTransformCreateError({
     return (
         <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            error={error as AppError}
+            error={error as Error}
             title={"Could not load data type transforms"}
         />
     );
