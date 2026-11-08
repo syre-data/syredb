@@ -1,20 +1,34 @@
 # syredb
-
-[![PyPI - Version](https://img.shields.io/pypi/v/syredb.svg)](https://pypi.org/project/syredb)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/syredb.svg)](https://pypi.org/project/syredb)
-
------
-
-## Table of Contents
-
-- [Installation](#installation)
-- [License](#license)
+Python client for SyreDB.
 
 ## Installation
+
+### From PyPI (recommended)
 
 ```console
 pip install syredb
 ```
+
+### From source
+```console
+pip install "syredb @ git+https://github.com/syre-data/syredb/#subdirectory=lang/python"
+```
+
+## Modules
+
+The `syredb` package consists of several modules made for different use cases.
+
+### api
+
+**Use case:** Insert new data from your own app.
+
+### transform
+
+**Use case:** Data transform scripts running on your `syredb` server.
+
+## Examples
+
+See the [`examples`](./examples/) folder.
 
 ## License
 

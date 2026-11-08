@@ -1,6 +1,7 @@
-from typing import Any, Optional, Iterable, Literal
-from enum import StrEnum
 import datetime as dt
+from collections.abc import Iterable
+from enum import StrEnum
+from typing import Any
 
 QUANTITY_MAGNITUDE_KEY = "magnitude"
 QUANTITY_UNIT_KEY = "unit"
@@ -41,7 +42,7 @@ class PropertyType(StrEnum):
 
 
 class Property:
-    def __init__(self, label: str, dtype: PropertyType, value: Optional[Any] = None):
+    def __init__(self, label: str, dtype: PropertyType, value: Any = None):
         if value is not None:
             self.validate_value_as_dtype(value, dtype)
 
@@ -95,7 +96,7 @@ class Property:
                     "Could not determine data type from value, please specify"
                 )
             if not isinstance(value[QUANTITY_UNIT_KEY], str):
-                raise ValueError("Invalid quanitity data")
+                raise TypeError("Invalid quanitity data")
             try:
                 magnitude = float(value[QUANTITY_MAGNITUDE_KEY])
             except ValueError:
@@ -162,13 +163,13 @@ class PropertyList:
     def __init__(self):
         self._inner: list[Property] = []
 
-    def set(self, key: str, value: Any, dtype: Optional[PropertyType] = None):
+    def set(self, key: str, value: Any, dtype: PropertyType | None = None):
         """Set a property value.
 
         Args:
             key (str): Property key.
             value (Any): Property value.
-            dtype (Optional[PropertyType], optional): Data type of the value.
+            dtype (PropertyType | None, optional): Data type of the value.
             If `None`, the data type is inferred from `value`.
             Defaults to None.
 
@@ -201,10 +202,9 @@ class PropertyList:
     def __getitem__(self, key: str) -> Property:
         for p in self._inner:
             if p.label == key:
-                prop = p
                 return p
 
-        raise KeyError(f"Property with key `{key}` not found")
+        raise KeyError(f"Property `{key}` not found")
 
     def __setitem__(self, key, value):
         dtype = Property.dtype_from_value(value)
@@ -226,8 +226,7 @@ class PropertyList:
             prop.value = value
 
     def __iter__(self):
-        for prop in self._inner:
-            yield prop
+        yield from self._inner
 
 
 class DataSchemaField:
@@ -285,8 +284,7 @@ class DataSchema:
         raise KeyError(f"Field `{key}` not found")
 
     def __iter__(self):
-        for field in self._fields:
-            yield field
+        yield from self._fields
 
 
 class DataSource:
@@ -344,15 +342,14 @@ class DataSourceList:
         raise KeyError(f"Source `{key}` not found")
 
     def __iter__(self):
-        for source in self._sources:
-            yield source
+        yield from self._sources
 
 
 class Data:
     def __init__(
         self,
-        schema: Optional[tuple[DataSchemaCardinality, DataSchema]] = None,
-        sources: Optional[DataSourceList] = None,
+        schema: tuple[DataSchemaCardinality, DataSchema] | None = None,
+        sources: DataSourceList | None = None,
     ):
         if schema is None and sources is None:
             raise ValueError("One of `schema` or `sources` must be provided")
@@ -411,7 +408,7 @@ class Data:
         if isinstance(values, dict):
             self._set_values_dict(values)
         else:
-            raise ValueError("invalid values")
+            raise TypeError("invalid values")
 
     def _set_values_dict(self, values: dict[str, Any]):
         assert self.__schema is not None
@@ -440,7 +437,7 @@ class Data:
                         height = len(val)
                     else:
                         if len(val) != height:
-                            raise ValueError(f"invalid data length")
+                            raise ValueError("invalid data length")
                     for v in val:
                         if not field.nullable or v is not None:
                             self.validate_value_as_dtype(v, dtype, key)

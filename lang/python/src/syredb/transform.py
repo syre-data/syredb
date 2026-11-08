@@ -1,24 +1,21 @@
 # Data type transform functionality.
-from typing import Any, Optional, Iterable
-import os
-import sys
-import struct
-import socket
-from enum import StrEnum
-import uuid
 import json
-import datetime as dt
-import numpy
+import os
+import socket
+import sys
+import uuid
+from typing import Any
+
 import pandas
-from ._socket import _query, LOCALHOST
+
 from ._data import (
-    Storage,
-    ValueType,
+    Data,
+    DataSchema,
     DataSchemaCardinality,
     DataSchemaField,
-    DataSchema,
-    Data,
+    Storage,
 )
+from ._socket import LOCALHOST, _query
 
 __SYREDB_CONNECTION__ = None
 
@@ -81,8 +78,8 @@ class InputData:
         token: str,
         tags: set[str],
         properties: dict[str, Any],
-        data_source: Optional[dict[str, str | list[str]]],
-        conn: Optional[socket.socket],
+        data_source: dict[str, str | list[str]] | None,
+        conn: socket.socket | None,
     ):
         """Create a new input data.
 
@@ -91,9 +88,9 @@ class InputData:
             storage (Storage): Storage type.
             tags (set): _description_
             properties (dict[str, Any]): _description_
-            data_source (Optional[dict[str, str | list[str]]]):
+            data_source (dict[str, str | list[str]] | None):
                 Data source paths if storage is external, None if internal.
-            port (Optional[socket.socket]): Query connection if storage is internal, None if external.
+            port (socket.socket | None): Query connection if storage is internal, None if external.
         """
         if data_source is None and conn is None:
             raise ValueError("one of `data_source` or `conn` must be provided")
@@ -272,19 +269,17 @@ class OutputData(Data):
         """
         if self.schema is not None:
             for field in self.schema:
-                if field.required:
-                    if field.label not in self._values:
-                        raise ValueError(f"field {field.label} is required")
+                if field.required and field.label not in self._values:
+                    raise ValueError(f"field {field.label} is required")
         elif self.sources is not None:
             for source in self.sources:
-                if source.required:
-                    if source.label not in self._values:
-                        raise ValueError(f"source {source.label} is required")
+                if source.required and source.label not in self._values:
+                    raise ValueError(f"source {source.label} is required")
 
         cmd = {"token": self.__token, "fn": "save_data"}
         resp = _query(cmd, self.__conn)
         if resp["status"] != "ok":
-            raise RuntimeError(f"Could not save data: {resp["err"]}")
+            raise RuntimeError(f"Could not save data: {resp['err']}")
 
         properties = [
             {"label": prop.label, "type": prop.dtype, "value": prop.value}
@@ -345,7 +340,7 @@ def parse_data_to_schema(
         label = col["label"]
         col_data = df.iloc[idx]
         if col_data is None:
-            exit(3)
+            sys.exit(3)
         data[label] = col_data.to_list()
     return data
 

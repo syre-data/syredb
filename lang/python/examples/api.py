@@ -1,11 +1,12 @@
 # Inserting data using the `api` module.
 # %%
 import datetime as dt
+
 from syredb import api
 
 # %%
-expiration = dt.datetime.now(tz=dt.timezone.utc) + dt.timedelta(hours=1)
-c = api.Client("127.0.0.1:3000", "owner@t.com", "root", expiration)
+expiration = dt.datetime.now(tz=dt.UTC) + dt.timedelta(hours=1)
+c = api.Client("127.0.0.1:3000", "owner@t.com", "root", expiration, scheme=api.HTTP)
 
 # %%
 data = api.Data(c, "PL", "pl_setup")

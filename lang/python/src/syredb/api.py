@@ -1,22 +1,29 @@
 # API functionality
-from typing import Any, Optional, Iterable
-from enum import StrEnum
 import datetime as dt
-import urllib.parse
 import json
-import requests
+import urllib.parse
 import uuid
+from enum import StrEnum
+from typing import Any, Literal
+
+import requests
+
 from ._data import (
     QUANTITY_MAGNITUDE_KEY,
     QUANTITY_UNIT_KEY,
-    Storage,
-    ValueType,
-    PropertyType,
+    DataSchema,
     DataSchemaCardinality,
     DataSchemaField,
-    DataSchema,
+    PropertyType,
+    Storage,
+    ValueType,
+)
+from ._data import (
     Data as DataBase,
 )
+
+HTTP = "http://"
+HTTPS = "https://"
 
 
 class Visibility(StrEnum):
@@ -34,7 +41,7 @@ class Data(DataBase):
         df = get_values() # values collected from experiment
         owner = get_user_credentials() # user id of data owner
 
-        client = Client(host="127.1.1.1", token="MY_SECRET_TOKEN")
+        client = Client(host="127.0.0.1", token="MY_SECRET_TOKEN")
         data = Data(client, "my_data_type") # initialize data as the given type
         data.add_tag("summary")
         data.set_property("count", 10)
@@ -50,8 +57,11 @@ class Data(DataBase):
         data_type: uuid.UUID | str,
         origin: uuid.UUID | str,
         visiblility: Visibility = Visibility.Private,
-        timestamp: dt.datetime = dt.datetime.now(tz=dt.timezone.utc),
+        timestamp: dt.datetime | None = None,
     ):
+        if timestamp is None:
+            timestamp = dt.datetime.now(tz=dt.UTC)
+
         dtype = client._data_type(data_type)
         match dtype["storage"]:
             case Storage.Internal:
@@ -80,16 +90,16 @@ class Data(DataBase):
         self.visibility = visiblility
         self.timestamp = timestamp
 
-    def add_note(
-        self, content: str, timestamp: dt.datetime = dt.datetime.now(tz=dt.timezone.utc)
-    ):
+    def add_note(self, content: str, timestamp: dt.datetime | None = None):
         """Add a note to the data.
 
         Args:
             content (str): Note content.
-            timestamp (dt.datetime): Timestamp assosciated with the note.
-            Defaults to dt.datetime.now(tz=dt.timezone.utc).
+            timestamp (dt.datetime | None): Timestamp assosciated with the note. Defaults to None.
         """
+        if timestamp is None:
+            timestamp = dt.datetime.now(tz=dt.UTC)
+
         self._notes.append((timestamp, content))
 
     def to_dict(self) -> dict[str, Any]:
@@ -136,7 +146,9 @@ class Client:
         email: str,
         password: str,
         expiration: dt.datetime,
+        scheme: Literal["https://", "http://"] = HTTPS,
     ):
+        self.scheme = scheme
         self.host = host
         self._authenticate_user(email, password, expiration)
 
@@ -151,8 +163,7 @@ class Client:
 
     @property
     def url(self) -> str:
-        # TODO: https
-        return f"http://{self.host}/api/client/"
+        return f"{self.scheme}{self.host}/api/client/"
 
     def _authenticate_user(
         self,
