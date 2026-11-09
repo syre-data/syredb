@@ -12,18 +12,18 @@ packages:
     enum_style: "union"
 
   - path: "syredb/handler"
-    output_path: "../frontend/src/types/errors.ts"
-    include_files:
+    output_path: "../frontend/src/types/handler.ts"
+    exclude_files:
       - "errors.go"
+      - "auth.handler.go"
     frontmatter: |
       import * as uuid from "uuid"
     enum_style: "union"
 
   - path: "syredb/handler"
-    output_path: "../frontend/src/types/handler.ts"
-    exclude_files:
+    output_path: "../frontend/src/types/errors.ts"
+    include_files:
       - "errors.go"
-      - "auth.handler.go"
     frontmatter: |
       import * as uuid from "uuid"
     enum_style: "union"

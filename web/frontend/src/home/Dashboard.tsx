@@ -1,7 +1,10 @@
 import * as types from "@/types";
 import { Suspense } from "react";
 import { ErrorBoundary } from "react-error-boundary";
-import type { FallbackProps as ErrorBoundaryProps } from "react-error-boundary";
+import type {
+    FallbackProps as ErrorBoundaryProps,
+    FallbackProps,
+} from "react-error-boundary";
 import { Link } from "react-router";
 import icon from "../icon";
 import * as common from "../common";
@@ -14,14 +17,15 @@ import { AppError } from "@/errors";
 
 export default function () {
     return (
-        <div>
+        <div className="h-screen bg-gray-100 dark:bg-gray-900">
             <div className="px-4 pt-2 flex gap-2 text-xl">
                 <h2 className="text-lg font-bold grow">Dashboard</h2>
                 <Nav />
             </div>
-            <main>
+            <main className="flex flex-col gap-4">
                 <UserProjects />
                 <OrphanedData />
+                <RecentData />
             </main>
         </div>
     );
@@ -45,7 +49,7 @@ function UserProjects() {
     return (
         <div>
             <div className="flex gap-2 items-baseline px-4">
-                <h3 className="pb-2 text-lg font-bold">Projects</h3>
+                <h3 className="pb-2 text-lg font-bold">Your projects</h3>
                 <div className="flex gap-1">
                     <Link to="/project/create">
                         <button
@@ -133,10 +137,12 @@ interface ProjectCardProps {
 }
 function ProjectCard({ project }: ProjectCardProps) {
     return (
-        <div className="border rounded-sm">
+        <div className="card">
             <Link to={`/project/${project.Id}`}>
-                <div className="px-2 py-1">
-                    <h4 className="font-bold">{project.Label}</h4>
+                <div className="px-4 py-2">
+                    <div className="pb-2">
+                        <h4 className="font-bold">{project.Label}</h4>
+                    </div>
                     <div>{project.Description}</div>
                 </div>
             </Link>
@@ -148,7 +154,7 @@ function OrphanedData() {
     return (
         <ErrorBoundary FallbackComponent={OrphanedDataError}>
             <Suspense fallback={<Loading />}>
-                <OrphanedDataContent />
+                <OrphanedDataInner />
             </Suspense>
         </ErrorBoundary>
     );
@@ -167,7 +173,7 @@ function OrphanedDataError({ error }: ErrorBoundaryProps) {
     return null;
 }
 
-function OrphanedDataContent() {
+function OrphanedDataInner() {
     const { data } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_ORPHANED_DATA],
         queryFn: data_service.orphanedData,
@@ -175,13 +181,22 @@ function OrphanedDataContent() {
 
     return data.Data.length > 0 ? (
         <div className="px-4 pt-2">
-            <h3 className="pb-2 text-lg font-bold">Orphaned data</h3>
-            <OrphanedDataList
-                data={data.Data}
-                origins={data.Origins}
-                dataTypes={data.DataTypes}
-                children={data.Children}
-            />
+            <div className="card">
+                <div className="px-4 py-2 flex gap-2 items-baseline">
+                    <h3 className="text-lg font-bold">Orphaned data</h3>
+                    <div className="text-sm text-secondary">
+                        (does not belong to a project)
+                    </div>
+                </div>
+                <div className="pb-2">
+                    <OrphanedDataList
+                        data={data.Data}
+                        origins={data.Origins}
+                        dataTypes={data.DataTypes}
+                        children={data.Children}
+                    />
+                </div>
+            </div>
         </div>
     ) : null;
 }
@@ -199,12 +214,14 @@ function OrphanedDataList({
     children,
 }: OrphanedDataListProps) {
     return (
-        <table className="text-left [&_td]:px-2 [&_td]:py-0.5">
-            <thead className="[&_th]:px-2 [&_th]:py-0.5">
+        <table className="table-compact w-full [&_th]:last:w-full [&_td]:last:w-full [&_td]:text-nowrap [&_th]:first:pl-4 [&_td]:first:pl-4">
+            <thead>
                 <tr>
                     <th>Type</th>
                     <th>Origin</th>
                     <th>Timestamp</th>
+                    <th></th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -241,20 +258,123 @@ function OrphanedDataItem({
     children,
 }: OrphanedDataItemProps) {
     return (
-        <tr className="group">
+        <tr className="group hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer">
             <td>{dataType.Label}</td>
             <td>{origin.Label}</td>
-            <td>{data.Timestamp}</td>
+            <td>{common.timestampToString(data.Timestamp)}</td>
             <td className="text-secondary">({children.length} children)</td>
             <td>
                 <div className="invisible group-hover:visible">
                     <Link to={`/data/${data.Id}`}>
-                        <button type="button" className="btn-cmd">
+                        <button type="button" className="btn-cmd align-bottom">
                             <icon.Eye />
                         </button>
                     </Link>
                 </div>
             </td>
+        </tr>
+    );
+}
+
+function RecentData() {
+    return (
+        <div className="px-4">
+            <div className="card">
+                <div className="pt-2">
+                    <h3 className="px-4 pb-2 text-lg font-bold">Recent data</h3>
+                </div>
+                <div className="pb-2">
+                    <ErrorBoundary FallbackComponent={RecentDataError}>
+                        <Suspense fallback={<Loading />}>
+                            <RecentDataInner />
+                        </Suspense>
+                    </ErrorBoundary>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function RecentDataError({ resetErrorBoundary, error }: FallbackProps) {
+    return (
+        <StandardError
+            resetErrorBoundary={resetErrorBoundary}
+            error={error as Error}
+            title={"Could not load recent data"}
+        />
+    );
+}
+
+function RecentDataInner() {
+    const { data } = useSuspenseQuery({
+        queryKey: [common.QUERY_KEY_RECENT_DATA],
+        queryFn: async () => await data_service.recentData(10),
+    });
+
+    return data.Data.length > 0 ? (
+        <RecentDataList data={data} />
+    ) : (
+        <div>No recent data</div>
+    );
+}
+
+interface RecentDataListProps {
+    data: types.RecentDataResources;
+}
+function RecentDataList({ data: resources }: RecentDataListProps) {
+    return (
+        <table className="table-compact w-full [&_th]:last:w-full [&_td]:last:w-full [&_td]:text-nowrap [&_th]:first:pl-4 [&_td]:first:pl-4">
+            <thead>
+                <th>Type</th>
+                <th>Origin</th>
+                <th>Timestamp</th>
+                <th>Creator</th>
+            </thead>
+            <tbody>
+                {resources.Data.map((datum) => {
+                    console.debug(datum);
+                    const creator = resources.Users.find(
+                        (user) => user.Id === datum.Creator,
+                    );
+                    const dtype = resources.DataTypes.find(
+                        (dtype) => dtype.Id === datum.Data.Type,
+                    );
+                    const origin = resources.Origins.find(
+                        (origin) => origin.Id === datum.Origin,
+                    );
+
+                    return (
+                        <RecentDataListItem
+                            data={datum.Data}
+                            creator={creator}
+                            dataType={dtype}
+                            origin={origin}
+                        />
+                    );
+                })}
+            </tbody>
+        </table>
+    );
+}
+
+interface RecentDataListItemProps {
+    data: types.DataRx;
+    creator: types.User;
+    dataType: types.DataType;
+    origin: types.DataOriginRx;
+}
+function RecentDataListItem({
+    data,
+    creator,
+    dataType,
+    origin,
+}: RecentDataListItemProps) {
+    return (
+        <tr className="group hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer">
+            <td>{dataType.Label}</td>
+            <td>{origin.Label}</td>
+            <td>{common.timestampToString(data.Timestamp)}</td>
+            <td>{creator.Name}</td>
         </tr>
     );
 }

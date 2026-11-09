@@ -449,12 +449,17 @@ function orphanedData(): Promise<types.OrphanedDataResources> {
             throw new AppError(data);
         }
 
-        return (await res.json()) as types.OrphanedDataResources;
+        const data = (await res.json()) as types.OrphanedDataResources;
+        data.Data.forEach((datum) => {
+            datum.Data.Timestamp = new Date(datum.Data.Timestamp);
+        });
+
+        return data;
     });
 }
 
 // TODO: Should be a `handler.DataResources` but it isn't being created by `tygo`.
-function dataGet(data_id: uuid.UUIDTypes): Promise<types.DataResource> {
+function dataGet(data_id: uuid.UUIDTypes): Promise<types.DataResources> {
     const params = new URLSearchParams();
     params.set("id", uuidToString(data_id));
     return fetch(`/api/data?${params}`, {
@@ -465,7 +470,7 @@ function dataGet(data_id: uuid.UUIDTypes): Promise<types.DataResource> {
             throw new AppError(data);
         }
 
-        return (await res.json()) as types.DataResource;
+        return (await res.json()) as types.DataResources;
     });
 }
 
@@ -631,6 +636,29 @@ function search(
     });
 }
 
+function recentData(limit?: number): Promise<types.RecentDataResources> {
+    const params = new URLSearchParams();
+    if (limit) {
+        params.set("limit", limit.toString());
+    }
+
+    return fetch(`/api/data/recent?${params}`, {
+        credentials: "same-origin",
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        const data = (await res.json()) as types.RecentDataResources;
+        data.Data.forEach((datum) => {
+            datum.Data.Timestamp = new Date(datum.Data.Timestamp);
+        });
+
+        return data;
+    });
+}
+
 export default {
     dataTypesGetAll,
     dataTypeCreateInternal,
@@ -662,4 +690,5 @@ export default {
     propertiesUpdate,
     notesCreate,
     search,
+    recentData,
 };

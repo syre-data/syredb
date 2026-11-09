@@ -56,6 +56,15 @@ export const SaveDataHierarchySample = "sample";
 export const SaveDataHierarchySampleDataSchema = "sample-data_scmeha";
 export const SaveDataHierarchyDataSchemaSample = "data_schema-sample";
 export type SaveDataHierarchy = typeof SaveDataHierarchyFlat | typeof SaveDataHierarchyDataSchema | typeof SaveDataHierarchySample | typeof SaveDataHierarchySampleDataSchema | typeof SaveDataHierarchyDataSchemaSample;
+export interface DataWithOrigin {
+  Data: DataRx;
+  Origin: uuid.UUIDTypes;
+}
+export interface DataWithOriginAndCretor {
+  Data: DataRx;
+  Origin: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+}
 export interface PropertyQuantityValue {
   Magnitude: number /* float64 */;
   Unit: string;
@@ -269,6 +278,15 @@ export interface DataValuesPreview {
   Storage: DataStorage;
   Preview: any;
 }
+export interface RecentDataRx {
+  Id: uuid.UUIDTypes;
+  Type: uuid.UUIDTypes;
+  CreatorType: DataCreatorType;
+  Timestamp: Date;
+  Visibility: Visibility;
+  Origin: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+}
 export interface DataUserPermissions {
   Data: uuid.UUIDTypes;
   Permissions: DataPermission[];
@@ -369,15 +387,13 @@ export interface DataNoteCreate {
   Visibility: Visibility;
   Content: string;
 }
-export interface DataWithOrigin {
-  Data: DataRx;
+export interface OrphanedDataRx {
+  Id: uuid.UUIDTypes;
+  Type: uuid.UUIDTypes;
+  CreatorType: DataCreatorType;
+  Timestamp: Date;
+  Visibility: Visibility;
   Origin: uuid.UUIDTypes;
-}
-export interface OrphanedDataResources {
-  Data: DataWithOrigin[];
-  Origins: DataOriginRx[];
-  DataTypes: DataType[];
-  Children: { [key: uuid.UUIDTypes]: DataRx[]};
 }
 export interface DataProjectResources {
   Project: Project;

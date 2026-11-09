@@ -55,6 +55,17 @@ const (
 	SaveDataHierarchyDataSchemaSample SaveDataHierarchy = "data_schema-sample"
 )
 
+type DataWithOrigin struct {
+	Data   DataRx
+	Origin uuid.UUID
+}
+
+type DataWithOriginAndCretor struct {
+	Data    DataRx
+	Origin  uuid.UUID
+	Creator uuid.UUID
+}
+
 func ParseSaveDataHierarchy(value string) (SaveDataHierarchy, error) {
 	switch value {
 	case "flat":
@@ -2426,6 +2437,68 @@ func (s *DataService) DataChildrenRxMap(data []uuid.UUID) (map[uuid.UUID][]DataR
 	return children, nil
 }
 
+type RecentDataRx struct {
+	Id          uuid.UUID       `db:"id"`
+	Type        uuid.UUID       `db:"type"`
+	CreatorType DataCreatorType `db:"creator_type"`
+	Timestamp   time.Time       `db:"timestamp"`
+	Visibility  Visibility      `db:"visibility"`
+	Origin      uuid.UUID       `db:"origin"`
+	Creator     uuid.UUID       `db:"creator"`
+}
+
+// Get most recently created data the user has permissions for,
+// ordered from most to least recent.
+// Set limit to -1 for no limit.
+func (s *DataService) DataRecentOfUser(user uuid.UUID, limit int) ([]RecentDataRx, error) {
+	if limit == 0 {
+		return []RecentDataRx{}, nil
+	}
+
+	args := make([]any, 4)
+	var query strings.Builder
+	query.WriteString(
+		`SELECT 
+			d._id as id, 
+			d._type as type,
+			d._creator_type as creator_type,
+			d.timestamp as timestamp,
+			d.visibility as visibility,
+			c._creator as creator,
+			c._origin as origin
+		FROM data_ AS d
+		JOIN data_user_permission_ as p ON p._data=d._id
+		LEFT JOIN data_creator_user_ AS c ON c._data=d._id
+		WHERE 
+			p._user=$1 
+			AND d._creator_type=$2
+			AND (p._permission=$3 OR p._permission=$4)
+		ORDER BY d._id DESC`,
+	)
+	args[0] = user
+	args[1] = DataCreatorTypeUser
+	args[2] = DataPermissionOwner
+	args[3] = DataPermissionRead
+
+	if limit > 0 {
+		query.WriteString(" LIMIT $5")
+		args = append(args, limit)
+	}
+
+	rows, _ := s.db.Conn.Query(s.ctx, query.String(), args...)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[RecentDataRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"user", user,
+			"limit", limit,
+		).Error("could not get recent data")
+		return nil, err
+	}
+
+	return rxs, nil
+}
+
 // Conver vlaues into a CSV string.
 func (s *DataService) InternalValuesToCsv(fields []SchemaFieldValues) (string, error) {
 	var records strings.Builder
@@ -4292,27 +4365,16 @@ func (s *DataService) DataNotesCreate(data uuid.UUID, creator uuid.UUID, notes [
 	return ids, nil
 }
 
-type DataWithOrigin struct {
-	Data   DataRx
-	Origin uuid.UUID
+type OrphanedDataRx struct {
+	Id          uuid.UUID       `db:"id"`
+	Type        uuid.UUID       `db:"type"`
+	CreatorType DataCreatorType `db:"creator_type"`
+	Timestamp   time.Time       `db:"timestamp"`
+	Visibility  Visibility      `db:"visibility"`
+	Origin      uuid.UUID       `db:"origin"`
 }
 
-type OrphanedDataResources struct {
-	Data      []DataWithOrigin
-	Origins   []DataOriginRx
-	DataTypes []DataType
-	Children  map[uuid.UUID][]DataRx
-}
-
-func (s *DataService) OrphanedData(user uuid.UUID) (OrphanedDataResources, error) {
-	type rx struct {
-		Id          uuid.UUID       `db:"id"`
-		Type        uuid.UUID       `db:"type"`
-		CreatorType DataCreatorType `db:"creator_type"`
-		Timestamp   time.Time       `db:"timestamp"`
-		Visibility  Visibility      `db:"visibility"`
-		Origin      uuid.UUID       `db:"origin"`
-	}
+func (s *DataService) OrphanedData(user uuid.UUID) ([]OrphanedDataRx, error) {
 
 	query := fmt.Sprintf(
 		`SELECT 
@@ -4322,85 +4384,24 @@ func (s *DataService) OrphanedData(user uuid.UUID) (OrphanedDataResources, error
 			d.timestamp as timestamp, 
 			d.visibility as visibility, 
 			c._origin as origin
-		FROM data_ d JOIN data_creator_user_ c ON d._id=c._data
-		LEFT JOIN project_data_membership_ p ON d._id=p._data
+		FROM data_ AS d JOIN data_creator_user_ AS c ON d._id=c._data
+		LEFT JOIN project_data_membership_ AS p ON d._id=p._data
 		WHERE d._creator_type='%s' 
 		AND c._creator=$1 
 		AND p._data IS NULL`,
 		DataCreatorTypeUser,
 	)
 	rows, _ := s.db.Conn.Query(s.ctx, query, user)
-	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[rx])
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[OrphanedDataRx])
 	if err != nil {
 		s.logger.With(
 			"error", err,
 			"user", user,
 		).Error("could not get orphaned data")
-		return OrphanedDataResources{}, err
+		return nil, err
 	}
 
-	origin_ids := make([]uuid.UUID, 0, 32)
-	type_ids := make([]uuid.UUID, 0, 32)
-	for _, r := range rxs {
-		if !slices.Contains(origin_ids, r.Origin) {
-			origin_ids = append(origin_ids, r.Origin)
-		}
-
-		if !slices.Contains(type_ids, r.Type) {
-			type_ids = append(type_ids, r.Type)
-		}
-	}
-
-	origins, err := s.DataOriginsByIds(origin_ids)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"origins", origin_ids,
-		).Error("could not get data origins")
-		return OrphanedDataResources{}, err
-	}
-
-	data_types, err := s.DataTypesById(type_ids)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"data types", type_ids,
-		).Error("could not get data types")
-		return OrphanedDataResources{}, err
-	}
-
-	data := make([]DataWithOrigin, len(rxs))
-	data_ids := make([]uuid.UUID, len(rxs))
-	for idx, r := range rxs {
-		data[idx] = DataWithOrigin{
-			Data: DataRx{
-				Id:          r.Id,
-				Type:        r.Type,
-				CreatorType: r.CreatorType,
-				Timestamp:   r.Timestamp,
-				Visibility:  r.Visibility,
-			},
-			Origin: r.Origin,
-		}
-
-		data_ids[idx] = r.Id
-	}
-
-	children, err := s.DataChildrenRxMap(data_ids)
-	if err != nil {
-		s.logger.With(
-			"error", err,
-			"data", data_ids,
-		).Error("could not get data children")
-		return OrphanedDataResources{}, err
-	}
-
-	return OrphanedDataResources{
-		Data:      data,
-		Origins:   origins,
-		DataTypes: data_types,
-		Children:  children,
-	}, nil
+	return rxs, nil
 }
 
 type DataProjectResources struct {

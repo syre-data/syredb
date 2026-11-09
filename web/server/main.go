@@ -330,6 +330,7 @@ func register_routes(
 	api.POST("/data", data.DataIngest)
 	api.GET("/data", data.DataGet)
 	api.PUT("/data", data.DataUpdate)
+	api.GET("/data/recent", data.DataGetRecent)
 	api.GET("/data/values", data.DataValues)
 	api.GET("/data/values/preview", data.DataValuesPreview)
 	api.PUT("/data/properties", data.DataPropertiesUpdate)

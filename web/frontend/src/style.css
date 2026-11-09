@@ -112,8 +112,17 @@
 
 .table-std tbody td,
 .table-std tbody th {
-    @apply px-4 py-2 align-top
-  border-b border-b-secondary-100 dark:border-b-secondary-700;
+    @apply px-4 py-2 align-top border-b border-b-secondary-100 dark:border-b-secondary-700;
+}
+
+@utility table-compact {
+    @apply text-left [&_td]:px-2 [&_td]:py-0.5 [&_th]:px-2 [&_th]:py-0.5;
+    last:;
+}
+
+.table-compact thead tr,
+.table-compact tbody tr {
+    @apply last:w-full;
 }
 
 select option {
@@ -122,4 +131,8 @@ select option {
 
 @utility text-secondary {
     @apply text-gray-600 dark:text-gray-400;
+}
+
+@utility card {
+    @apply border border-gray-200 shadow-sm rounded-sm bg-white dark:bg-gray-800 dark:border-gray-700 dark:border-2;
 }

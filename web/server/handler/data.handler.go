@@ -2680,10 +2680,17 @@ func (h *DataHandler) DataIngest(c *echo.Context) error {
 	return c.JSON(http.StatusCreated, ResourceCreatedMultiple{Ids: data_ids})
 }
 
+type OrphanedDataResources struct {
+	Data      []service.DataWithOrigin
+	Origins   []service.DataOriginRx
+	DataTypes []service.DataType
+	Children  map[uuid.UUID][]service.DataRx
+}
+
 func (h *DataHandler) OrphanedData(c *echo.Context) error {
 	user := c.Get(UserIdKey).(uuid.UUID)
 
-	data, err := h.data_service.OrphanedData(user)
+	odata, err := h.data_service.OrphanedData(user)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -2697,7 +2704,85 @@ func (h *DataHandler) OrphanedData(c *echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, data)
+	var origin_ids []uuid.UUID
+	var type_ids []uuid.UUID
+	for _, r := range odata {
+		if !slices.Contains(origin_ids, r.Origin) {
+			origin_ids = append(origin_ids, r.Origin)
+		}
+
+		if !slices.Contains(type_ids, r.Type) {
+			type_ids = append(type_ids, r.Type)
+		}
+	}
+
+	origins, err := h.data_service.DataOriginsByIds(origin_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"origins", origin_ids,
+		).Error("could not get data origins")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get orphaned data",
+			Payload:   nil,
+		})
+	}
+
+	data_types, err := h.data_service.DataTypesById(type_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data types", type_ids,
+		).Error("could not get data types")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get orphaned data",
+			Payload:   nil,
+		})
+	}
+
+	data := make([]service.DataWithOrigin, len(odata))
+	data_ids := make([]uuid.UUID, len(odata))
+	for idx, rx := range odata {
+		data[idx] = service.DataWithOrigin{
+			Data: service.DataRx{
+				Id:          rx.Id,
+				Type:        rx.Type,
+				CreatorType: rx.CreatorType,
+				Timestamp:   rx.Timestamp,
+				Visibility:  rx.Visibility,
+			},
+			Origin: rx.Origin,
+		}
+
+		data_ids[idx] = rx.Id
+	}
+
+	children, err := h.data_service.DataChildrenRxMap(data_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_ids,
+		).Error("could not get data children")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get orphaned data",
+			Payload:   nil,
+		})
+	}
+
+	resources := OrphanedDataResources{
+		Data:      data,
+		Origins:   origins,
+		DataTypes: data_types,
+		Children:  children,
+	}
+
+	return c.JSON(http.StatusOK, resources)
 }
 
 // `Creator` is `service.DataCreatorTransformInfo` or `service.DataCreatorUserInfo`
@@ -3270,6 +3355,138 @@ func (h *DataHandler) DataNotesCreate(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusCreated, ResourceCreatedMultiple{Ids: ids})
+}
+
+type RecentDataResources struct {
+	Data      []service.DataWithOriginAndCretor
+	Origins   []service.DataOriginRx
+	DataTypes []service.DataType
+	Users     []service.User
+}
+
+func (h *DataHandler) DataGetRecent(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	var limit int
+	query_limit := c.QueryParam("limit")
+	if query_limit == "" {
+		limit = -1
+	} else {
+		int_limit, err := strconv.Atoi(query_limit)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"user", user_id,
+			).Info("invalid limit query")
+			return c.JSON(http.StatusUnprocessableEntity, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INVALID_ITEM,
+				Message:   "Invalid limit query",
+				Payload:   nil,
+			})
+		}
+		limit = int_limit
+	}
+
+	rdata, err := h.data_service.DataRecentOfUser(user_id, limit)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"limit", limit,
+		).Error("could not get recent user data")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get recent data",
+			Payload:   nil,
+		})
+	}
+
+	var origin_ids []uuid.UUID
+	var type_ids []uuid.UUID
+	var user_ids []uuid.UUID
+	for _, r := range rdata {
+		if !slices.Contains(origin_ids, r.Origin) {
+			origin_ids = append(origin_ids, r.Origin)
+		}
+
+		if !slices.Contains(type_ids, r.Type) {
+			type_ids = append(type_ids, r.Type)
+		}
+
+		if !slices.Contains(user_ids, r.Creator) {
+			user_ids = append(user_ids, r.Creator)
+		}
+	}
+
+	origins, err := h.data_service.DataOriginsByIds(origin_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"origins", origin_ids,
+		).Error("could not get data origins")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get recent data",
+			Payload:   nil,
+		})
+	}
+
+	data_types, err := h.data_service.DataTypesById(type_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data types", type_ids,
+		).Error("could not get data types")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get recent data",
+			Payload:   nil,
+		})
+	}
+
+	users, err := h.user_service.UsersById(user_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"users", user_ids,
+		).Error("could not get users")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get recent data",
+			Payload:   nil,
+		})
+	}
+
+	data := make([]service.DataWithOriginAndCretor, len(rdata))
+	data_ids := make([]uuid.UUID, len(rdata))
+	for idx, r := range rdata {
+		data[idx] = service.DataWithOriginAndCretor{
+			Data: service.DataRx{
+				Id:          r.Id,
+				Type:        r.Type,
+				CreatorType: r.CreatorType,
+				Timestamp:   r.Timestamp,
+				Visibility:  r.Visibility,
+			},
+			Origin:  r.Origin,
+			Creator: r.Creator,
+		}
+
+		data_ids[idx] = r.Id
+	}
+
+	resources := RecentDataResources{
+		Data:      data,
+		Origins:   origins,
+		DataTypes: data_types,
+		Users:     users,
+	}
+
+	return c.JSON(http.StatusOK, resources)
 }
 
 func (h *DataHandler) DataOrigins(c *echo.Context) error {

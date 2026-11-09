@@ -20,6 +20,7 @@ export const QUERY_KEY_DATA_ORIGINS = "data_origins";
 export const QUERY_KEY_DATA_ORIGIN = "data_origin";
 export const QUERY_KEY_DATA_VALUES = "data_values";
 export const QUERY_KEY_DATA_PREVIEW = "data_preview";
+export const QUERY_KEY_RECENT_DATA = "recent_data";
 
 export enum MouseButton {
     Primary = 0,
