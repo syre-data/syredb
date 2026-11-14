@@ -44,6 +44,7 @@ import { BsFile, BsFiles, BsArrowReturnRight, BsFolder2 } from "react-icons/bs";
 import { LuSquareFunction } from "react-icons/lu";
 import { RxText } from "react-icons/rx";
 import { PiNotebookLight, PiTagSimple } from "react-icons/pi";
+import { GoFile } from "react-icons/go";
 
 export default {
     ArrowBack: IoIosArrowRoundBack,
@@ -63,7 +64,7 @@ export default {
     Earth: FaEarthAmericas,
     Eye: IoEyeOutline,
     EyeSlash: IoEyeOffOutline,
-    File: BsFile,
+    File: GoFile,
     FileCode: FaFileCode,
     Files: BsFiles,
     FileUpload: FaFileUpload,

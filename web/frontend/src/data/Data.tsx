@@ -6,7 +6,7 @@ import {
     timestampToString,
     uuidToString,
 } from "@/common";
-import { Loading, StandardError, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
 import { Note as NoteView } from "@/components/Note";
 import { value_to_string } from "@/components/Property";
 import { VisibilityBadge } from "@/components/Visibility";
@@ -20,6 +20,7 @@ import {
     DataSourceCardinalitySingle,
     DataStorageExternal,
     DataStorageInternal,
+    PropertyTypeString,
     ValueTypeBoolean,
     ValueTypeFloat,
     ValueTypeInt,
@@ -36,6 +37,8 @@ import {
     type DataSource,
     type DataStorage,
     type DataType,
+    type DataTypeExternal,
+    type DataTypeExternalSourceRx,
     type Note,
     type Property,
     type SchemaFieldValues,
@@ -104,14 +107,15 @@ function Data({ data_id }: DataProps) {
         <div>
             <Header
                 data_id={data_id}
-                dtype_label={dataType.Label}
+                dataType={dataType}
                 timestamp={timestampToString(data.Timestamp)}
                 visibility={data.Visibility}
+                className="pt-2"
             />
             <InfoCards
                 creator={creator}
                 timestamp={data.Timestamp}
-                className="px-4 py-2"
+                className="px-4 pt-4"
             />
             <Properties properties={properties} className="pt-4" />
             <Notes notes={notes} users={users} className="pt-4" />
@@ -121,26 +125,23 @@ function Data({ data_id }: DataProps) {
                 users={users}
                 className="pt-4"
             />
-            <DataValues
-                data={data_id}
-                storage={dataType.Storage}
-                className="pt-4"
-            />
+            <DataValues data={data_id} dataType={dataType} className="pt-4" />
         </div>
     );
 }
 
-interface DataHeaderProps {
+interface DataHeaderProps extends ComponentProps<"div"> {
     data_id: UUIDTypes;
-    dtype_label: string;
+    dataType: DataType;
     timestamp: string;
     visibility: Visibility;
 }
 function Header({
     data_id,
-    dtype_label,
+    dataType,
     timestamp,
     visibility,
+    ...props
 }: DataHeaderProps) {
     const navigate = useNavigate();
 
@@ -153,39 +154,44 @@ function Header({
     }
 
     return (
-        <div className="px-4 pt-2 flex justify-between">
-            <div className="group flex gap-2">
-                <h1 className="text-xl font-bold flex gap-2 items-center">
-                    <Icon.Data />
-                    <span>{dtype_label}</span>
-                    <span>created at</span>
-                    <span>{timestamp}</span>
-                    <span className="text-sm">
-                        <VisibilityBadge visibility={visibility} />
-                    </span>
-                </h1>
-                <div className="invisible group-hover:visible">
-                    <a
-                        href={`/data/${data_id}/edit`}
-                        title="Edit data"
-                        className="align-middle"
-                    >
-                        <button type="button" className="btn-cmd">
-                            <Icon.Pen />
+        <div {...props}>
+            <div className="px-4 flex justify-between">
+                <div className="group flex gap-2 items-center">
+                    <Icon.Data className="text-xl" />
+                    <h1 className="text-xl font-bold flex gap-2 items-center">
+                        <span>{dataType.Label}</span>
+                        <span>created at</span>
+                        <span>{timestamp}</span>
+                        <span className="text-sm">
+                            <VisibilityBadge visibility={visibility} />
+                        </span>
+                    </h1>
+                    <div className="invisible group-hover:visible">
+                        <a
+                            href={`/data/${data_id}/edit`}
+                            title="Edit data"
+                            className="align-middle"
+                        >
+                            <button type="button" className="btn-cmd">
+                                <Icon.Pen />
+                            </button>
+                        </a>
+                    </div>
+                </div>
+                <div>
+                    <div>
+                        <button
+                            type="button"
+                            className="btn-cmd"
+                            onMouseDown={close}
+                        >
+                            <Icon.Close />
                         </button>
-                    </a>
+                    </div>
                 </div>
             </div>
-            <div>
-                <div>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        onMouseDown={close}
-                    >
-                        <Icon.Close />
-                    </button>
-                </div>
+            <div className="px-4 text-sm text-secondary">
+                {dataType.Description}
             </div>
         </div>
     );
@@ -203,7 +209,7 @@ function InfoCards({
 }: InfoCardsProps) {
     return (
         <div
-            className={`flex gap-4 divide-x divide-gray-400 ${className ?? ""}`}
+            className={`flex gap-4 divide-x divide-gray-400 ${className}`}
             {...props}
         >
             <CreatorCard creator={creator} className="pr-4" />
@@ -332,7 +338,9 @@ function Properties({ properties, ...props }: PropertiesProps) {
                 <h2 className="text-lg font-bold">Properties</h2>
             </div>
             {properties.length === 0 ? (
-                <div className="px-4 pt-2 text-secondary">(no properties)</div>
+                <div className="px-4 pt-2 text-sm text-secondary">
+                    (no properties)
+                </div>
             ) : (
                 <div className="px-4">
                     <table className="border-separate border-spacing-x-0 border-spacing-y-1">
@@ -648,17 +656,17 @@ function dataValuesTitleResources(storage: DataStorage): {
 
 interface DataValuesProps extends ComponentProps<"div"> {
     data: UUIDTypes;
-    storage: DataStorage;
+    dataType: DataType;
 }
-function DataValues({ data, storage, ...props }: DataValuesProps) {
+function DataValues({ data, dataType, ...props }: DataValuesProps) {
     return (
         <ErrorBoundary
             fallbackRender={(props) => (
-                <ValuesError storage={storage} {...props} />
+                <ValuesError storage={dataType.Storage} {...props} />
             )}
         >
-            <Suspense fallback={<ValuesLoading storage={storage} />}>
-                <DataValuesInner data={data} {...props} />
+            <Suspense fallback={<ValuesLoading storage={dataType.Storage} />}>
+                <DataValuesInner data={data} dataType={dataType} {...props} />
             </Suspense>
         </ErrorBoundary>
     );
@@ -702,8 +710,9 @@ function ValuesLoading({ storage }: ValuesLoadingProps) {
 
 interface DataValuesInnerProps extends ComponentProps<"div"> {
     data: UUIDTypes;
+    dataType: DataType;
 }
-function DataValuesInner({ data, ...props }: DataValuesInnerProps) {
+function DataValuesInner({ data, dataType, ...props }: DataValuesInnerProps) {
     const { data: values } = useSuspenseQuery({
         queryKey: [QUERY_KEY_DATA_VALUES, data],
         queryFn: async () => await dataService.dataValues(data),
@@ -711,11 +720,13 @@ function DataValuesInner({ data, ...props }: DataValuesInnerProps) {
 
     let component;
     let title;
+    let downloadTitle;
     let icon;
     switch (values.Storage) {
         case DataStorageInternal:
             title = "Values";
             icon = <Icon.Chart />;
+            downloadTitle = "Download as CSV";
             component = (
                 <DataValuesInternal
                     cardinality={values.Values[0].Cardinality}
@@ -725,9 +736,14 @@ function DataValuesInner({ data, ...props }: DataValuesInnerProps) {
             break;
         case DataStorageExternal:
             title = "Sources";
+            downloadTitle = "Download all files";
             icon = <Icon.Files />;
             component = (
-                <DataValuesExternal data_id={data} sources={values.Values} />
+                <DataValuesExternal
+                    dataId={data}
+                    dataType={dataType}
+                    sources={values.Values}
+                />
             );
             break;
     }
@@ -742,7 +758,11 @@ function DataValuesInner({ data, ...props }: DataValuesInnerProps) {
                 <h2 className="text-lg font-bold">{title}</h2>
                 <div className="invisible group-hover:visible">
                     <a href={download}>
-                        <button type="button" className="btn-cmd">
+                        <button
+                            type="button"
+                            className="btn-cmd"
+                            title={downloadTitle}
+                        >
                             <Icon.Download />
                         </button>
                     </a>
@@ -872,67 +892,110 @@ function DataValuesInternalMultiple({
 }
 
 interface DataValuesExternalProps {
-    data_id: UUIDTypes;
+    dataId: UUIDTypes;
+    dataType: DataTypeExternal;
     sources: DataSource[];
 }
-function DataValuesExternal({ data_id, sources }: DataValuesExternalProps) {
+function DataValuesExternal({
+    dataId,
+    dataType,
+    sources,
+}: DataValuesExternalProps) {
     return (
-        <div>
-            {sources.map((source) => (
-                <DataValuesExternalSource
-                    key={source.Label}
-                    data_id={data_id}
-                    source={source}
-                />
-            ))}
-        </div>
+        <ol className="grid grid-cols-[repeat(3,min-content)] items-start gap-2">
+            {sources.map((source) => {
+                const sourceType = dataType.Sources.find(
+                    (src) => src.Label === source.Label,
+                );
+                if (!sourceType) {
+                    throw Error("invalid source type");
+                }
+
+                return (
+                    <li key={source.Label} className="contents">
+                        <DataValuesExternalSource
+                            dataId={dataId}
+                            sourceType={sourceType}
+                            source={source}
+                            className="grid col-span-full grid-cols-subgrid"
+                        />
+                    </li>
+                );
+            })}
+        </ol>
     );
 }
 
-interface DataValuesExternalSourceProps {
-    data_id: UUIDTypes;
+interface DataValuesExternalSourceProps extends ComponentProps<"div"> {
+    dataId: UUIDTypes;
+    sourceType: DataTypeExternalSourceRx;
     source: DataSource;
 }
 function DataValuesExternalSource({
-    data_id,
+    dataId,
+    sourceType,
     source,
+    ...props
 }: DataValuesExternalSourceProps) {
     switch (source.Cardinality) {
         case DataSourceCardinalitySingle:
             return (
                 <DataValuesExternalSourceSingle
-                    data_id={data_id}
+                    dataId={dataId}
+                    sourceType={sourceType}
                     source={source}
+                    {...props}
                 />
             );
         case DataSourceCardinalityMultiple:
             return (
                 <DataValuesExternalSourceMultiple
-                    data_id={data_id}
+                    dataId={dataId}
+                    sourceType={sourceType}
                     source={source}
+                    {...props}
                 />
             );
     }
 }
 
-interface DataValuesExternalSourceSingleProps {
-    data_id: UUIDTypes;
+interface DataValuesExternalSourceSingleProps extends ComponentProps<"div"> {
+    dataId: UUIDTypes;
+    sourceType: DataTypeExternalSourceRx;
     source: DataSource;
 }
 function DataValuesExternalSourceSingle({
-    data_id,
+    dataId,
+    sourceType,
     source,
+    className,
+    ...props
 }: DataValuesExternalSourceSingleProps) {
     const params = new URLSearchParams();
-    params.append("data", uuidToString(data_id));
+    params.append("data", uuidToString(dataId));
     params.append("source", source.Label);
     const download = `/resource/data/source?${params}`;
 
     return (
-        <div className="px-4 flex gap-2 group">
-            <div title="Source">{source.Label}</div>
-            <div className="invisible group-hover:visible">
-                <a href={download} title="Download">
+        <div
+            className={`group rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700  items-center ${className}`}
+            {...props}
+        >
+            <div className="col-1 p-1 aspect-square rounded-lg bg-gray-200 dark:bg-gray-600">
+                <Icon.File className="text-sm" />
+            </div>
+            <div className="col-2 flex gap-2 items-center">
+                <div title="Source">{source.Label}</div>
+                <div title="Description" className="text-sm text-secondary">
+                    {sourceType.Description}
+                </div>
+            </div>
+            <div className="col-3 px-4 invisible group-hover:visible">
+                <a
+                    href={download}
+                    title={`Download ${source.Label}`}
+                    className="align-middle"
+                >
                     <button type="button" className="btn-cmd">
                         <Icon.Download />
                     </button>
@@ -942,45 +1005,84 @@ function DataValuesExternalSourceSingle({
     );
 }
 
-interface DataValuesExternalSourceMultipleProps {
-    data_id: UUIDTypes;
+interface DataValuesExternalSourceMultipleProps extends ComponentProps<"div"> {
+    dataId: UUIDTypes;
+    sourceType: DataTypeExternalSourceRx;
     source: DataSource;
 }
 function DataValuesExternalSourceMultiple({
-    data_id,
+    dataId,
+    sourceType,
     source,
+    className,
+    ...props
 }: DataValuesExternalSourceMultipleProps) {
     const params = new URLSearchParams();
-    params.append("data", uuidToString(data_id));
+    params.append("data", uuidToString(dataId));
     params.append("source", source.Label);
     const download = `/resource/data/source?${params}`;
 
     return (
-        <div>
-            <div className="px-4 flex gap-2 group">
-                <div title="Source">{source.Label}</div>
-                <div className="invisible group-hover:visible">
-                    <a href={download} title="Download">
+        <div
+            className={`row-span-2 rounded-lg  \
+                has-[[data-role="dataset-title"]:hover]:bg-gray-200 
+                dark:has-[[data-role="dataset-title"]:hover]:bg-gray-700 
+                ${className}`}
+            {...props}
+        >
+            <div
+                className="group/sources grid grid-cols-subgrid col-span-full items-center"
+                data-role="dataset-title"
+            >
+                <div className="col-1 p-1 aspect-square rounded-lg bg-gray-200 dark:bg-gray-600">
+                    <Icon.Files className="text-sm" />
+                </div>
+                <div className="col-2 flex gap-2 items-center">
+                    <div className="flex gap-2 items-baseline">
+                        <div title="Source">{source.Label}</div>
+                        <div
+                            title="Description"
+                            className="text-sm text-secondary"
+                        >
+                            {sourceType.Description}
+                        </div>
+                    </div>
+                </div>
+                <div className="px-4 col-3 invisible group-hover/sources:visible">
+                    <a
+                        href={download}
+                        title={`Download all ${source.Label} files`}
+                        className="align-middle"
+                    >
                         <button type="button" className="btn-cmd">
                             <Icon.Download />
                         </button>
                     </a>
                 </div>
             </div>
-            <ol className="list-decimal list-inside">
+            <ol className="grid grid-cols-subgrid col-span-full list-decimal list-inside">
                 {source.Source.sort((src) => src.Index).map((src) => {
                     const params = new URLSearchParams();
-                    params.append("data", uuidToString(data_id));
+                    params.append("data", uuidToString(dataId));
                     params.append("source", src.Label);
                     params.append("index", src.Index);
                     const download = `/resource/data/source?${params}`;
 
                     return (
-                        <li key={src.Index.toString()} className="px-4">
-                            <div className="group/item inline-flex gap-2">
-                                <div>{src.Label}</div>
-                                <div className="invisible group-hover/item:visible">
-                                    <a href={download} title="Download">
+                        <li key={src.Index.toString()} className="contents">
+                            <div
+                                className="group/item grid grid-cols-subgrid col-span-full gap-1 \
+                                    rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
+                            >
+                                <div className="col-2 text-nowrap select-all">
+                                    {src.Label}
+                                </div>
+                                <div className="px-4 col-3 invisible group-hover/item:visible">
+                                    <a
+                                        href={download}
+                                        title={`Download ${source.Label}/${src.Label}`}
+                                        className="align-middle"
+                                    >
                                         <button
                                             type="button"
                                             className="btn-cmd"
