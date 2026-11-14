@@ -29,6 +29,8 @@ import {
     FaLocationPin,
     FaEarthAmericas,
     FaMagnifyingGlass,
+    FaGears,
+    FaChartSimple,
 } from "react-icons/fa6";
 import { IoIosLogOut, IoMdHome, IoIosArrowRoundBack } from "react-icons/io";
 import { MdEdit, MdOutlineCategory, MdOutlineScience } from "react-icons/md";
@@ -38,9 +40,10 @@ import {
     IoEyeOffOutline,
     IoCalendarClearOutline,
 } from "react-icons/io5";
-import { BsFile, BsFiles, BsArrowReturnRight } from "react-icons/bs";
+import { BsFile, BsFiles, BsArrowReturnRight, BsFolder2 } from "react-icons/bs";
 import { LuSquareFunction } from "react-icons/lu";
 import { RxText } from "react-icons/rx";
+import { PiNotebookLight, PiTagSimple } from "react-icons/pi";
 
 export default {
     ArrowBack: IoIosArrowRoundBack,
@@ -48,6 +51,7 @@ export default {
     ArrowReturn: BsArrowReturnRight,
     Calendar: IoCalendarClearOutline,
     CaretDown: FaCaretDown,
+    Chart: FaChartSimple,
     Check: FaCheck,
     CircleCheck: FaRegCircleCheck,
     CircleX: FaRegCircleXmark,
@@ -63,8 +67,10 @@ export default {
     FileCode: FaFileCode,
     Files: BsFiles,
     FileUpload: FaFileUpload,
+    Folder: BsFolder2,
     Function: LuSquareFunction,
     Gear: FaGear,
+    Gears: FaGears,
     Home: IoMdHome,
     LeftArrow: FaArrowLeft,
     LocationPin: FaLocationPin,
@@ -72,6 +78,7 @@ export default {
     Logout: IoIosLogOut,
     MagnifyingGlass: FaMagnifyingGlass,
     Minus: AiOutlineMinus,
+    Notebook: PiNotebookLight,
     Pen: MdEdit,
     Plus: AiOutlinePlus,
     PowerOff: FaPowerOff,
@@ -80,6 +87,7 @@ export default {
     Search: FaSearch,
     Spinner: FaSpinner,
     Table: AiOutlineTable,
+    Tag: PiTagSimple,
     Text: RxText,
     Trash: FaTrash,
     User: FaUser,

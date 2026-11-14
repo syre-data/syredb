@@ -46,6 +46,7 @@ import {
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { useNavigate, useParams } from "react-router";
 import { Navigate } from "react-router";
+import { toast } from "sonner";
 import type { UUIDTypes } from "uuid";
 
 export default function () {
@@ -212,6 +213,8 @@ function useFormData(data: DataRx, properties: Property[]) {
                     notes: update.Notes,
                 };
                 formApi.reset(newDefaults);
+
+                toast.success("Data updated");
             });
         },
     });
@@ -376,6 +379,7 @@ function DataProperties({ form, className, ...props }: DataPropertiesProps) {
     return (
         <div className={`group ${className}`} {...props}>
             <div className="px-4 flex gap-2 items-baseline">
+                <Icon.Tag />
                 <h2 className="text-xl font-bold">Properties</h2>
                 <div>
                     <button
@@ -880,6 +884,7 @@ function DataNotes({
     return (
         <div className={`group ${className}`} {...props}>
             <div className="px-4 flex gap-2 items-baseline">
+                <Icon.Notebook />
                 <h2 className="text-xl font-bold">Notes</h2>
                 <div>
                     <button
@@ -921,17 +926,18 @@ interface DataNotesContentProps {
 function DataNotesContent({ form, notes, users }: DataNotesContentProps) {
     notes.sort((a, b) => b.Timestamp.valueOf() - a.Timestamp.valueOf());
     return (
-        <div className="px-4 flex flex-col gap-2">
-            <div className="flex flex-col gap-2">
+        <div className="px-4 flex flex-col gap-4">
+            <div>
                 <form.Field name="notes" mode="array">
                     {(notes) => {
                         return (
-                            <div className="flex flex-col gap-2">
+                            <div className="flex flex-col gap-4 divide-y divide-gray-400 dark:divide-gray-600">
                                 {notes.state.value.map((_, idx) => (
                                     <DataNoteCreate
                                         key={idx}
                                         form={form}
                                         idx={idx}
+                                        className="pb-4"
                                     />
                                 ))}
                             </div>
@@ -951,11 +957,16 @@ function DataNotesContent({ form, notes, users }: DataNotesContentProps) {
     );
 }
 
-interface DataNoteCreateProps {
+interface DataNoteCreateProps extends ComponentProps<"div"> {
     form: DataFormApi;
     idx: number;
 }
-function DataNoteCreate({ form, idx }: DataNoteCreateProps) {
+function DataNoteCreate({
+    form,
+    idx,
+    className,
+    ...props
+}: DataNoteCreateProps) {
     function remove(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
             return;
@@ -965,7 +976,7 @@ function DataNoteCreate({ form, idx }: DataNoteCreateProps) {
     }
 
     return (
-        <div className="flex gap-2 group">
+        <div className={`flex gap-2 group ${className}`} {...props}>
             <div>
                 <div className="flex gap-2 items-baseline">
                     <form.Field name={`notes[${idx}].Timestamp`}>
@@ -1003,7 +1014,7 @@ function DataNoteCreate({ form, idx }: DataNoteCreateProps) {
                         {(content) => (
                             <textarea
                                 placeholder="Content..."
-                                className="input-basic"
+                                className="input-basic w-full h-28"
                                 minLength={1}
                                 onChange={(e) =>
                                     content.handleChange(e.target.value)
@@ -1044,7 +1055,7 @@ function DataNote({ note, creator }: DataNoteProps) {
     }
 
     return (
-        <li className="border rounded">
+        <li className="border rounded overflow-hidden">
             <div className="flex gap-2 items-center px-4 py-2 bg-gray-200 dark:bg-gray-700">
                 <div>{timestampToString(note.Timestamp)}</div>
                 <div className="flex gap-2 items-baseline">

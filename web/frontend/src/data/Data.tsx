@@ -7,6 +7,7 @@ import {
     uuidToString,
 } from "@/common";
 import { Loading, StandardError, SuspenseError } from "@/components";
+import { Note as NoteView } from "@/components/Note";
 import { value_to_string } from "@/components/Property";
 import { VisibilityBadge } from "@/components/Visibility";
 import Icon from "@/icon";
@@ -25,14 +26,15 @@ import {
     ValueTypeString,
     ValueTypeTimestamp,
     ValueTypeUint,
-    VisibilityPublic,
     type DataCreator,
     type DataCreatorTransformInfo,
     type DataCreatorUserInfo,
+    type DataOriginRx,
     type DataProjectResources,
     type DataRx,
     type DataSchemaCardinality,
     type DataSource,
+    type DataStorage,
     type DataType,
     type Note,
     type Property,
@@ -42,7 +44,7 @@ import {
 } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
-import {
+import React, {
     Suspense,
     useState,
     type Dispatch,
@@ -88,33 +90,21 @@ function Data({ data_id }: DataProps) {
         queryKey: [QUERY_KEY_DATA, data_id],
         queryFn: async () => await dataService.dataGet(data_id),
     });
-    const [showAddProject, setShowAddProject] = useState(false);
-
-    function showAddProjectFn(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button !== MouseButton.Primary) {
-            return;
-        }
-
-        setShowAddProject(true);
-    }
 
     const data = resources.Data as DataRx;
-    const data_type = resources.DataType as DataType;
+    const dataType = resources.DataType as DataType;
     const properties = resources.Properties as Property[];
     const notes = resources.Notes as Note[];
     const creator = resources.Creator as DataCreator;
-    const project_resources =
+    const projectResources =
         resources.ProjectResources as DataProjectResources[];
     const users = resources.Users as User[];
-    const currentProjects = project_resources.map(
-        (resource) => resource.Project.Id,
-    );
 
     return (
         <div>
             <Header
                 data_id={data_id}
-                dtype_label={data_type.Label}
+                dtype_label={dataType.Label}
                 timestamp={timestampToString(data.Timestamp)}
                 visibility={data.Visibility}
             />
@@ -123,42 +113,19 @@ function Data({ data_id }: DataProps) {
                 timestamp={data.Timestamp}
                 className="px-4 py-2"
             />
-            <Properties properties={properties} />
-            <Notes notes={notes} />
-            <div className="pt-2">
-                <div className="px-4 flex gap-2">
-                    <h2 className="text-lg">Projects</h2>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        onMouseDown={showAddProjectFn}
-                    >
-                        <Icon.Plus />
-                    </button>
-                </div>
-                <div
-                    className={classNames({
-                        "px-4 py-2": true,
-                        hidden: !showAddProject,
-                    })}
-                >
-                    <AddProject
-                        data_id={data_id}
-                        currentProjects={currentProjects}
-                        setShowAddProject={setShowAddProject}
-                    />
-                </div>
-                {project_resources.length > 0 ? (
-                    <ProjectList projects={project_resources} users={users} />
-                ) : (
-                    <ProjectsEmpty />
-                )}
-            </div>
-            <ErrorBoundary FallbackComponent={ValuesError}>
-                <Suspense fallback={<ValuesLoading />}>
-                    <DataValues data={data_id} />
-                </Suspense>
-            </ErrorBoundary>
+            <Properties properties={properties} className="pt-4" />
+            <Notes notes={notes} users={users} className="pt-4" />
+            <ProjectResources
+                dataId={data_id}
+                projectResources={projectResources}
+                users={users}
+                className="pt-4"
+            />
+            <DataValues
+                data={data_id}
+                storage={dataType.Storage}
+                className="pt-4"
+            />
         </div>
     );
 }
@@ -236,11 +203,14 @@ function InfoCards({
 }: InfoCardsProps) {
     return (
         <div
-            className={`flex gap-2 divide-x divide-gray-400 ${className ?? ""}`}
+            className={`flex gap-4 divide-x divide-gray-400 ${className ?? ""}`}
             {...props}
         >
-            <CreatorCard creator={creator} />
-            <TimestampCard timestamp={timestamp} />
+            <CreatorCard creator={creator} className="pr-4" />
+            <TimestampCard timestamp={timestamp} className="pr-4" />
+            {Object.hasOwn(creator, "Origin") ? (
+                <OriginCard origin={creator.Origin} className="pr-4" />
+            ) : null}
         </div>
     );
 }
@@ -249,7 +219,7 @@ interface CreatorCardProps extends ComponentProps<"div"> {
     creator: DataCreator;
 }
 function CreatorCard({ creator, ...props }: CreatorCardProps) {
-    if (Object.hasOwn(creator, "User") && Object.hasOwn(creator, "Origin")) {
+    if (Object.hasOwn(creator, "User")) {
         return <CreatorUser creator={creator} {...props} />;
     } else if (
         Object.hasOwn(creator, "Id") &&
@@ -269,17 +239,34 @@ interface CreatorUserProps extends ComponentProps<"div"> {
 function CreatorUser({ creator, ...props }: CreatorUserProps) {
     return (
         <div {...props}>
-            <div className="h-full inline-flex gap-2 px-4 py-2">
+            <div className="h-full inline-flex gap-2 py-2">
                 <div>
                     <Icon.User />
                 </div>
                 <div>
-                    <div className="text-xs font-bold">Created by</div>
-                    <div>{creator.User.Name || creator.User.Email}</div>
-                    <div className="text-sm">
-                        <Icon.LocationPin className="inline" />{" "}
-                        <span>{creator.Origin.Label}</span>
+                    <div className="text-xs text-secondary">Created by</div>
+                    <div className="font-bold select-all">
+                        {creator.User.Name || creator.User.Email}
                     </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+interface OriginCardProps extends ComponentProps<"div"> {
+    origin: DataOriginRx;
+}
+function OriginCard({ origin, ...props }: OriginCardProps) {
+    return (
+        <div {...props}>
+            <div className="h-full inline-flex gap-2 py-2">
+                <div>
+                    <Icon.LocationPin />
+                </div>
+                <div>
+                    <div className="text-xs text-secondary">Origin</div>
+                    <div className="font-bold select-all">{origin.Label}</div>
                 </div>
             </div>
         </div>
@@ -292,7 +279,15 @@ interface CreatorTransformProps extends ComponentProps<"div"> {
 function CreatorTransform({ creator, ...props }: CreatorTransformProps) {
     return (
         <div {...props}>
-            Created by script <span>{creator.Label}</span>
+            <div className="h-full inline-flex gap-2 py-2">
+                <div>
+                    <Icon.Gears />
+                </div>
+                <div>
+                    <div className="text-xs text-secondary">Created by</div>
+                    <div className="font-bold select-all">{creator.Label}</div>
+                </div>
+            </div>
         </div>
     );
 }
@@ -311,110 +306,100 @@ function TimestampCard({ timestamp, ...props }: TimestampCardProps) {
     });
     return (
         <div {...props}>
-            <div className={"h-full inline-flex gap-2 px-4 py-2"}>
+            <div className={"h-full inline-flex gap-2 py-2"}>
                 <div>
                     <Icon.Calendar />
                 </div>
                 <div>
-                    <div className="text-xs font-bold">Created on</div>
-                    <div>{date}</div>
-                    <div className="text-sm">{time}</div>
+                    <div className="text-xs text-secondary">Created on</div>
+                    <div className="font-bold select-all">
+                        <span>{date}</span>, <span>{time}</span>
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
 
-interface PropertiesProps {
+interface PropertiesProps extends ComponentProps<"div"> {
     properties: Property[];
 }
-function Properties({ properties }: PropertiesProps) {
-    if (properties.length === 0) {
-        return (
-            <div className="px-4 text-secondary-700 dark:text-secondary-300">
-                (no properties)
+function Properties({ properties, ...props }: PropertiesProps) {
+    return (
+        <div {...props}>
+            <div className="px-4 flex gap-2 items-center">
+                <Icon.Tag />
+                <h2 className="text-lg font-bold">Properties</h2>
             </div>
-        );
-    } else {
-        return (
-            <div className="pt-2">
+            {properties.length === 0 ? (
+                <div className="px-4 pt-2 text-secondary">(no properties)</div>
+            ) : (
                 <div className="px-4">
-                    <h2 className="text-lg">Properties</h2>
-                </div>
-                <div className="px-4">
-                    <table>
+                    <table className="border-separate border-spacing-x-0 border-spacing-y-1">
                         <tbody>
                             {properties.map((property) => (
                                 <tr key={property.Key}>
-                                    <th className="pr-2">{property.Key}</th>
-                                    <td className="px-2">
-                                        {value_to_string(property)}
+                                    <th className="px-4 text-left py-1 rounded-l-lg bg-gray-100 dark:bg-gray-700">
+                                        {property.Key}
+                                    </th>
+                                    <td className="px-4 text-secondary py-1 bg-gray-100 dark:bg-gray-700">
+                                        <div className="px-4 rounded-full text-center bg-primary-300 dark:bg-primary-800 dark:text-white">
+                                            {property.Type}
+                                        </div>
                                     </td>
-                                    <td className="pl-2 text-secondary">
-                                        ({property.Type})
+                                    <td className="px-4 py-1 select-all rounded-r-lg bg-gray-100 dark:bg-gray-700">
+                                        {value_to_string(property)}
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
-            </div>
-        );
-    }
+            )}
+        </div>
+    );
 }
 
-interface NotesProps {
+interface NotesProps extends ComponentProps<"div"> {
     notes: Note[];
+    users: User[];
 }
-function Notes({ notes }: NotesProps) {
-    if (notes.length === 0) {
-        return (
-            <div className="px-4 text-secondary-700 dark:text-secondary-300">
-                (no notes)
+function Notes({ notes, users, ...props }: NotesProps) {
+    return (
+        <div {...props}>
+            <div className="px-4 pb-2 flex gap-2 items-center">
+                <Icon.Notebook />
+                <h2 className="text-lg font-bold">Notes</h2>
             </div>
-        );
-    } else {
-        return (
-            <div className="pt-2">
-                <div className="px-4 pb-2">
-                    <h2>Notes</h2>
+            {notes.length === 0 ? (
+                <div className="px-4 pt-2 text-sm text-secondary">
+                    (no notes)
                 </div>
+            ) : (
                 <div>
                     <ol>
-                        {notes.map((note) => (
-                            <li key={note.Id.toString()}>
-                                <div className="px-4 pb-2">
-                                    <div className="flex gap-2 items-center">
-                                        <h3>
-                                            {timestampToString(
-                                                new Date(note.Timestamp),
-                                            )}
-                                        </h3>
-                                        <div
-                                            title={
-                                                note.Visibility ===
-                                                VisibilityPublic
-                                                    ? "Public"
-                                                    : "Private"
-                                            }
-                                        >
-                                            {note.Visibility ===
-                                            VisibilityPublic ? (
-                                                <Icon.Eye />
-                                            ) : (
-                                                <Icon.EyeSlash />
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div>{note.Content}</div>
-                                </div>
-                            </li>
-                        ))}
+                        {notes.map((note) => {
+                            const creator = users.find(
+                                (user) => user.Id === note.Creator,
+                            );
+                            return (
+                                <li
+                                    key={uuidToString(note.Id)}
+                                    className="px-4"
+                                >
+                                    <NoteView
+                                        note={note}
+                                        creator={creator}
+                                        className="rounded-lg border overflow-hidden"
+                                    />
+                                </li>
+                            );
+                        })}
                     </ol>
                 </div>
-            </div>
-        );
-    }
+            )}
+        </div>
+    );
 }
 
 // TODO: Show data tree.
@@ -431,6 +416,65 @@ function Notes({ notes }: NotesProps) {
 //         </ul>
 //     </div>
 // }
+
+interface ProjectResourcesProps extends ComponentProps<"div"> {
+    dataId: UUIDTypes;
+    projectResources: DataProjectResources[];
+    users: User[];
+}
+function ProjectResources({
+    dataId,
+    projectResources,
+    users,
+    ...props
+}: ProjectResourcesProps) {
+    const [showAddProject, setShowAddProject] = useState(false);
+
+    function showAddProjectFn(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== MouseButton.Primary) {
+            return;
+        }
+
+        setShowAddProject(true);
+    }
+
+    const currentProjects = projectResources.map((prj) => prj.Project.Id);
+
+    return (
+        <div {...props}>
+            <div className="px-4 pb-2 flex gap-2 items-baseline justify-between">
+                <div className="flex gap-2 items-baseline">
+                    <Icon.Folder />
+                    <h2 className="text-lg font-bold">Projects</h2>
+                </div>
+                <button
+                    type="button"
+                    className="btn-cmd"
+                    onMouseDown={showAddProjectFn}
+                >
+                    <Icon.Plus />
+                </button>
+            </div>
+            <div
+                className={classNames({
+                    "px-4 py-2": true,
+                    hidden: !showAddProject,
+                })}
+            >
+                <AddProject
+                    data_id={dataId}
+                    currentProjects={currentProjects}
+                    setShowAddProject={setShowAddProject}
+                />
+            </div>
+            {projectResources.length > 0 ? (
+                <ProjectList projects={projectResources} users={users} />
+            ) : (
+                <ProjectsEmpty />
+            )}
+        </div>
+    );
+}
 
 interface AddProjectProps {
     data_id: UUIDTypes;
@@ -520,7 +564,7 @@ function AddProject({
 
 function ProjectsEmpty() {
     return (
-        <div className="px-4">
+        <div className="px-4 text-sm text-secondary">
             <p>This data does not belong to any projects, yet.</p>
             <p>
                 Add it to one by clicking the <Icon.Plus className="inline" />{" "}
@@ -582,25 +626,84 @@ function ProjectItem({ resources }: ProjectItemProps) {
     );
 }
 
-function ValuesError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as Error;
-    console.error(err);
+function dataValuesTitleResources(storage: DataStorage): {
+    title: string;
+    icon: React.ReactNode;
+} {
+    switch (storage) {
+        case DataStorageInternal:
+            return {
+                title: "Values",
+                icon: <Icon.Chart />,
+            };
+        case DataStorageExternal:
+            return {
+                title: "Sources",
+                icon: <Icon.Files />,
+            };
+        default:
+            throw new Error(`invalid data storage type: ${storage}`);
+    }
+}
 
+interface DataValuesProps extends ComponentProps<"div"> {
+    data: UUIDTypes;
+    storage: DataStorage;
+}
+function DataValues({ data, storage, ...props }: DataValuesProps) {
     return (
-        <SuspenseError resetErrorBoundary={resetErrorBoundary}>
-            Could not load data values
-        </SuspenseError>
+        <ErrorBoundary
+            fallbackRender={(props) => (
+                <ValuesError storage={storage} {...props} />
+            )}
+        >
+            <Suspense fallback={<ValuesLoading storage={storage} />}>
+                <DataValuesInner data={data} {...props} />
+            </Suspense>
+        </ErrorBoundary>
     );
 }
 
-function ValuesLoading() {
-    return <div>Loading values</div>;
+interface ValuesErrorProps extends FallbackProps {
+    storage: DataStorage;
+}
+function ValuesError({ storage, error, resetErrorBoundary }: ValuesErrorProps) {
+    const { icon, title } = dataValuesTitleResources(storage);
+    return (
+        <div>
+            <div className="px-4 flex gap-2 group justify-baseline">
+                {icon}
+                <h2 className="text-lg font-bold">{title}</h2>
+            </div>
+            <StandardError
+                title="Could not load data values"
+                error={error as Error}
+                resetErrorBoundary={resetErrorBoundary}
+            />
+        </div>
+    );
 }
 
-interface DataValuesProps {
+interface ValuesLoadingProps {
+    storage: DataStorage;
+}
+function ValuesLoading({ storage }: ValuesLoadingProps) {
+    const { icon, title } = dataValuesTitleResources(storage);
+    return (
+        <div>
+            <div className="px-4 flex gap-2 group justify-baseline">
+                {icon}
+                <h2 className="text-lg font-bold">{title}</h2>
+            </div>
+            <div className="px-4">Loading values</div>
+        </div>
+    );
+}
+
+interface DataValuesInnerProps extends ComponentProps<"div"> {
     data: UUIDTypes;
 }
-function DataValues({ data }: DataValuesProps) {
+function DataValuesInner({ data, ...props }: DataValuesInnerProps) {
     const { data: values } = useSuspenseQuery({
         queryKey: [QUERY_KEY_DATA_VALUES, data],
         queryFn: async () => await dataService.dataValues(data),
@@ -608,9 +711,11 @@ function DataValues({ data }: DataValuesProps) {
 
     let component;
     let title;
+    let icon;
     switch (values.Storage) {
         case DataStorageInternal:
             title = "Values";
+            icon = <Icon.Chart />;
             component = (
                 <DataValuesInternal
                     cardinality={values.Values[0].Cardinality}
@@ -620,6 +725,7 @@ function DataValues({ data }: DataValuesProps) {
             break;
         case DataStorageExternal:
             title = "Sources";
+            icon = <Icon.Files />;
             component = (
                 <DataValuesExternal data_id={data} sources={values.Values} />
             );
@@ -630,9 +736,10 @@ function DataValues({ data }: DataValuesProps) {
     params.append("id", uuidToString(data));
     const download = `/resource/data?${params}`;
     return (
-        <div className="pt-2">
-            <div className="px-4 flex gap-2 group">
-                <h2 className="text-lg">{title}</h2>
+        <div {...props}>
+            <div className="px-4 flex gap-2 group items-baseline">
+                {icon}
+                <h2 className="text-lg font-bold">{title}</h2>
                 <div className="invisible group-hover:visible">
                     <a href={download}>
                         <button type="button" className="btn-cmd">
@@ -641,7 +748,7 @@ function DataValues({ data }: DataValuesProps) {
                     </a>
                 </div>
             </div>
-            {component}
+            <div className="px-4 pt-2">{component}</div>
         </div>
     );
 }
@@ -714,20 +821,30 @@ function DataValuesInternalMultiple({
     }
 
     return (
-        <table>
+        <table className="w-full text-left">
             <thead>
                 <tr>
-                    <th></th>
+                    <th
+                        className="px-4 align-middle bg-gray-200 dark:bg-gray-700 rounded-tl-lg"
+                        rowSpan={2}
+                    >
+                        #
+                    </th>
                     {values.map((field) => (
-                        <th key={field.Label} className="px-2">
+                        <th
+                            key={field.Label}
+                            className="px-4 bg-gray-200 dark:bg-gray-700 last:rounded-tr-lg"
+                        >
                             {field.Label}
                         </th>
                     ))}
                 </tr>
                 <tr>
-                    <th></th>
                     {values.map((field) => (
-                        <th key={field.Label} className="px-2">
+                        <th
+                            key={field.Label}
+                            className="px-4 bg-gray-200 dark:bg-gray-700 text-secondary text-sm text-left font-normal"
+                        >
                             {field.DType}
                         </th>
                     ))}
@@ -737,18 +854,12 @@ function DataValuesInternalMultiple({
                 {records.map((rx, idx) => (
                     <tr
                         key={idx}
-                        className="hover:bg-gray-50 dark:hover:bg-gray-800"
+                        className="even:bg-gray-200 dark:even:bg-gray-700 hover:bg-primary-400 dark:hover:bg-primary-800"
                     >
-                        <th className="pl-4 pr-2">{idx + 1}.</th>
+                        <th className="px-4 py-1 font-normal">{idx + 1}</th>
                         {rx.map((vx, vdx) => {
                             return (
-                                <td
-                                    key={vdx}
-                                    className={classNames({
-                                        "px-2": true,
-                                        "text-right": is_numeric[vdx],
-                                    })}
-                                >
+                                <td key={vdx} className="px-4 py-1 select-all">
                                     {vx}
                                 </td>
                             );
