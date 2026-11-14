@@ -34,6 +34,17 @@
     --color-syre-gray-800: #2b2e33;
     --color-syre-gray-900: #181a1e;
 
+    --color-syre-blue-50: #f1fdff;
+    --color-syre-blue-100: #e8f7f9;
+    --color-syre-blue-200: #d0e6e9;
+    --color-syre-blue-300: #b4dce1;
+    --color-syre-blue-400: #95d1d9;
+    --color-syre-blue-500: #77b9ce;
+    --color-syre-blue-600: #51a1c4;
+    --color-syre-blue-700: #2281aa;
+    --color-syre-blue-800: #065b80;
+    --color-syre-blue-900: #00364e;
+
     --color-syre-red-50: #ffe9e1;
     --color-syre-red-100: #ffc1ab;
     --color-syre-red-200: #ee9676;
@@ -99,11 +110,19 @@
 }
 
 @utility btn-submit {
-    @apply cursor-pointer px-1 py-0.5 rounded-xs border;
+    @apply cursor-pointer px-4 py-1 font-bold rounded border bg-primary-700 text-white;
 }
 
 .btn-submit:hover {
-    @apply bg-primary-300 border-primary-400 dark:bg-primary-700 dark:border-primary-600;
+    @apply bg-primary-600 dark:bg-primary-800;
+}
+
+@utility btn-cancel {
+    @apply cursor-pointer px-4 py-1 rounded border dark:bg-gray-700;
+}
+
+.btn-cancel:hover {
+    @apply bg-gray-200 dark:bg-gray-800;
 }
 
 @utility table-std {

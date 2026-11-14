@@ -3008,14 +3008,17 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 		project_resources = filtered
 	}
 
-	var user_ids []uuid.UUID
+	user_ids := []uuid.UUID{}
+	for _, note := range notes {
+		user_ids = append(user_ids, note.Creator)
+	}
 	for _, resource := range project_resources {
 		if !slices.Contains(user_ids, resource.MembershipCreator) {
 			user_ids = append(user_ids, resource.MembershipCreator)
 		}
 
 		if !slices.Contains(user_ids, resource.Project.Creator) {
-			user_ids = append(user_ids, resource.MembershipCreator)
+			user_ids = append(user_ids, resource.Project.Creator)
 		}
 
 		for _, note := range resource.Notes {
@@ -3024,6 +3027,7 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 			}
 		}
 	}
+	c.Logger().With("users", user_ids).Debug("USERS")
 	users, err := h.user_service.UsersById(user_ids)
 	if err != nil {
 		c.Logger().With(
@@ -3051,9 +3055,14 @@ func (h *DataHandler) DataGet(c *echo.Context) error {
 	return c.JSON(http.StatusOK, resources)
 }
 
+type DataUpdate struct {
+	Id         uuid.UUID
+	Visibility service.Visibility
+}
+
 func (h *DataHandler) DataUpdate(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	var update service.DataUpdate
+	var update DataUpdate
 	err := c.Bind(&update)
 	if err != nil {
 		c.Logger().With(
@@ -3089,10 +3098,15 @@ func (h *DataHandler) DataUpdate(c *echo.Context) error {
 		c.Logger().With(
 			"user", user_id,
 		).Info("insufficient permission to modify data")
-		return c.NoContent(http.StatusForbidden)
+		return c.JSON(http.StatusForbidden, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INSUFFICIENT_PERMISSIONS,
+			Message:   "Insuffiecient permissions",
+			Payload:   `{details: "Can not update data"}`,
+		})
 	}
 
-	err = h.data_service.DataUpdate(update)
+	err = h.data_service.DataUpdate(update.Id, service.DataRxUpdate{Visibility: update.Visibility})
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -3108,11 +3122,165 @@ func (h *DataHandler) DataUpdate(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+
+}
+
+type DataUpdateProperties struct {
+	Remove       []string
+	Create       []service.Property
+	ValuesUpdate []service.PropertyValueUpdate
+}
+
+type DataResourcesUpdate struct {
+	Id         uuid.UUID
+	Visibility *service.Visibility
+	Properties *DataUpdateProperties
+	Notes      []service.DataNoteCreate
+}
+
+func (h *DataHandler) DataResourcesUpdate(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	var update DataResourcesUpdate
+	err := c.Bind(&update)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Error("invalid update")
+		return c.JSON(http.StatusBadRequest, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_PAYLOAD,
+			Message:   "Could not update data",
+			Payload:   nil,
+		})
+	}
+
+	if update.Visibility != nil {
+		sufficient_permission_data, err := h.data_service.UserHasDataPermission(
+			user_id,
+			update.Id,
+			service.DataPermissionModify,
+		)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"user", user_id,
+			).Error("could not validate user permissions")
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not update data",
+				Payload:   nil,
+			})
+		}
+		if !sufficient_permission_data {
+			c.Logger().With(
+				"user", user_id,
+			).Info("insufficient permission to modify data")
+			return c.JSON(http.StatusForbidden, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INSUFFICIENT_PERMISSIONS,
+				Message:   "Insuffiecient permissions",
+				Payload:   `{details: "Can not update data"}`,
+			})
+		}
+	}
+	if update.Properties != nil {
+		sufficient_permission_properties, err := h.data_service.UserHasDataPermission(
+			user_id,
+			update.Id,
+			service.DataPermissionPropertiesModify,
+		)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"user", user_id,
+			).Error("could not validate user permissions")
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not update data properties",
+				Payload:   nil,
+			})
+		}
+		if !sufficient_permission_properties {
+			c.Logger().With(
+				"user", user_id,
+			).Info("insufficient permission to update data properties")
+			return c.JSON(http.StatusForbidden, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INSUFFICIENT_PERMISSIONS,
+				Message:   "Insuffiecient permissions",
+				Payload:   `{details: "Can not update data properties"}`,
+			})
+		}
+
+		err = h.validatePropertiesUpdate(c, update.Id, *update.Properties)
+		if err != nil {
+			return err
+		}
+
+	}
+	if update.Notes != nil {
+		sufficient_permission_notes, err := h.data_service.UserHasDataPermission(
+			user_id,
+			update.Id,
+			service.DataPermissionNoteCreate,
+		)
+		if err != nil {
+			c.Logger().With(
+				"error", err,
+				"user", user_id,
+			).Error("could not validate user permissions")
+			return c.JSON(http.StatusInternalServerError, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_DB_QUERY,
+				Message:   "Could not create data notes",
+				Payload:   nil,
+			})
+		}
+		if !sufficient_permission_notes {
+			c.Logger().With(
+				"user", user_id,
+			).Info("insufficient permission to create data notes")
+			return c.JSON(http.StatusForbidden, AppError{
+				RequestId: requestId(c),
+				Code:      APP_ERR_INSUFFICIENT_PERMISSIONS,
+				Message:   "Insuffiecient permissions",
+				Payload:   `{details: "Can not update data notes"}`,
+			})
+		}
+	}
+
+	result, err := h.data_service.DataResourcesUpdate(update.Id, user_id, *update.Visibility,
+		update.Properties.Remove, update.Properties.Create, update.Properties.ValuesUpdate, update.Notes)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"update", update,
+		).Error("could not update data")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data",
+			Payload:   nil,
+		})
+	}
+
+	return c.JSON(http.StatusOK, result)
+}
+
+type DataPropertiesUpdate struct {
+	Id           uuid.UUID
+	Remove       []string
+	Create       []service.Property
+	ValuesUpdate []service.PropertyValueUpdate
 }
 
 func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
-	var update service.DataPropertiesUpdate
+	var update DataPropertiesUpdate
 	err := c.Bind(&update)
 	if err != nil {
 		c.Logger().With(
@@ -3151,8 +3319,36 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 		return c.NoContent(http.StatusForbidden)
 	}
 
+	err = h.validatePropertiesUpdate(c, update.Id, DataUpdateProperties{
+		Remove:       update.Remove,
+		Create:       update.Create,
+		ValuesUpdate: update.ValuesUpdate,
+	})
+	if err != nil {
+		return err
+	}
+
+	err = h.data_service.DataPropertiesUpdate(update.Id, update.Remove, update.Create, update.ValuesUpdate)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"update", update,
+		).Error("could not update data properties")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not update data properties",
+			Payload:   nil,
+		})
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+func (h *DataHandler) validatePropertiesUpdate(c *echo.Context, data_id uuid.UUID, update DataUpdateProperties) error {
 	for _, property := range update.Create {
-		err = validate_property_value_as_type(property.Type, property.Value)
+		err := validatePropertyValueAsType(property.Type, property.Value)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
@@ -3183,11 +3379,11 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 
 		update_keys[idx] = property.Key
 	}
-	update_properties, err := h.data_service.DataPropertiesByKeys(update.Id, update_keys)
+	update_properties, err := h.data_service.DataPropertiesByKeys(data_id, update_keys)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
-			"data", update.Id,
+			"data", data_id,
 			"keys", update_keys,
 		).Error("could not get updated data properties")
 		return c.JSON(http.StatusInternalServerError, AppError{
@@ -3204,14 +3400,14 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 		if idx_base < 0 {
 			c.Logger().With(
 				"error", err,
-				"data", update.Id,
+				"data", data_id,
 				"key", property.Key,
 			).Error("could not find data properties")
 			panic("invalid data property update")
 		}
 
 		property_type := update_properties[idx_base].Type
-		err = validate_property_value_as_type(property_type, property.Value)
+		err = validatePropertyValueAsType(property_type, property.Value)
 		if err != nil {
 			c.Logger().With(
 				"error", err,
@@ -3226,25 +3422,10 @@ func (h *DataHandler) DataPropertiesUpdate(c *echo.Context) error {
 		}
 	}
 
-	err = h.data_service.DataPropertiesUpdate(update)
-	if err != nil {
-		c.Logger().With(
-			"error", err,
-			"user", user_id,
-			"update", update,
-		).Error("could not update data properties")
-		return c.JSON(http.StatusInternalServerError, AppError{
-			RequestId: requestId(c),
-			Code:      APP_ERR_DB_QUERY,
-			Message:   "Could not update data properties",
-			Payload:   nil,
-		})
-	}
-
-	return c.NoContent(http.StatusOK)
+	return nil
 }
 
-func validate_property_value_as_type(ptype service.PropertyType, value any) error {
+func validatePropertyValueAsType(ptype service.PropertyType, value any) error {
 	ok := false
 	switch ptype {
 	case service.PropertyTypeBool:
@@ -3358,13 +3539,17 @@ func (h *DataHandler) DataNotesCreate(c *echo.Context) error {
 }
 
 type RecentDataResources struct {
-	Data      []service.DataWithOriginAndCretor
-	Origins   []service.DataOriginRx
-	DataTypes []service.DataType
-	Users     []service.User
+	Data               []service.DataWithOriginAndCretor
+	Origins            []service.DataOriginRx
+	DataTypes          []service.DataType
+	Users              []service.User
+	Projects           []service.Project
+	ProjectMemberships []service.ProjectDataMembershipRx
 }
 
 func (h *DataHandler) DataGetRecent(c *echo.Context) error {
+	const err_msg = "Could not get recent data"
+
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	var limit int
 	query_limit := c.QueryParam("limit")
@@ -3428,7 +3613,7 @@ func (h *DataHandler) DataGetRecent(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, AppError{
 			RequestId: requestId(c),
 			Code:      APP_ERR_DB_QUERY,
-			Message:   "Could not get recent data",
+			Message:   err_msg,
 			Payload:   nil,
 		})
 	}
@@ -3442,7 +3627,7 @@ func (h *DataHandler) DataGetRecent(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, AppError{
 			RequestId: requestId(c),
 			Code:      APP_ERR_DB_QUERY,
-			Message:   "Could not get recent data",
+			Message:   err_msg,
 			Payload:   nil,
 		})
 	}
@@ -3456,7 +3641,7 @@ func (h *DataHandler) DataGetRecent(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, AppError{
 			RequestId: requestId(c),
 			Code:      APP_ERR_DB_QUERY,
-			Message:   "Could not get recent data",
+			Message:   err_msg,
 			Payload:   nil,
 		})
 	}
@@ -3479,11 +3664,74 @@ func (h *DataHandler) DataGetRecent(c *echo.Context) error {
 		data_ids[idx] = r.Id
 	}
 
+	project_data_memberships, err := h.data_service.DataProjectMembershipsMany(data_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"data", data_ids,
+		).Error("could not get data project memberships")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   err_msg,
+			Payload:   nil,
+		})
+	}
+
+	var data_project_ids []uuid.UUID
+	for _, rx := range project_data_memberships {
+		data_project_ids = append(data_project_ids, rx.Project)
+	}
+
+	prj_permissions, err := h.project_service.ProjectsUserPermissions(data_project_ids, user_id)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"projects", data_project_ids,
+		).Error("could not get user projects permissions")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   err_msg,
+			Payload:   nil,
+		})
+	}
+
+	user_project_ids := make([]uuid.UUID, len(data_project_ids))
+	for prj, perms := range prj_permissions {
+		if slices.Contains(user_project_ids, prj) {
+			continue
+		}
+
+		if slices.ContainsFunc(perms, func(p service.ProjectPermission) bool {
+			return p == service.ProjectPermissionOwner || p == service.ProjectPermissionRead
+		}) {
+			user_project_ids = append(user_project_ids, prj)
+		}
+	}
+	projects, err := h.project_service.ProjectsById(user_project_ids)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"projects", user_project_ids,
+		).Error("could not get user projects")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   err_msg,
+			Payload:   nil,
+		})
+	}
+
 	resources := RecentDataResources{
-		Data:      data,
-		Origins:   origins,
-		DataTypes: data_types,
-		Users:     users,
+		Data:               data,
+		Origins:            origins,
+		DataTypes:          data_types,
+		Users:              users,
+		Projects:           projects,
+		ProjectMemberships: project_data_memberships,
 	}
 
 	return c.JSON(http.StatusOK, resources)

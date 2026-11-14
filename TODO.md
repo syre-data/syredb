@@ -3,6 +3,8 @@
 [ ] When adding new transform, add option to calculate for data already existing in schema.
 [ ] Transform must hold info about runner (e.g. Which language it uses, dependencies, etc.)
 [ ] Provide data tags to transform scripts
+[ ] Strict binding of parameters for backend
+[ ] Project state: `active`, `archived`
 [x] Show shape of schema when inserting data (e.g. in data creation).
 [x] External preprocessing script for data.
 [x] Change user roles to permissions

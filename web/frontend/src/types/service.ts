@@ -368,19 +368,15 @@ export const ArgsOffset = 1;
 export const ArgsPerRowSingle = 2;
 export const ArgsPerRowMultiple = 3;
 export const FIELDS = 3;
-export interface DataUpdate {
-  Id: uuid.UUIDTypes;
+export interface DataRxUpdate {
   Visibility: Visibility;
+}
+export interface DataResourcesUpdateResult {
+  NotesCreated: uuid.UUIDTypes[];
 }
 export interface PropertyValueUpdate {
   Key: string;
   Value: any;
-}
-export interface DataPropertiesUpdate {
-  Id: uuid.UUIDTypes;
-  Remove: string[];
-  Create: Property[];
-  ValuesUpdate: PropertyValueUpdate[];
 }
 export interface DataNoteCreate {
   Timestamp: Date;
@@ -412,6 +408,11 @@ export interface DataCreatorUserInfo {
   User: User;
   Origin: DataOriginRx;
 }
+export interface DataProjectMembership {
+  Project: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Label?: string;
+}
 export interface ProjectDataNote {
   Id: uuid.UUIDTypes;
   Project: uuid.UUIDTypes;
@@ -427,9 +428,10 @@ export interface ProjectDataNote {
 
 export const ProjectPermissionOwner = "owner";
 export const ProjectPermissionRead = "read";
+export const ProjectPermissionModify = "modify";
 export const ProjectPermissionDataCreate = "data_create";
 export const ProjectPermissionDataGroupCreate = "data_group_create";
-export type ProjectPermission = typeof ProjectPermissionOwner | typeof ProjectPermissionRead | typeof ProjectPermissionDataCreate | typeof ProjectPermissionDataGroupCreate;
+export type ProjectPermission = typeof ProjectPermissionOwner | typeof ProjectPermissionRead | typeof ProjectPermissionModify | typeof ProjectPermissionDataCreate | typeof ProjectPermissionDataGroupCreate;
 export const VisibilityPublic = "public";
 export const VisibilityPrivate = "private";
 export type Visibility = typeof VisibilityPublic | typeof VisibilityPrivate;
@@ -441,6 +443,11 @@ export interface Project {
   Label: string;
   Description: string;
   Visibility: Visibility;
+}
+export interface ProjectUserPermissionRx {
+  Project: uuid.UUIDTypes;
+  User: uuid.UUIDTypes;
+  Permission: ProjectPermission;
 }
 export interface ProjectCreate {
   Label: string;
@@ -518,11 +525,7 @@ export interface ProjectDataInfo {
   NoteCount: number /* uint */;
 }
 export interface ProjectWithUserPermission {
-  Id: uuid.UUIDTypes;
-  Creator: uuid.UUIDTypes;
-  Label: string;
-  Description: string;
-  Visibility: Visibility;
+  Project: Project;
   Permissions: ProjectPermission[];
 }
 export interface FileInfo {

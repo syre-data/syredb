@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -20,6 +21,7 @@ type ProjectPermission string
 const (
 	ProjectPermissionOwner           ProjectPermission = "owner"
 	ProjectPermissionRead            ProjectPermission = "read"
+	ProjectPermissionModify          ProjectPermission = "modify"
 	ProjectPermissionDataCreate      ProjectPermission = "data_create"
 	ProjectPermissionDataGroupCreate ProjectPermission = "data_group_create"
 )
@@ -63,7 +65,7 @@ type Project struct {
 	Visibility  Visibility `db:"visibility"`
 }
 
-// Get a project by tis id.
+// Get a project by its id.
 // First return value is the project, if valid.
 // Second return value is whether the project is valid. i.e. Was found.
 // Thrid return value is any error.
@@ -87,25 +89,96 @@ func (s *ProjectService) ProjectById(id uuid.UUID) (Project, bool, error) {
 	return project, true, nil
 }
 
-func (s *ProjectService) GetUserProjects(user uuid.UUID) ([]Project, error) {
-	if user == uuid.Nil {
-		panic("invalid user id")
-	}
-
+// Get multiple projects by id.
+func (s *ProjectService) ProjectsById(id []uuid.UUID) ([]Project, error) {
 	query :=
 		`SELECT _id, _creator, label, description, visibility FROM project_ 
-		WHERE _creator=$1 ORDER BY _id`
-	rows, _ := s.db.Conn.Query(s.ctx, query, user)
+		WHERE _id=ANY($1)`
+	rows, _ := s.db.Conn.Query(s.ctx, query, id)
 	projects, err := pgx.CollectRows(rows, pgx.RowToStructByName[Project])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"user", user,
-		).Error("could not collect user projects")
+			"project", id,
+		).Error("could not get projects")
 		return nil, err
 	}
 
 	return projects, nil
+}
+
+type ProjectUserPermissionRx struct {
+	Project    uuid.UUID         `db:"_project"`
+	User       uuid.UUID         `db:"_user"`
+	Permission ProjectPermission `db:"_permission"`
+}
+
+func (s *ProjectService) UserPermissions(user uuid.UUID) ([]ProjectUserPermissionRx, error) {
+	query :=
+		`SELECT _project, _user, _permission FROM project_user_permission_
+		WHERE _user=$1`
+	rows, _ := s.db.Conn.Query(s.ctx, query, user)
+	permissions, err := pgx.CollectRows(rows, pgx.RowToStructByName[ProjectUserPermissionRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"user", user,
+		).Error("could not collect user project permissions")
+		return nil, err
+	}
+
+	return permissions, nil
+}
+
+// Get all projects accessible by the user.
+// Sorted in reverse chronological order.
+func (s *ProjectService) GetUserProjects(user uuid.UUID) ([]ProjectWithUserPermission, error) {
+	permissions, err := s.UserPermissions(user)
+	if err != nil {
+		return nil, err
+	}
+
+	project_permissions := make(map[uuid.UUID][]ProjectPermission)
+	for _, perm := range permissions {
+		prj_perms, ok := project_permissions[perm.Project]
+		if ok {
+			project_permissions[perm.Project] = append(prj_perms, perm.Permission)
+		} else {
+			project_permissions[perm.Project] = []ProjectPermission{perm.Permission}
+		}
+	}
+
+	project_ids := slices.Collect(maps.Keys(project_permissions))
+	query :=
+		`SELECT _id, _creator, label, description, visibility FROM project_ 
+		WHERE _id=ANY($1) ORDER BY _id DESC`
+	rows, _ := s.db.Conn.Query(s.ctx, query, project_ids)
+	projects, err := pgx.CollectRows(rows, pgx.RowToStructByName[Project])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"projects", project_ids,
+		).Error("could not collect projects")
+		return nil, err
+	}
+
+	resources := make([]ProjectWithUserPermission, len(projects))
+	for idx, prj := range projects {
+		prj_permissions, ok := project_permissions[prj.Id]
+		if !ok {
+			panic("invalid project id")
+		}
+
+		resources[idx] = ProjectWithUserPermission{
+			Project:     prj,
+			Permissions: prj_permissions,
+		}
+	}
+
+	return resources, nil
 }
 
 type ProjectCreate struct {
@@ -114,6 +187,8 @@ type ProjectCreate struct {
 	Visibility  Visibility
 }
 
+// Create a new project.
+// Creates a project data permission for the creator of owner.
 func (s *ProjectService) CreateProject(
 	user_id uuid.UUID,
 	project ProjectCreate,
@@ -193,6 +268,7 @@ func (s *ProjectService) ProjectUserPermissions(
 	return permissions, nil
 }
 
+// Get a user's permissions on multiple projects.
 func (s *ProjectService) ProjectsUserPermissions(
 	projects []uuid.UUID,
 	user uuid.UUID,
@@ -210,7 +286,7 @@ func (s *ProjectService) ProjectsUserPermissions(
 		projects,
 		user,
 	)
-	rxs, err := pgx.CollectRows(rows, pgx.RowTo[rx])
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[rx])
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			s.logger.With(
@@ -661,11 +737,7 @@ func (s *ProjectService) getProjectResourcesDataInfo(
 }
 
 type ProjectWithUserPermission struct {
-	Id          uuid.UUID  `db:"_id"`
-	Creator     uuid.UUID  `db:"_creator"`
-	Label       string     `db:"label"`
-	Description string     `db:"description"`
-	Visibility  Visibility `db:"visibility"`
+	Project     Project
 	Permissions []ProjectPermission
 }
 
@@ -677,7 +749,6 @@ func (s *ProjectService) GetProjectWithUserPermission(
 	user_id uuid.UUID,
 	project_id uuid.UUID,
 ) (ProjectWithUserPermission, bool, error) {
-	var project ProjectWithUserPermission
 	project_query :=
 		"SELECT _id, _creator, label, description, visibility FROM project_ WHERE _id=$1"
 	rows, _ := s.db.Conn.Query(
@@ -687,7 +758,7 @@ func (s *ProjectService) GetProjectWithUserPermission(
 	)
 	project, err := pgx.CollectExactlyOneRow(
 		rows,
-		pgx.RowToStructByNameLax[ProjectWithUserPermission],
+		pgx.RowToStructByNameLax[Project],
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -702,12 +773,17 @@ func (s *ProjectService) GetProjectWithUserPermission(
 		}
 	}
 
-	project.Permissions, err = s.ProjectUserPermissions(project_id, user_id)
+	permissions, err := s.ProjectUserPermissions(project_id, user_id)
 	if err != nil {
 		return ProjectWithUserPermission{}, false, err
 	}
 
-	return project, true, nil
+	resource := ProjectWithUserPermission{
+		Project:     project,
+		Permissions: permissions,
+	}
+
+	return resource, true, nil
 }
 
 type FileInfo struct {

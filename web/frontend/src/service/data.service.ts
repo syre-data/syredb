@@ -40,7 +40,7 @@ function dataTypeCreateInternal(
             throw new AppError(data);
         }
 
-        const body = (await res.json()) as ResourceCreated;
+        const body = (await res.json()) as types.ResourceCreated;
         return body.id;
     });
 }
@@ -49,7 +49,7 @@ function dataTypeCreateExternal(
     label: string,
     description: string,
     sources: types.ExternalSourceCreate[],
-): Promise<Response> {
+): Promise<uuid.UUIDTypes> {
     const params = new URLSearchParams();
     params.set("storage", types.DataStorageExternal);
     const data = {
@@ -69,7 +69,7 @@ function dataTypeCreateExternal(
             throw new AppError(data);
         }
 
-        const body = (await res.json()) as ResourceCreated;
+        const body = (await res.json()) as types.ResourceCreated;
         return body.id;
     });
 }
@@ -458,7 +458,6 @@ function orphanedData(): Promise<types.OrphanedDataResources> {
     });
 }
 
-// TODO: Should be a `handler.DataResources` but it isn't being created by `tygo`.
 function dataGet(data_id: uuid.UUIDTypes): Promise<types.DataResources> {
     const params = new URLSearchParams();
     params.set("id", uuidToString(data_id));
@@ -470,7 +469,9 @@ function dataGet(data_id: uuid.UUIDTypes): Promise<types.DataResources> {
             throw new AppError(data);
         }
 
-        return (await res.json()) as types.DataResources;
+        const data = (await res.json()) as types.DataResources;
+        data.Data.Timestamp = new Date(data.Data.Timestamp);
+        return data;
     });
 }
 
@@ -487,6 +488,24 @@ function dataUpdate(update: types.DataUpdate): Promise<null> {
         }
 
         return null;
+    });
+}
+
+function dataResourcesUpdate(
+    update: types.DataResourcesUpdate,
+): Promise<types.DataResourcesUpdateResult> {
+    return fetch("/api/data/resources", {
+        credentials: "same-origin",
+        method: "put",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(data);
+        }
+
+        return (await res.json()) as types.DataResourcesUpdateResult;
     });
 }
 
@@ -681,6 +700,7 @@ export default {
     orphanedData,
     dataGet,
     dataUpdate,
+    dataResourcesUpdate,
     dataOrigins,
     dataOriginById,
     dataOriginCreate,

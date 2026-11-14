@@ -468,9 +468,10 @@ CREATE TABLE IF NOT EXISTS _project_permission_ (
 );
 INSERT INTO _project_permission_ (_id, label, description) VALUES 
     ('owner', 'Owner', 'Full permission'),
+    ('read', 'Read', 'Project is visible'),
+    ('modify', 'Modify', 'Modify project settings'),
     ('data_create', 'Create data', 'Create data in the project'),
-    ('data_group_create', 'Create data groups', 'Create data groups in the project'),
-    ('read', 'Read', 'Project is visible');
+    ('data_group_create', 'Create data groups', 'Create data groups in the project');
 
 CREATE TABLE IF NOT EXISTS project_user_permission_ (
     _project UUID REFERENCES project_(_id) NOT NULL,

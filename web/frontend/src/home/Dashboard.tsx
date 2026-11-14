@@ -120,30 +120,33 @@ function UserProjectsEmpty() {
 }
 
 interface UserProjectsDeckProps {
-    projects: types.Project[];
+    projects: types.ProjectWithUserPermission[];
 }
 function UserProjectsDeck({ projects }: UserProjectsDeckProps) {
     return (
         <div className="flex gap-2 px-4">
             {projects.map((project) => (
-                <ProjectCard key={project.Id.toString()} project={project} />
+                <ProjectCard
+                    key={project.Project.Id.toString()}
+                    project={project}
+                />
             ))}
         </div>
     );
 }
 
 interface ProjectCardProps {
-    project: types.Project;
+    project: types.ProjectWithUserPermission;
 }
 function ProjectCard({ project }: ProjectCardProps) {
     return (
         <div className="card">
-            <Link to={`/project/${project.Id}`}>
+            <Link to={`/project/${project.Project.Id}`}>
                 <div className="px-4 py-2">
                     <div className="pb-2">
-                        <h4 className="font-bold">{project.Label}</h4>
+                        <h4 className="font-bold">{project.Project.Label}</h4>
                     </div>
-                    <div>{project.Description}</div>
+                    <div>{project.Project.Description}</div>
                 </div>
             </Link>
         </div>
@@ -258,10 +261,18 @@ function OrphanedDataItem({
     children,
 }: OrphanedDataItemProps) {
     return (
-        <tr className="group hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer">
-            <td>{dataType.Label}</td>
-            <td>{origin.Label}</td>
-            <td>{common.timestampToString(data.Timestamp)}</td>
+        <tr className="group hover:bg-gray-200 dark:hover:bg-gray-700">
+            <td>
+                <span className="select-all">{dataType.Label}</span>
+            </td>
+            <td>
+                <span className="select-all">{origin.Label}</span>
+            </td>
+            <td>
+                <span className="select-all">
+                    {common.timestampToString(data.Timestamp)}
+                </span>
+            </td>
             <td className="text-secondary">({children.length} children)</td>
             <td>
                 <div className="invisible group-hover:visible">
@@ -325,14 +336,17 @@ function RecentDataList({ data: resources }: RecentDataListProps) {
     return (
         <table className="table-compact w-full [&_th]:last:w-full [&_td]:last:w-full [&_td]:text-nowrap [&_th]:first:pl-4 [&_td]:first:pl-4">
             <thead>
-                <th>Type</th>
-                <th>Origin</th>
-                <th>Timestamp</th>
-                <th>Creator</th>
+                <tr>
+                    <th>Type</th>
+                    <th>Origin</th>
+                    <th>Timestamp</th>
+                    <th>Creator</th>
+                    <th>Projects</th>
+                    <th></th>
+                </tr>
             </thead>
             <tbody>
                 {resources.Data.map((datum) => {
-                    console.debug(datum);
                     const creator = resources.Users.find(
                         (user) => user.Id === datum.Creator,
                     );
@@ -342,13 +356,31 @@ function RecentDataList({ data: resources }: RecentDataListProps) {
                     const origin = resources.Origins.find(
                         (origin) => origin.Id === datum.Origin,
                     );
+                    const project_memberships =
+                        resources.ProjectMemberships.filter((membership) => {
+                            console.debug(
+                                datum.Data.Id,
+                                membership.Data,
+                                datum.Id === membership.Data,
+                            );
+                            return membership.Data === datum.Data.Id;
+                        });
+                    const projects = resources.Projects.filter(
+                        (project) =>
+                            project_memberships.findIndex(
+                                (membership) =>
+                                    project.Id === membership.Project,
+                            ) > -1,
+                    );
 
                     return (
                         <RecentDataListItem
+                            key={datum.Id}
                             data={datum.Data}
                             creator={creator}
                             dataType={dtype}
                             origin={origin}
+                            projects={projects}
                         />
                     );
                 })}
@@ -362,19 +394,60 @@ interface RecentDataListItemProps {
     creator: types.User;
     dataType: types.DataType;
     origin: types.DataOriginRx;
+    projects: types.Project[];
 }
 function RecentDataListItem({
     data,
     creator,
     dataType,
     origin,
+    projects,
 }: RecentDataListItemProps) {
     return (
-        <tr className="group hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer">
-            <td>{dataType.Label}</td>
-            <td>{origin.Label}</td>
-            <td>{common.timestampToString(data.Timestamp)}</td>
-            <td>{creator.Name}</td>
+        <tr className="group hover:bg-gray-200 dark:hover:bg-gray-700">
+            <td>
+                <span className="select-all">{dataType.Label}</span>
+            </td>
+            <td>
+                <span className="select-all">{origin.Label}</span>
+            </td>
+            <td>
+                <span className="select-all">
+                    {common.timestampToString(data.Timestamp)}
+                </span>
+            </td>
+            <td>
+                <span className="select-all">{creator.Name}</span>
+            </td>
+            <td>
+                {projects.length ? (
+                    <div className="flex gap-2">
+                        {projects.map((prj) => {
+                            return (
+                                <div
+                                    key={common.uuidToString(prj.Id)}
+                                    className="px-1 py-0.5 rounded hover:bg-gray-300 dark:hover:bg-gray-800 cursor-pointer"
+                                >
+                                    <Link to={`/project/${prj.Id}`}>
+                                        {prj.Label}
+                                    </Link>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <span className="text-secondary">(no projects)</span>
+                )}
+            </td>
+            <td>
+                <div className="invisible group-hover:visible select-all">
+                    <Link to={`/data/${data.Id}`}>
+                        <button type="button" className="btn-cmd align-bottom">
+                            <icon.Eye />
+                        </button>
+                    </Link>
+                </div>
+            </td>
         </tr>
     );
 }

@@ -1,17 +1,62 @@
 import Icon from "@/icon";
 import { VisibilityPrivate, VisibilityPublic, type Visibility } from "@/types";
-import classNames from "classnames";
-import { useState, type ChangeEvent } from "react";
+import type { ComponentProps } from "react";
 
-interface VisibilityIconProps {
+export function VisibilityBadgePrivate({
+    className,
+    ...props
+}: ComponentProps<"div">) {
+    return (
+        <div
+            className={`flex gap-1 items-center px-2 py-0.5
+                ${className ?? ""}`}
+            {...props}
+        >
+            <Icon.Lock />
+            Private
+        </div>
+    );
+}
+
+export function VisibilityBadgePublic({
+    className,
+    ...props
+}: ComponentProps<"div">) {
+    return (
+        <div
+            className={`flex gap-1 items-center px-2 py-0.5
+                ${className ?? ""}`}
+            {...props}
+        >
+            <Icon.Earth />
+            Public
+        </div>
+    );
+}
+
+interface VisibilityBadgeProps extends ComponentProps<"div"> {
     visibility: Visibility;
 }
-export function VisibilityIcon({ visibility }: VisibilityIconProps) {
+export function VisibilityBadge({
+    visibility,
+    className,
+    ...props
+}: VisibilityBadgeProps) {
     switch (visibility) {
         case VisibilityPrivate:
-            return <Icon.EyeSlash title="Private" />;
+            return (
+                <VisibilityBadgePrivate
+                    className={`rounded-full border bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-200 ${className}`}
+                    {...props}
+                />
+            );
         case VisibilityPublic:
-            return <Icon.Eye title="Public" />;
+            return (
+                <VisibilityBadgePublic
+                    className={`rounded-full border bg-syre-blue-200 text-syre-blue-700 dark:bg-syre-blue-700 dark:text-white ${className}`}
+                    {...props}
+                />
+            );
     }
 }
 
@@ -27,11 +72,12 @@ export function VisibilityFormToggle({
 }: VisibilityFormToggleProps) {
     const iconClass =
         "text-secondary \
-        peer-checked:bg-primary-700 dark:peer-checked:bg-primary-500 \
+        bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-200 \
+        peer-checked:bg-primary-700 dark:peer-checked:bg-primary-600 \
         peer-checked:text-white dark:peer-checked:text-black \
         transition-colors duration-200 ease-in-out\
-        rounded-full block \
-        h-full aspect-square p-1 cursor-pointer";
+        rounded block \
+        h-full p-1 cursor-pointer";
 
     let parentClass = "flex";
     if (className) {
@@ -45,7 +91,7 @@ export function VisibilityFormToggle({
     return (
         <fieldset className={parentClass}>
             <label
-                className="rounded-l-full border-l border-t border-b pr-0.5 cursor-pointer"
+                className="rounded-l-full border-l border-t border-b cursor-pointer"
                 title="Public"
             >
                 <input
@@ -57,12 +103,12 @@ export function VisibilityFormToggle({
                     onChange={(_) => onChange(VisibilityPublic)}
                 />
                 <span className="sr-only">Public</span>
-                <span className={iconClass}>
-                    <Icon.Eye />
-                </span>
+                <VisibilityBadgePublic
+                    className={`rounded-l-full ${iconClass}`}
+                />
             </label>
             <label
-                className="rounded-r-full border-r border-t border-b pl-0.5 cursor-pointer"
+                className="rounded-r-full border-r border-t border-b cursor-pointer"
                 title="Private"
             >
                 <input
@@ -74,9 +120,9 @@ export function VisibilityFormToggle({
                     onChange={(_) => onChange(VisibilityPrivate)}
                 />
                 <span className="sr-only">Private</span>
-                <span className={iconClass}>
-                    <Icon.EyeSlash />
-                </span>
+                <VisibilityBadgePrivate
+                    className={`rounded-r-full ${iconClass}`}
+                />
             </label>
         </fieldset>
     );

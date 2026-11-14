@@ -55,6 +55,9 @@ func main() {
 	defer db.Close()
 
 	e := echo.New()
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e.Logger = logger
+
 	api_middleware := NewApiMiddleware(ctx, db)
 	api_client_middleware := NewApiClientMiddleware(ctx, db)
 
@@ -330,6 +333,7 @@ func register_routes(
 	api.POST("/data", data.DataIngest)
 	api.GET("/data", data.DataGet)
 	api.PUT("/data", data.DataUpdate)
+	api.PUT("/data/resources", data.DataResourcesUpdate)
 	api.GET("/data/recent", data.DataGetRecent)
 	api.GET("/data/values", data.DataValues)
 	api.GET("/data/values/preview", data.DataValuesPreview)

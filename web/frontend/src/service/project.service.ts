@@ -2,7 +2,7 @@ import { AppError } from "@/errors";
 import * as types from "@/types";
 import type { UUIDTypes } from "uuid";
 
-function getUserProjects(): Promise<types.Project[]> {
+function getUserProjects(): Promise<types.ProjectWithUserPermission[]> {
     return fetch("/api/projects", {
         credentials: "same-origin",
     }).then(async (res) => {
@@ -11,7 +11,7 @@ function getUserProjects(): Promise<types.Project[]> {
             throw new AppError(data);
         }
 
-        return (await res.json()) as types.Project[];
+        return (await res.json()) as types.ProjectWithUserPermission[];
     });
 }
 

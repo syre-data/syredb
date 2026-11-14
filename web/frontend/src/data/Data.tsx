@@ -6,13 +6,13 @@ import {
     timestampToString,
     uuidToString,
 } from "@/common";
-import { Loading, SuspenseError } from "@/components";
+import { Loading, StandardError, SuspenseError } from "@/components";
 import { value_to_string } from "@/components/Property";
+import { VisibilityBadge } from "@/components/Visibility";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
 import {
-    APP_ERR_INVALID_UUID,
     DataSchemaCardinalityMultiple,
     DataSchemaCardinalitySingle,
     DataSourceCardinalityMultiple,
@@ -26,7 +26,6 @@ import {
     ValueTypeTimestamp,
     ValueTypeUint,
     VisibilityPublic,
-    type AppError,
     type DataCreator,
     type DataCreatorTransformInfo,
     type DataCreatorUserInfo,
@@ -39,10 +38,10 @@ import {
     type Property,
     type SchemaFieldValues,
     type User,
+    type Visibility,
 } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
-import { StatusCodes } from "http-status-codes";
 import {
     Suspense,
     useState,
@@ -50,6 +49,7 @@ import {
     type MouseEvent,
     type SetStateAction,
     type SubmitEvent,
+    type ComponentProps,
 } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
@@ -71,28 +71,12 @@ export default function () {
 }
 
 function LoadError({ error, resetErrorBoundary }: FallbackProps) {
-    const err = error as Error;
-    console.log(err);
-
-    let message = err.message;
-    switch (err.code) {
-        case APP_ERR_INVALID_UUID:
-            message = "Invalid data id";
-            break;
-    }
-
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="h-screen w-screen flex flex-col items-center justify-center"
-        >
-            <div className="py-2 text-center">
-                <div className="text-lg">Could not load data</div>
-                <div className="text-syre-red-700 dark:text-syre-red-400">
-                    {message}
-                </div>
-            </div>
-        </SuspenseError>
+            error={error as Error}
+            title={"Could not load data"}
+        />
     );
 }
 
@@ -105,7 +89,6 @@ function Data({ data_id }: DataProps) {
         queryFn: async () => await dataService.dataGet(data_id),
     });
     const [showAddProject, setShowAddProject] = useState(false);
-    const navigate = useNavigate();
 
     function showAddProjectFn(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {
@@ -113,14 +96,6 @@ function Data({ data_id }: DataProps) {
         }
 
         setShowAddProject(true);
-    }
-
-    function close(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button !== MouseButton.Primary) {
-            return;
-        }
-
-        navigate(-1);
     }
 
     const data = resources.Data as DataRx;
@@ -135,59 +110,19 @@ function Data({ data_id }: DataProps) {
         (resource) => resource.Project.Id,
     );
 
-    let creatorContent;
-    if (Object.hasOwn(creator, "User") && Object.hasOwn(creator, "Origin")) {
-        creatorContent = <CreatorUser creator={creator} />;
-    } else if (
-        Object.hasOwn(creator, "Id") &&
-        Object.hasOwn(creator, "Label") &&
-        Object.hasOwn(creator, "Description")
-    ) {
-        creatorContent = <CreatorTransform creator={creator} />;
-    } else {
-        console.debug(creator);
-        throw new Error("invalid data creator");
-    }
-
     return (
         <div>
-            <div className="px-4 pt-2 flex justify-between">
-                <div className="group flex gap-2">
-                    <h1 className="title flex gap-2">
-                        <div className="flex gap-2 items-center">
-                            <Icon.DataType /> {data_type.Label}
-                        </div>
-                        |
-                        <div>{timestampToString(new Date(data.Timestamp))}</div>
-                    </h1>
-                    <div className="invisible group-hover:visible">
-                        <a
-                            href={`/data/${data_id}/edit`}
-                            title="Edit data"
-                            className="align-middle"
-                        >
-                            <button type="button" className="btn-cmd">
-                                <Icon.Pen />
-                            </button>
-                        </a>
-                    </div>
-                </div>
-                <div>
-                    <div>
-                        <button
-                            type="button"
-                            className="btn-cmd"
-                            onMouseDown={close}
-                        >
-                            <Icon.Close />
-                        </button>
-                    </div>
-                </div>
-            </div>
-            <div className="px-4 pt-2">
-                <div>{data.Visibility}</div>
-                <div>{creatorContent}</div>
-            </div>
+            <Header
+                data_id={data_id}
+                dtype_label={data_type.Label}
+                timestamp={timestampToString(data.Timestamp)}
+                visibility={data.Visibility}
+            />
+            <InfoCards
+                creator={creator}
+                timestamp={data.Timestamp}
+                className="px-4 py-2"
+            />
             <Properties properties={properties} />
             <Notes notes={notes} />
             <div className="pt-2">
@@ -228,25 +163,164 @@ function Data({ data_id }: DataProps) {
     );
 }
 
-interface CreatorUserProps {
-    creator: DataCreatorUserInfo;
+interface DataHeaderProps {
+    data_id: UUIDTypes;
+    dtype_label: string;
+    timestamp: string;
+    visibility: Visibility;
 }
-function CreatorUser({ creator }: CreatorUserProps) {
+function Header({
+    data_id,
+    dtype_label,
+    timestamp,
+    visibility,
+}: DataHeaderProps) {
+    const navigate = useNavigate();
+
+    function close(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== MouseButton.Primary) {
+            return;
+        }
+
+        navigate(-1);
+    }
+
     return (
-        <div>
-            Created by <span>{creator.User.Name || creator.User.Email}</span>{" "}
-            from <span>{creator.Origin.Label}</span>
+        <div className="px-4 pt-2 flex justify-between">
+            <div className="group flex gap-2">
+                <h1 className="text-xl font-bold flex gap-2 items-center">
+                    <Icon.Data />
+                    <span>{dtype_label}</span>
+                    <span>created at</span>
+                    <span>{timestamp}</span>
+                    <span className="text-sm">
+                        <VisibilityBadge visibility={visibility} />
+                    </span>
+                </h1>
+                <div className="invisible group-hover:visible">
+                    <a
+                        href={`/data/${data_id}/edit`}
+                        title="Edit data"
+                        className="align-middle"
+                    >
+                        <button type="button" className="btn-cmd">
+                            <Icon.Pen />
+                        </button>
+                    </a>
+                </div>
+            </div>
+            <div>
+                <div>
+                    <button
+                        type="button"
+                        className="btn-cmd"
+                        onMouseDown={close}
+                    >
+                        <Icon.Close />
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
 
-interface CreatorTransformProps {
+interface InfoCardsProps extends ComponentProps<"div"> {
+    creator: DataCreator;
+    timestamp: Date;
+}
+function InfoCards({
+    creator,
+    timestamp,
+    className,
+    ...props
+}: InfoCardsProps) {
+    return (
+        <div
+            className={`flex gap-2 divide-x divide-gray-400 ${className ?? ""}`}
+            {...props}
+        >
+            <CreatorCard creator={creator} />
+            <TimestampCard timestamp={timestamp} />
+        </div>
+    );
+}
+
+interface CreatorCardProps extends ComponentProps<"div"> {
+    creator: DataCreator;
+}
+function CreatorCard({ creator, ...props }: CreatorCardProps) {
+    if (Object.hasOwn(creator, "User") && Object.hasOwn(creator, "Origin")) {
+        return <CreatorUser creator={creator} {...props} />;
+    } else if (
+        Object.hasOwn(creator, "Id") &&
+        Object.hasOwn(creator, "Label") &&
+        Object.hasOwn(creator, "Description")
+    ) {
+        return <CreatorTransform creator={creator} {...props} />;
+    } else {
+        console.debug(creator);
+        throw new Error("invalid data creator");
+    }
+}
+
+interface CreatorUserProps extends ComponentProps<"div"> {
+    creator: DataCreatorUserInfo;
+}
+function CreatorUser({ creator, ...props }: CreatorUserProps) {
+    return (
+        <div {...props}>
+            <div className="h-full inline-flex gap-2 px-4 py-2">
+                <div>
+                    <Icon.User />
+                </div>
+                <div>
+                    <div className="text-xs font-bold">Created by</div>
+                    <div>{creator.User.Name || creator.User.Email}</div>
+                    <div className="text-sm">
+                        <Icon.LocationPin className="inline" />{" "}
+                        <span>{creator.Origin.Label}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+interface CreatorTransformProps extends ComponentProps<"div"> {
     creator: DataCreatorTransformInfo;
 }
-function CreatorTransform({ creator }: CreatorTransformProps) {
+function CreatorTransform({ creator, ...props }: CreatorTransformProps) {
     return (
-        <div>
+        <div {...props}>
             Created by script <span>{creator.Label}</span>
+        </div>
+    );
+}
+
+interface TimestampCardProps extends ComponentProps<"div"> {
+    timestamp: Date;
+}
+function TimestampCard({ timestamp, ...props }: TimestampCardProps) {
+    const date = timestamp.toLocaleDateString(navigator.languages, {
+        month: "short",
+        day: "2-digit",
+        year: "numeric",
+    });
+    const time = timestamp.toLocaleTimeString(navigator.languages, {
+        hour12: false,
+    });
+    return (
+        <div {...props}>
+            <div className={"h-full inline-flex gap-2 px-4 py-2"}>
+                <div>
+                    <Icon.Calendar />
+                </div>
+                <div>
+                    <div className="text-xs font-bold">Created on</div>
+                    <div>{date}</div>
+                    <div className="text-sm">{time}</div>
+                </div>
+            </div>
         </div>
     );
 }
@@ -380,10 +454,8 @@ function AddProject({
         const project = data.get("add-project")!.toString();
         await projectService
             .dataMembershipCreate(project, data_id)
-            .then((res) => {
-                if (res.status === StatusCodes.OK) {
-                    setShowAddProject(false);
-                }
+            .then((_) => {
+                setShowAddProject(false);
             });
     }
 
@@ -410,15 +482,17 @@ function AddProject({
                         </option>
                         {projects
                             .filter(
-                                (project) =>
-                                    !currentProjects.includes(project.Id),
+                                (resource) =>
+                                    !currentProjects.includes(
+                                        resource.Project.Id,
+                                    ),
                             )
-                            .map((project) => (
+                            .map((resource) => (
                                 <option
-                                    key={project.Id.toString()}
-                                    value={project.Id.toString()}
+                                    key={resource.Project.Id.toString()}
+                                    value={resource.Project.Id.toString()}
                                 >
-                                    {project.Label}
+                                    {resource.Project.Label}
                                 </option>
                             ))}
                     </select>
@@ -783,7 +857,7 @@ function DataValuesExternalSourceMultiple({
                 </div>
             </div>
             <ol className="list-decimal list-inside">
-                {source.Source.sort((src) => src.Index).map((src, idx) => {
+                {source.Source.sort((src) => src.Index).map((src) => {
                     const params = new URLSearchParams();
                     params.append("data", uuidToString(data_id));
                     params.append("source", src.Label);

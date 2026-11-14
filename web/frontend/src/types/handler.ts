@@ -73,6 +73,27 @@ export interface DataResources {
   ProjectResources: any /* service.DataProjectResources */[];
   Users: any /* service.User */[];
 }
+export interface DataUpdate {
+  Id: uuid.UUIDTypes;
+  Visibility: any /* service.Visibility */;
+}
+export interface DataUpdateProperties {
+  Remove: string[];
+  Create: any /* service.Property */[];
+  ValuesUpdate: any /* service.PropertyValueUpdate */[];
+}
+export interface DataResourcesUpdate {
+  Id: uuid.UUIDTypes;
+  Visibility?: any /* service.Visibility */;
+  Properties?: DataUpdateProperties;
+  Notes: any /* service.DataNoteCreate */[];
+}
+export interface DataPropertiesUpdate {
+  Id: uuid.UUIDTypes;
+  Remove: string[];
+  Create: any /* service.Property */[];
+  ValuesUpdate: any /* service.PropertyValueUpdate */[];
+}
 export interface DataNotesCreate {
   Id: uuid.UUIDTypes;
   Notes: any /* service.DataNoteCreate */[];
@@ -82,6 +103,8 @@ export interface RecentDataResources {
   Origins: any /* service.DataOriginRx */[];
   DataTypes: any /* service.DataType */[];
   Users: any /* service.User */[];
+  Projects: any /* service.Project */[];
+  ProjectMemberships: any /* service.ProjectDataMembershipRx */[];
 }
 
 //////////

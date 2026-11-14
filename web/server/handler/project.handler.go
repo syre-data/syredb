@@ -40,7 +40,7 @@ func (h *ProjectHandler) GetUserProjects(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, AppError{
 			RequestId: requestId(c),
 			Code:      APP_ERR_DB_QUERY,
-			Message:   "Could not retrieve user projects",
+			Message:   "Could not get user projects",
 			Payload:   nil,
 		})
 	}
@@ -126,7 +126,7 @@ func (h *ProjectHandler) CreateProject(c *echo.Context) error {
 		).Error("could not bind payload")
 	}
 
-	id, err := h.project_service.CreateProject(user_id, project)
+	project_id, err := h.project_service.CreateProject(user_id, project)
 	if err != nil {
 		c.Logger().With(
 			"error", err,
@@ -142,7 +142,7 @@ func (h *ProjectHandler) CreateProject(c *echo.Context) error {
 		})
 	}
 
-	res := ResourceCreated{Id: id}
+	res := ResourceCreated{Id: project_id}
 	loc := url.URL{Path: "/api/project"}
 	loc.RawQuery = res.ToUrlQuery().Encode()
 	c.Response().Header().Set(echo.HeaderLocation, loc.String())

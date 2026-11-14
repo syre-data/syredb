@@ -37,7 +37,6 @@ import {
     ValueTypeTimestamp,
     ValueTypeUint,
     VisibilityPrivate,
-    type AppError,
     type DataNoteCreate,
     type DataSchema,
     type DataSchemaField,
@@ -66,12 +65,7 @@ import {
     type SubmitEvent,
 } from "react";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
-import {
-    redirect,
-    useNavigate,
-    useParams,
-    type NavigateFunction,
-} from "react-router";
+import { redirect, useNavigate, useParams } from "react-router";
 import { type UUIDTypes } from "uuid";
 
 export default function () {
@@ -409,11 +403,8 @@ type SubmissionMeta = {
     dataSchemas: Map<string, DataSchema>;
 };
 
-function useFormProjectData(
-    navigate: NavigateFunction,
-    project: UUIDTypes,
-    data_types: DataType[],
-) {
+function useFormProjectData(project: UUIDTypes, data_types: DataType[]) {
+    const navigate = useNavigate();
     const defaultMeta: SubmissionMeta = {
         dataSchemas: new Map(),
     };
@@ -444,10 +435,8 @@ function useFormProjectData(
             const files = Array.from(fileMap.entries());
             await dataService
                 .projectDataCreate(project, ingest, labels, files)
-                .then((resp) => {
-                    if (resp.ok) {
-                        navigate(-1);
-                    }
+                .then((_) => {
+                    navigate(-1);
                 });
         },
     });
@@ -460,11 +449,10 @@ interface ProjectDataProps {
     projectLabels: string[];
 }
 function ProjectData({ project, dataTypes, projectLabels }: ProjectDataProps) {
-    const navigate = useNavigate();
     const [dataTypeSchemas, setDataTypeSchemas] = useState<
         Map<string, DataSchemaResources>
     >(new Map());
-    const form = useFormProjectData(navigate, project, dataTypes);
+    const form = useFormProjectData(project, dataTypes);
 
     function create_new_datum(e: MouseEvent<HTMLButtonElement>) {
         if (e.button !== MouseButton.Primary) {

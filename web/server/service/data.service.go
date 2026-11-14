@@ -4008,14 +4008,14 @@ func (s *DataService) dataCreateNotes(
 	return nil
 }
 
-type DataUpdate struct {
-	Id         uuid.UUID
+type DataRxUpdate struct {
 	Visibility Visibility
 }
 
-func (s *DataService) DataUpdate(update DataUpdate) error {
+// Update base fields of a data.
+func (s *DataService) dataUpdate(db dbtx, data uuid.UUID, update DataRxUpdate) error {
 	query := "UPDATE data_ SET visibility=$2 WHERE _id=$1"
-	_, err := s.db.Conn.Exec(s.ctx, query, update.Id, update.Visibility)
+	_, err := db.Exec(s.ctx, query, data, update.Visibility)
 	if err != nil {
 		s.logger.With(
 			"error", err,
@@ -4025,6 +4025,61 @@ func (s *DataService) DataUpdate(update DataUpdate) error {
 	}
 
 	return nil
+}
+
+// Update base fields of a data.
+func (s *DataService) DataUpdate(data uuid.UUID, update DataRxUpdate) error {
+	return s.dataUpdate(s.db.Conn, data, update)
+}
+
+type DataResourcesUpdateResult struct {
+	NotesCreated []uuid.UUID
+}
+
+// All or none update of data resources.
+func (s *DataService) DataResourcesUpdate(
+	data uuid.UUID,
+	user uuid.UUID,
+	visibility Visibility,
+	propertiesRemove []string,
+	propertiesCreate []Property,
+	propertiesValuesUpdate []PropertyValueUpdate,
+	notesCreate []DataNoteCreate,
+) (DataResourcesUpdateResult, error) {
+	tx, err := s.db.Conn.Begin(s.ctx)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not begin db transaction")
+		return DataResourcesUpdateResult{}, err
+	}
+	defer tx.Rollback(s.ctx)
+
+	err = s.dataUpdate(tx, data, DataRxUpdate{Visibility: visibility})
+	if err != nil {
+		return DataResourcesUpdateResult{}, err
+	}
+
+	err = s.dataPropertiesUpdate(tx, data, propertiesRemove, propertiesCreate, propertiesValuesUpdate)
+	if err != nil {
+		return DataResourcesUpdateResult{}, err
+	}
+
+	note_ids, err := s.dataNotesCreate(tx, data, user, notesCreate)
+	if err != nil {
+		return DataResourcesUpdateResult{}, err
+	}
+
+	err = tx.Commit(s.ctx)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not commit data update")
+		return DataResourcesUpdateResult{}, err
+	}
+
+	return DataResourcesUpdateResult{NotesCreated: note_ids}, nil
+
 }
 
 func (s *DataService) DataPropertiesRemove(id uuid.UUID, keys []string) error {
@@ -4153,11 +4208,40 @@ func (s *DataService) DataPropertyValuesUpdate(id uuid.UUID, updates []PropertyV
 	return nil
 }
 
-type DataPropertiesUpdate struct {
-	Id           uuid.UUID
-	Remove       []string
-	Create       []Property
-	ValuesUpdate []PropertyValueUpdate
+// Updates data properties.
+// All or nothing.
+//
+// Order of operations:
+// 1. Remove
+// 2. Create
+// 3. UpdateValues
+func (s *DataService) dataPropertiesUpdate(
+	tx pgx.Tx,
+	data uuid.UUID,
+	remove []string,
+	create []Property,
+	valuesUpdate []PropertyValueUpdate,
+) error {
+	if len(remove)+len(create)+len(valuesUpdate) == 0 {
+		return nil
+	}
+
+	err := s.dataPropertiesUpdateRemove(tx, data, remove)
+	if err != nil {
+		return err
+	}
+
+	err = s.dataPropertiesUpdateCreate(tx, data, create)
+	if err != nil {
+		return err
+	}
+
+	err = s.dataPropertiesUpdateValues(tx, data, valuesUpdate)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Updates data properties.
@@ -4167,8 +4251,13 @@ type DataPropertiesUpdate struct {
 // 1. Remove
 // 2. Create
 // 3. UpdateValues
-func (s *DataService) DataPropertiesUpdate(update DataPropertiesUpdate) error {
-	if len(update.Remove)+len(update.Create)+len(update.ValuesUpdate) == 0 {
+func (s *DataService) DataPropertiesUpdate(
+	data uuid.UUID,
+	remove []string,
+	create []Property,
+	valuesUpdate []PropertyValueUpdate,
+) error {
+	if len(remove)+len(create)+len(valuesUpdate) == 0 {
 		return nil
 	}
 
@@ -4181,17 +4270,7 @@ func (s *DataService) DataPropertiesUpdate(update DataPropertiesUpdate) error {
 	}
 	defer tx.Rollback(s.ctx)
 
-	err = s.dataPropertiesUpdateRemove(tx, update.Id, update.Remove)
-	if err != nil {
-		return err
-	}
-
-	err = s.dataPropertiesUpdateCreate(tx, update.Id, update.Create)
-	if err != nil {
-		return err
-	}
-
-	err = s.dataPropertiesUpdateValues(tx, update.Id, update.ValuesUpdate)
+	err = s.dataPropertiesUpdate(tx, data, remove, create, valuesUpdate)
 	if err != nil {
 		return err
 	}
@@ -4200,7 +4279,6 @@ func (s *DataService) DataPropertiesUpdate(update DataPropertiesUpdate) error {
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"update", update,
 		).Error("could not commit data properties update")
 		return err
 	}
@@ -4317,7 +4395,7 @@ type DataNoteCreate struct {
 }
 
 // All or nothing
-func (s *DataService) DataNotesCreate(data uuid.UUID, creator uuid.UUID, notes []DataNoteCreate) ([]uuid.UUID, error) {
+func (s *DataService) dataNotesCreate(db dbtx, data uuid.UUID, creator uuid.UUID, notes []DataNoteCreate) ([]uuid.UUID, error) {
 	if len(notes) == 0 {
 		return []uuid.UUID{}, nil
 	}
@@ -4352,7 +4430,7 @@ func (s *DataService) DataNotesCreate(data uuid.UUID, creator uuid.UUID, notes [
 	}
 	query.WriteString(" RETURNING _id")
 
-	rows, _ := s.db.Conn.Query(s.ctx, query.String(), args...)
+	rows, _ := db.Query(s.ctx, query.String(), args...)
 	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
 	if err != nil {
 		s.logger.With(
@@ -4363,6 +4441,11 @@ func (s *DataService) DataNotesCreate(data uuid.UUID, creator uuid.UUID, notes [
 	}
 
 	return ids, nil
+}
+
+// All or nothing
+func (s *DataService) DataNotesCreate(data uuid.UUID, creator uuid.UUID, notes []DataNoteCreate) ([]uuid.UUID, error) {
+	return s.dataNotesCreate(s.db.Conn, data, creator, notes)
 }
 
 type OrphanedDataRx struct {
@@ -4414,7 +4497,7 @@ type DataProjectResources struct {
 }
 
 func (s *DataService) DataProjectsResources(data uuid.UUID) ([]DataProjectResources, error) {
-	memberships, err := s.dataProjectMemberships(data)
+	memberships, err := s.DataProjectMemberships(data)
 	if err != nil {
 		return nil, err
 	}
@@ -4581,18 +4664,37 @@ func (s *DataService) DataCreator(data uuid.UUID) (DataCreator, error) {
 	}
 }
 
-type membershipRx struct {
+type DataProjectMembership struct {
 	Project uuid.UUID `db:"_project"`
 	Creator uuid.UUID `db:"_creator"`
 	Label   *string   `db:"label"`
 }
 
-func (s *DataService) dataProjectMemberships(data uuid.UUID) ([]membershipRx, error) {
+// Get the project memberships for a single data.
+func (s *DataService) DataProjectMemberships(data uuid.UUID) ([]DataProjectMembership, error) {
 	query :=
 		`SELECT _project, _creator, label FROM project_data_membership_
 		WHERE _data=$1`
 	rows, _ := s.db.Conn.Query(s.ctx, query, data)
-	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[membershipRx])
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataProjectMembership])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", data,
+		).Error("could not get project data memberships")
+		return nil, err
+	}
+
+	return rxs, nil
+}
+
+// Get the project memberships for multiple data.
+func (s *DataService) DataProjectMembershipsMany(data []uuid.UUID) ([]ProjectDataMembershipRx, error) {
+	query :=
+		`SELECT _project, _data, _creator, label FROM project_data_membership_
+		WHERE _data=ANY($1)`
+	rows, _ := s.db.Conn.Query(s.ctx, query, data)
+	rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[ProjectDataMembershipRx])
 	if err != nil {
 		s.logger.With(
 			"error", err,
