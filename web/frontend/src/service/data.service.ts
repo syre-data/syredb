@@ -9,7 +9,7 @@ function dataTypesGetAll(): Promise<types.DataType[]> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.DataType[];
@@ -37,7 +37,7 @@ function dataTypeCreateInternal(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         const body = (await res.json()) as types.ResourceCreated;
@@ -66,7 +66,7 @@ function dataTypeCreateExternal(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         const body = (await res.json()) as types.ResourceCreated;
@@ -84,7 +84,7 @@ function dataTypeGet(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return await res.json();
@@ -100,7 +100,7 @@ function dataTypeUpdate(update: types.DataTypeUpdate): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -113,7 +113,7 @@ function dataSchemasGetAll(): Promise<types.DataSchema[]> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.DataSchema[];
@@ -132,7 +132,7 @@ function downloadProjectDataAll(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -147,7 +147,7 @@ function downloadDataSingle(data: uuid.UUIDTypes): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -174,7 +174,7 @@ function downloadDataSource(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -195,7 +195,7 @@ function downloadDataSourceIndex(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -211,7 +211,7 @@ function dataSchemaCreate(schema: types.DataSchemaCreate): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -227,7 +227,7 @@ function dataSchemaUpdate(update: types.DataSchemaUpdate): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -357,7 +357,7 @@ function dataSchemaResourcesGet(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.DataSchemaResources;
@@ -370,7 +370,7 @@ function dataTypeTransformsGetAll(): Promise<types.DataTypeTransform[]> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.DataTypeTransform[];
@@ -385,7 +385,7 @@ function dataTypeTransformCreate(data: FormData): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -433,7 +433,7 @@ function projectDataCreate(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -446,7 +446,7 @@ function orphanedData(): Promise<types.OrphanedDataResources> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         const data = (await res.json()) as types.OrphanedDataResources;
@@ -466,7 +466,7 @@ function dataGet(data_id: uuid.UUIDTypes): Promise<types.DataResources> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         const data = (await res.json()) as types.DataResources;
@@ -484,7 +484,7 @@ function dataUpdate(update: types.DataUpdate): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -502,7 +502,7 @@ function dataResourcesUpdate(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.DataResourcesUpdateResult;
@@ -515,7 +515,7 @@ function dataOrigins(): Promise<types.DataOriginRx[]> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.DataOriginRx[];
@@ -532,7 +532,7 @@ function dataOriginById(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.DataOriginRx;
@@ -548,7 +548,7 @@ function dataOriginCreate(origin: types.DataOriginCreate): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -564,7 +564,7 @@ function dataOriginUpdate(update: types.DataOriginRx): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -579,7 +579,7 @@ function dataValues(data: uuid.UUIDTypes): Promise<any> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return await res.json();
@@ -594,7 +594,7 @@ function dataPreview(data: uuid.UUIDTypes): Promise<types.DataValuesPreview> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.DataValuesPreview;
@@ -610,7 +610,7 @@ function propertiesUpdate(update: types.DataPropertiesUpdate): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -629,7 +629,7 @@ function notesCreate(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -648,7 +648,7 @@ function search(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as uuid.UUIDTypes[];
@@ -666,7 +666,7 @@ function recentData(limit?: number): Promise<types.RecentDataResources> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         const data = (await res.json()) as types.RecentDataResources;

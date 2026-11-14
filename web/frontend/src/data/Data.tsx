@@ -20,7 +20,6 @@ import {
     DataSourceCardinalitySingle,
     DataStorageExternal,
     DataStorageInternal,
-    PropertyTypeString,
     ValueTypeBoolean,
     ValueTypeFloat,
     ValueTypeInt,
@@ -42,6 +41,7 @@ import {
     type Note,
     type Property,
     type SchemaFieldValues,
+    type SourceFileInfo,
     type User,
     type Visibility,
 } from "@/types";
@@ -1061,40 +1061,42 @@ function DataValuesExternalSourceMultiple({
                 </div>
             </div>
             <ol className="grid grid-cols-subgrid col-span-full list-decimal list-inside">
-                {source.Source.sort((src) => src.Index).map((src) => {
-                    const params = new URLSearchParams();
-                    params.append("data", uuidToString(dataId));
-                    params.append("source", src.Label);
-                    params.append("index", src.Index);
-                    const download = `/resource/data/source?${params}`;
+                {source.Source.sort((src: SourceFileInfo) => src.Index).map(
+                    (src: SourceFileInfo) => {
+                        const params = new URLSearchParams();
+                        params.append("data", uuidToString(dataId));
+                        params.append("source", src.Label);
+                        params.append("index", src.Index.toString());
+                        const download = `/resource/data/source?${params}`;
 
-                    return (
-                        <li key={src.Index.toString()} className="contents">
-                            <div
-                                className="group/item grid grid-cols-subgrid col-span-full gap-1 \
+                        return (
+                            <li key={src.Index.toString()} className="contents">
+                                <div
+                                    className="group/item grid grid-cols-subgrid col-span-full gap-1 \
                                     rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
-                            >
-                                <div className="col-2 text-nowrap select-all">
-                                    {src.Label}
-                                </div>
-                                <div className="px-4 col-3 invisible group-hover/item:visible">
-                                    <a
-                                        href={download}
-                                        title={`Download ${source.Label}/${src.Label}`}
-                                        className="align-middle"
-                                    >
-                                        <button
-                                            type="button"
-                                            className="btn-cmd"
+                                >
+                                    <div className="col-2 text-nowrap select-all">
+                                        {src.Label}
+                                    </div>
+                                    <div className="px-4 col-3 invisible group-hover/item:visible">
+                                        <a
+                                            href={download}
+                                            title={`Download ${source.Label}/${src.Label}`}
+                                            className="align-middle"
                                         >
-                                            <Icon.Download />
-                                        </button>
-                                    </a>
+                                            <button
+                                                type="button"
+                                                className="btn-cmd"
+                                            >
+                                                <Icon.Download />
+                                            </button>
+                                        </a>
+                                    </div>
                                 </div>
-                            </div>
-                        </li>
-                    );
-                })}
+                            </li>
+                        );
+                    },
+                )}
             </ol>
         </div>
     );

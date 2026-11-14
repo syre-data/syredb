@@ -12,11 +12,9 @@ import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { StandardError } from "@/components";
 import { Loading } from "@/components";
-import {
-    APP_ERR_EMAIL_NOT_SENT,
-    DbPermissionOwner,
-    type AppError,
-} from "@/types";
+import { APP_ERR_EMAIL_NOT_SENT, DbPermissionOwner } from "@/types";
+import { toast } from "sonner";
+import type { AppError } from "@/errors";
 
 export default function () {
     return (
@@ -82,18 +80,15 @@ function UserCreate() {
         const data = new FormData(e.target as HTMLFormElement);
         const email = data.get("email")!.toString();
         const name = data.get("name")!.toString();
-        const permissions = data
-            .getAll("permission")
-            .map((permission) =>
-                common.db_permission_id_string_to_variant(
-                    permission.toString(),
-                ),
+        const permissions = data.getAll("permission").map((permission) => {
+            const perm = common.db_permission_id_string_to_variant(
+                permission.toString(),
             );
-
-        if (permissions.includes(undefined)) {
-            console.debug("invalid permissions", permissions);
-            throw new Error(`invalid permissions: ${permissions}`);
-        }
+            if (!perm) {
+                throw new Error(`invalid permission: ${permission}`);
+            }
+            return perm;
+        });
 
         if (!isEmail(email)) {
             emailInput.setCustomValidity("Invalid email");
@@ -109,29 +104,33 @@ function UserCreate() {
         };
 
         setPending(true);
-        await user_service.userCreate(user).then(async (resp: Response) => {
-            setPending(false);
-            if (resp.ok) {
+        await user_service
+            .userCreate(user)
+            .then(async (_) => {
+                toast.success("User created");
                 return navigate(-1);
-            }
-            if (resp.status == StatusCodes.CONFLICT) {
-                setError("User already exists.");
-                emailInput.setCustomValidity("Email already exists");
-                emailInput.reportValidity();
+            })
+            .catch(async (err: AppError) => {
+                if (err.status == StatusCodes.CONFLICT) {
+                    setError("User already exists.");
+                    emailInput.setCustomValidity("Email already exists");
+                    emailInput.reportValidity();
+                    btn_submit.disabled = false;
+                    emailInput.setCustomValidity("");
+                    return;
+                }
+
+                if (err.cause === APP_ERR_EMAIL_NOT_SENT) {
+                    setPassword(err.payload);
+                    return;
+                }
+
+                setError(err.message);
                 btn_submit.disabled = false;
-                emailInput.setCustomValidity("");
-                return;
-            }
-
-            const err = (await resp.json()) as Error;
-            if (err.code === APP_ERR_EMAIL_NOT_SENT) {
-                setPassword(err.payload);
-                return;
-            }
-
-            setError(err.message);
-            btn_submit.disabled = false;
-        });
+            })
+            .finally(() => {
+                setPending(false);
+            });
     }
 
     const owner_permission = db_permissions.find(
@@ -263,7 +262,7 @@ function UserCreate() {
                                             Creating user
                                         </>
                                     ) : (
-                                        <>Add user</>
+                                        <>Create user</>
                                     )}
                                 </button>
                             </div>
@@ -272,7 +271,7 @@ function UserCreate() {
                                     type="button"
                                     id="submit"
                                     onMouseDown={cancel}
-                                    className="btn-submit"
+                                    className="btn-cancel"
                                 >
                                     Cancel
                                 </button>

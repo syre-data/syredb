@@ -9,7 +9,7 @@ function get_user_by_jwt_token(): Promise<types.User> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.User;
@@ -22,7 +22,7 @@ function get_users(): Promise<types.User[]> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.User[];
@@ -38,7 +38,7 @@ function update_user(user: types.User): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -53,7 +53,7 @@ function deactivate_user(user: UUIDTypes): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -69,10 +69,10 @@ function userCreate(user: types.UserCreate): Promise<UUIDTypes> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
-        const body = (await res.json) as types.ResourceCreated;
+        const body = (await res.json()) as types.ResourceCreated;
         return body.id;
     });
 }
@@ -84,7 +84,7 @@ function user(user: UUIDTypes): Promise<types.User> {
     return fetch(`/api/user?${params}`).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.User;
@@ -100,7 +100,7 @@ function userUpdate(user: types.User): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -116,7 +116,7 @@ function passwordReset(user: UUIDTypes): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;
@@ -132,7 +132,7 @@ function passwordUpdate(current: string, update: string): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;

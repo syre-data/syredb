@@ -7,7 +7,7 @@ function logout(): Promise<null> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;

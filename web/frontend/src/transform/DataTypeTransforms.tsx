@@ -6,11 +6,14 @@ import {
     QUERY_KEY_DATA_TYPES,
 } from "@/common";
 import { Loading, StandardError } from "@/components";
+import {
+    MainNav,
+    PageDataTransforms as PageDataTypeTransforms,
+} from "@/components/Nav";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import {
     DbPermissionTransformCreate,
-    type AppError,
     type DataType,
     type DataTypeTransform,
 } from "@/types";
@@ -21,11 +24,19 @@ import { Link, useNavigate } from "react-router";
 
 export default function () {
     return (
-        <ErrorBoundary FallbackComponent={DataTypeTransformsError}>
-            <Suspense fallback={<Loading />}>
-                <DataTypeTransforms />
-            </Suspense>
-        </ErrorBoundary>
+        <div className="flex">
+            <MainNav
+                current={PageDataTypeTransforms}
+                className="sticky top-0 h-screen py-2"
+            />
+            <main className="grow">
+                <ErrorBoundary FallbackComponent={DataTypeTransformsError}>
+                    <Suspense fallback={<Loading />}>
+                        <DataTypeTransforms />
+                    </Suspense>
+                </ErrorBoundary>
+            </main>
+        </div>
     );
 }
 
@@ -45,17 +56,8 @@ function DataTypeTransforms() {
         queryFn: dataService.dataTypeTransformsGetAll,
     });
 
-    const navigate = useNavigate();
     const ctx = useContext(Context);
     const user = ctx.user;
-
-    function close(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button !== MouseButton.Primary) {
-            return;
-        }
-
-        navigate(-1);
-    }
 
     const canCreateTransform = hasDbPermission(
         DbPermissionTransformCreate,
@@ -75,15 +77,6 @@ function DataTypeTransforms() {
                             </Link>
                         ) : null}
                     </div>
-                </div>
-                <div>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        onMouseDown={close}
-                    >
-                        <Icon.Close />
-                    </button>
                 </div>
             </div>
             {transforms.length === 0 ? (

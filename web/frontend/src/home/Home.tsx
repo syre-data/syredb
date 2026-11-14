@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router";
 import Dashboard from "./Dashboard";
-import Settings from "./Settings";
 import Users from "../user/Users";
 import UserCreate from "../user/UserCreate";
 import ProjectCreate from "../project/ProjectCreate";
@@ -19,7 +18,7 @@ import DataTypeCreate from "../data_type/DataTypeCreate";
 import DataType from "../data_type/DataType";
 import DataTypeTransforms from "../transform/DataTypeTransforms";
 import DataTypeTransformCreate from "../transform/DataTypeTransformCreate";
-import Profile from "./Profile";
+import Profile from "../user/Profile";
 import DataTypeEdit from "../data_type/DataTypeEdit";
 import Data from "../data/Data";
 import DataEdit from "../data/DataEdit";
@@ -34,7 +33,6 @@ export default function Home() {
             <Routes>
                 <Route index element={<Dashboard />} />
                 <Route path="/logout" element={<Logout />} />
-                <Route path="/settings" element={<Settings />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/users" element={<Users />} />
                 <Route path="/user/create" element={<UserCreate />} />

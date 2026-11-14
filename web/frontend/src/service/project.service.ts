@@ -8,7 +8,7 @@ function getUserProjects(): Promise<types.ProjectWithUserPermission[]> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.ProjectWithUserPermission[];
@@ -24,7 +24,7 @@ function createProject(project: types.ProjectCreate): Promise<UUIDTypes> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as UUIDTypes;
@@ -41,7 +41,7 @@ function getProjectResources(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.ProjectResources;
@@ -58,7 +58,7 @@ function getProjectWithUserPermission(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.ProjectWithUserPermission;
@@ -78,7 +78,7 @@ function dataMembershipCreate(
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return null;

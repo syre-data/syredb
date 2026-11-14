@@ -1,5 +1,5 @@
 import * as types from "@/types";
-import { Suspense } from "react";
+import { Suspense, type ComponentProps } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import type {
     FallbackProps as ErrorBoundaryProps,
@@ -14,33 +14,20 @@ import data_service from "@/service/data.service";
 import { Loading, StandardError } from "@/components";
 import { toast } from "sonner";
 import { AppError } from "@/errors";
+import { MainNav, PageDashboard } from "@/components/Nav";
 
 export default function () {
     return (
-        <div className="h-screen bg-gray-100 dark:bg-gray-900">
-            <div className="px-4 pt-2 flex gap-2 text-xl">
-                <h2 className="text-lg font-bold grow">Dashboard</h2>
-                <Nav />
-            </div>
-            <main className="flex flex-col gap-4">
+        <div className="flex">
+            <MainNav
+                current={PageDashboard}
+                className="sticky top-0 h-screen py-2"
+            />
+            <main className="grow flex flex-col gap-4 bg-gray-100 dark:bg-gray-900">
                 <UserProjects />
                 <OrphanedData />
                 <RecentData />
             </main>
-        </div>
-    );
-}
-
-function Nav() {
-    return (
-        <div className="flex gap-2">
-            <div>
-                <Link to="/settings" title="Settings">
-                    <button type="button" className="btn-cmd">
-                        <icon.Gear />
-                    </button>
-                </Link>
-            </div>
         </div>
     );
 }
@@ -323,7 +310,9 @@ function RecentDataInner() {
     });
 
     return data.Data.length > 0 ? (
-        <RecentDataList data={data} />
+        <div className="px-4">
+            <RecentDataList data={data} />
+        </div>
     ) : (
         <div>No recent data</div>
     );
@@ -337,12 +326,14 @@ function RecentDataList({ data: resources }: RecentDataListProps) {
         <table className="table-compact w-full [&_th]:last:w-full [&_td]:last:w-full [&_td]:text-nowrap [&_th]:first:pl-4 [&_td]:first:pl-4">
             <thead>
                 <tr>
-                    <th>Type</th>
-                    <th>Origin</th>
-                    <th>Timestamp</th>
-                    <th>Creator</th>
-                    <th>Projects</th>
-                    <th></th>
+                    <th className="bg-gray-200 dark:bg-gray-700 rounded-tl-lg">
+                        Type
+                    </th>
+                    <th className="bg-gray-200 dark:bg-gray-700">Origin</th>
+                    <th className="bg-gray-200 dark:bg-gray-700">Timestamp</th>
+                    <th className="bg-gray-200 dark:bg-gray-700">Creator</th>
+                    <th className="bg-gray-200 dark:bg-gray-700">Projects</th>
+                    <th className="bg-gray-200 dark:bg-gray-700 rounded-tr-lg"></th>
                 </tr>
             </thead>
             <tbody>
@@ -358,11 +349,6 @@ function RecentDataList({ data: resources }: RecentDataListProps) {
                     );
                     const project_memberships =
                         resources.ProjectMemberships.filter((membership) => {
-                            console.debug(
-                                datum.Data.Id,
-                                membership.Data,
-                                datum.Id === membership.Data,
-                            );
                             return membership.Data === datum.Data.Id;
                         });
                     const projects = resources.Projects.filter(
@@ -389,7 +375,7 @@ function RecentDataList({ data: resources }: RecentDataListProps) {
     );
 }
 
-interface RecentDataListItemProps {
+interface RecentDataListItemProps extends ComponentProps<"tr"> {
     data: types.DataRx;
     creator: types.User;
     dataType: types.DataType;
@@ -402,9 +388,15 @@ function RecentDataListItem({
     dataType,
     origin,
     projects,
+    className,
+    ...props
 }: RecentDataListItemProps) {
     return (
-        <tr className="group hover:bg-gray-200 dark:hover:bg-gray-700">
+        <tr
+            className={`group even:bg-gray-200 dark:even:bg-gray-700 \
+                hover:bg-primary-400 dark:hover:bg-primary-700 ${className}`}
+            {...props}
+        >
             <td>
                 <span className="select-all">{dataType.Label}</span>
             </td>

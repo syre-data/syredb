@@ -6,21 +6,28 @@ import {
     type FallbackProps as ErrorBoundaryProps,
 } from "react-error-boundary";
 import { Loading, StandardError } from "@/components";
-import { Suspense, useContext, type MouseEvent } from "react";
+import { Suspense, useContext } from "react";
 import * as types from "@/types";
 import icon from "@/icon";
 import classNames from "classnames";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import { Context } from "@/AppStateContext";
+import { MainNav, PageDataTypes } from "@/components/Nav";
 
 export default function () {
     return (
-        <div>
-            <ErrorBoundary FallbackComponent={DataTypesError}>
-                <Suspense fallback={<Loading />}>
-                    <DataTypes />
-                </Suspense>
-            </ErrorBoundary>
+        <div className="flex">
+            <MainNav
+                current={PageDataTypes}
+                className="sticky top-0 h-screen py-2"
+            />
+            <main className="grow">
+                <ErrorBoundary FallbackComponent={DataTypesError}>
+                    <Suspense fallback={<Loading />}>
+                        <DataTypes />
+                    </Suspense>
+                </ErrorBoundary>
+            </main>
         </div>
     );
 }
@@ -29,7 +36,7 @@ function DataTypesError({ error, resetErrorBoundary }: ErrorBoundaryProps) {
     return (
         <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            error={error as types.AppError}
+            error={error as Error}
             title={"Could not load data types"}
         />
     );
@@ -40,18 +47,9 @@ function DataTypes() {
         queryKey: [common.QUERY_KEY_DATA_TYPES],
         queryFn: data_service.dataTypesGetAll,
     });
-    const navigate = useNavigate();
 
     const ctx = useContext(Context);
     const user = ctx.user;
-
-    function close(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != common.MouseButton.Primary) {
-            return;
-        }
-
-        navigate(-1);
-    }
 
     const canCreateType = common.hasDbPermission(
         types.DbPermissionDataTypeCreate,
@@ -71,16 +69,6 @@ function DataTypes() {
                             </Link>
                         ) : null}
                     </div>
-                </div>
-                <div>
-                    <button
-                        type="button"
-                        title="Close"
-                        className="btn-cmd"
-                        onMouseDown={close}
-                    >
-                        <icon.Close />
-                    </button>
                 </div>
             </div>
             {data_types.length === 0 ? (
@@ -135,13 +123,10 @@ function DataTypeItem({ data_type }: DataTypeItemProps) {
                 {data_type.Storage === types.DataStorageInternal ? (
                     <icon.Columns
                         className="inline-block"
-                        title="Internal storage"
+                        title="Table storage"
                     />
                 ) : (
-                    <icon.Files
-                        className="inline-block"
-                        title="External storage"
-                    />
+                    <icon.Files className="inline-block" title="File storage" />
                 )}
             </td>
             <td className="">{data_type.Description}</td>

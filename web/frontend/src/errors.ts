@@ -1,9 +1,10 @@
 import { type AppError as AppErrorInt } from "@/types/errors";
 export class AppError extends Error {
+    status: number;
     requestId: string;
     payload: any;
 
-    constructor(data: AppErrorInt) {
+    constructor(status: number, data: AppErrorInt) {
         super(data.message, { cause: data.code });
 
         // Maintains proper stack trace for where our error was thrown (non-standard)
@@ -11,6 +12,7 @@ export class AppError extends Error {
             Error.captureStackTrace(this, AppError);
         }
 
+        this.status = status;
         this.name = "AppError";
         this.requestId = data.requestId;
         this.payload = data.payload;

@@ -33,7 +33,13 @@ import {
     FaChartSimple,
 } from "react-icons/fa6";
 import { IoIosLogOut, IoMdHome, IoIosArrowRoundBack } from "react-icons/io";
-import { MdEdit, MdOutlineCategory, MdOutlineScience } from "react-icons/md";
+import {
+    MdEdit,
+    MdOutlineCategory,
+    MdOutlineScience,
+    MdOutlineSpa,
+    MdOutlineSpaceDashboard,
+} from "react-icons/md";
 import { TbColumns3 } from "react-icons/tb";
 import {
     IoEyeOutline,
@@ -44,7 +50,8 @@ import { BsFile, BsFiles, BsArrowReturnRight, BsFolder2 } from "react-icons/bs";
 import { LuSquareFunction } from "react-icons/lu";
 import { RxText } from "react-icons/rx";
 import { PiNotebookLight, PiTagSimple } from "react-icons/pi";
-import { GoFile } from "react-icons/go";
+import { GoFile, GoShieldCheck } from "react-icons/go";
+import { CiMail } from "react-icons/ci";
 
 export default {
     ArrowBack: IoIosArrowRoundBack,
@@ -58,6 +65,7 @@ export default {
     CircleX: FaRegCircleXmark,
     Close: FaX,
     Columns: TbColumns3,
+    Dashboard: MdOutlineSpaceDashboard,
     Data: MdOutlineScience,
     DataType: MdOutlineCategory,
     Download: FaDownload,
@@ -78,6 +86,7 @@ export default {
     Lock: BiSolidLock,
     Logout: IoIosLogOut,
     MagnifyingGlass: FaMagnifyingGlass,
+    Mail: CiMail,
     Minus: AiOutlineMinus,
     Notebook: PiNotebookLight,
     Pen: MdEdit,
@@ -86,6 +95,7 @@ export default {
     Question: FaRegQuestionCircle,
     Reload: AiOutlineReload,
     Search: FaSearch,
+    Shield: GoShieldCheck,
     Spinner: FaSpinner,
     Table: AiOutlineTable,
     Tag: PiTagSimple,

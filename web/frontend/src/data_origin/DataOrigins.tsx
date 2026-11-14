@@ -1,8 +1,8 @@
 import { MouseButton, QUERY_KEY_DATA_ORIGINS } from "@/common";
 import { Loading, StandardError } from "@/components";
+import { MainNav, PageDataOrigins } from "@/components/Nav";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
-import type { AppError } from "@/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
 import { Suspense, type MouseEvent } from "react";
@@ -11,11 +11,19 @@ import { Link, useNavigate } from "react-router";
 
 export default function () {
     return (
-        <ErrorBoundary FallbackComponent={DataOriginsError}>
-            <Suspense fallback={<Loading />}>
-                <DataOrigins />
-            </Suspense>
-        </ErrorBoundary>
+        <div className="flex">
+            <MainNav
+                current={PageDataOrigins}
+                className="sticky top-0 h-screen py-2"
+            />
+            <main className="grow">
+                <ErrorBoundary FallbackComponent={DataOriginsError}>
+                    <Suspense fallback={<Loading />}>
+                        <DataOrigins />
+                    </Suspense>
+                </ErrorBoundary>
+            </main>
+        </div>
     );
 }
 
@@ -34,15 +42,6 @@ function DataOrigins() {
         queryKey: [QUERY_KEY_DATA_ORIGINS],
         queryFn: dataService.dataOrigins,
     });
-    const navigate = useNavigate();
-
-    function close(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button !== MouseButton.Primary) {
-            return;
-        }
-
-        navigate(-1);
-    }
 
     return (
         <div>
@@ -59,15 +58,6 @@ function DataOrigins() {
                             </button>
                         </Link>
                     </div>
-                </div>
-                <div>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        onMouseDown={close}
-                    >
-                        <Icon.Close />
-                    </button>
                 </div>
             </div>
             <div className="pt-2">

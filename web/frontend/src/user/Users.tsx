@@ -10,52 +10,39 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import * as common from "../common";
 import classNames from "classnames";
 import { StandardError } from "@/components";
-import type { AppError, User } from "@/types";
+import type { User } from "@/types";
+import { MainNav, PageUsers } from "@/components/Nav";
 
 export default function Users() {
-    const navigate = useNavigate();
-
-    function close(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != MouseButton.Primary) {
-            return;
-        }
-
-        navigate(-1);
-    }
-
     return (
-        <div>
-            <div className="flex gap-2 text-xl pt-2">
-                <div className="grow flex gap-2 px-4">
-                    <h2>Users</h2>
-                    <div>
-                        <Link
-                            to="/user/create"
-                            title="Add user"
-                            className="align-middle"
-                        >
-                            <button type="button" className="btn-cmd">
-                                <icon.Plus />
-                            </button>
-                        </Link>
+        <div className="flex">
+            <MainNav
+                current={PageUsers}
+                className="sticky top-0 h-screen py-2"
+            />
+            <main className="grow">
+                <div className="flex gap-2 text-xl pt-2">
+                    <div className="grow flex gap-2 px-4">
+                        <h2>Users</h2>
+                        <div>
+                            <Link
+                                to="/user/create"
+                                title="Add user"
+                                className="align-middle"
+                            >
+                                <button type="button" className="btn-cmd">
+                                    <icon.Plus />
+                                </button>
+                            </Link>
+                        </div>
                     </div>
                 </div>
-                <div className="pr-4">
-                    <button
-                        type="button"
-                        onMouseDown={close}
-                        className="btn-cmd"
-                        title="Close"
-                    >
-                        <icon.Close />
-                    </button>
-                </div>
-            </div>
-            <ErrorBoundary FallbackComponent={UserListError}>
-                <Suspense fallback={<Loading />}>
-                    <UserList />
-                </Suspense>
-            </ErrorBoundary>
+                <ErrorBoundary FallbackComponent={UserListError}>
+                    <Suspense fallback={<Loading />}>
+                        <UserList />
+                    </Suspense>
+                </ErrorBoundary>
+            </main>
         </div>
     );
 }

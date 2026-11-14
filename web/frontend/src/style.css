@@ -91,7 +91,7 @@
 }
 
 @utility input-basic {
-    @apply rounded-xs border py-0.5 px-1;
+    @apply rounded border py-1 px-2;
 }
 
 @utility btn-cmd {
@@ -110,7 +110,7 @@
 }
 
 @utility btn-submit {
-    @apply cursor-pointer px-4 py-1 font-bold rounded border bg-primary-700 text-white;
+    @apply cursor-pointer px-4 py-1 font-bold rounded dark:border-primary-800 bg-primary-700 text-white;
 }
 
 .btn-submit:hover {
@@ -123,6 +123,14 @@
 
 .btn-cancel:hover {
     @apply bg-gray-200 dark:bg-gray-800;
+}
+
+@utility btn-danger {
+    @apply cursor-pointer px-4 py-1 font-bold rounded dark:border-red-800 bg-red-700 text-white;
+}
+
+.btn-danger:hover {
+    @apply bg-red-600 dark:bg-red-800;
 }
 
 @utility table-std {

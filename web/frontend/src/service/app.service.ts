@@ -7,7 +7,7 @@ function getDbPermissions(): Promise<types.DbPermissionRecord[]> {
     }).then(async (res) => {
         if (!res.ok) {
             const data = (await res.json()) as types.AppError;
-            throw new AppError(data);
+            throw new AppError(res.status, data);
         }
 
         return (await res.json()) as types.DbPermissionRecord[];

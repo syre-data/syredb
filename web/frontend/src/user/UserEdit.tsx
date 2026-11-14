@@ -24,9 +24,10 @@ import {
     APP_ERR_EMAIL_NOT_SENT,
     DbPermissionOwner,
     DbPermissionUserModify,
-    type AppError,
     type User,
 } from "@/types";
+import { toast } from "sonner";
+import type { AppError } from "@/errors";
 
 export default function () {
     const { user_id: user_id_value } = useParams();
@@ -178,73 +179,83 @@ function UserEdit({ user_id }: UserEditProps) {
         };
 
         setPending(true);
-        await user_service.userUpdate(update).then(async (resp: Response) => {
-            if (resp.ok) {
+        await user_service
+            .userUpdate(update)
+            .then(async (_) => {
                 queryClient.invalidateQueries({
                     queryKey: [common.QUERY_KEY_USER, user.Id.toString()],
                 });
+                toast.success("User updated");
                 return navigate(-1);
-            }
-            if (resp.status == StatusCodes.CONFLICT) {
-                setError("User already exists.");
-                emailInput.setCustomValidity("Email already exists");
-                emailInput.reportValidity();
-                btn_submit.disabled = false;
-                emailInput.setCustomValidity("");
-                return;
-            }
+            })
+            .catch((err) => {
+                if (err.status == StatusCodes.CONFLICT) {
+                    setError("User already exists.");
+                    emailInput.setCustomValidity("Email already exists");
+                    emailInput.reportValidity();
+                    btn_submit.disabled = false;
+                    emailInput.setCustomValidity("");
+                    return;
+                }
 
-            const err = (await resp.json()) as Error;
-            setError(err.message);
-            btn_submit.disabled = false;
-        });
-        setPending(false);
+                setError(err.message);
+            })
+            .finally(() => {
+                btn_submit.disabled = false;
+                setPending(false);
+            });
     }
 
     return (
         <div>
             <div className="px-4 py-2 flex justify-between">
-                <h2 className="text-xl">Edit user</h2>
-                <div>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        onMouseDown={cancel}
-                    >
-                        <Icon.Close />
-                    </button>
-                </div>
+                <h2 className="text-xl font-bold">Edit user</h2>
+                <div className="bg-red-700 rounded-lg px-4-py-2">{error}</div>
             </div>
-            <form onSubmit={update_user}>
-                <div className="flex flex-col gap-2">
+            <form onSubmit={update_user} className="py-2">
+                <div className="flex gap-4 divide-x">
                     <div className="px-4">
-                        <label>
-                            <span className="sr-only">Email</span>
-                            <input
-                                type="text"
-                                id="email"
-                                name="email"
-                                placeholder="Email"
-                                className="input-basic"
-                                defaultValue={user.Email}
-                                onChange={(e) => e.target.setCustomValidity("")}
-                            />
-                        </label>
-                    </div>
-                    <div className="px-4">
-                        <label>
-                            <span className="sr-only">Name</span>
-                            <input
-                                type="text"
-                                id="name"
-                                name="name"
-                                placeholder="Name"
-                                className="input-basic"
-                                defaultValue={user.Name}
-                            />
-                        </label>
+                        <div className="flex gap-2 items-baseline px-4 pb-4">
+                            <Icon.User />
+                            <h3 className="font-bold">User details</h3>
+                        </div>
+                        <div className="px-4">
+                            <label>
+                                <span>Email</span>
+                                <input
+                                    type="text"
+                                    id="email"
+                                    name="email"
+                                    placeholder="Email"
+                                    className="input-basic"
+                                    defaultValue={user.Email}
+                                    onChange={(e) =>
+                                        e.target.setCustomValidity("")
+                                    }
+                                    required
+                                />
+                            </label>
+                        </div>
+                        <div className="px-4">
+                            <label>
+                                <span>Name</span>
+                                <input
+                                    type="text"
+                                    id="name"
+                                    name="name"
+                                    placeholder="Name"
+                                    className="input-basic"
+                                    defaultValue={user.Name}
+                                    required
+                                />
+                            </label>
+                        </div>
                     </div>
                     <div className="w-full">
+                        <div className="px-4 flex gap-2 items-baseline pb-4">
+                            <Icon.Shield />
+                            <h3 className="font-bold">Database permissions</h3>
+                        </div>
                         <fieldset>
                             <label
                                 className="flex gap-2 px-4"
@@ -300,39 +311,41 @@ function UserEdit({ user_id }: UserEditProps) {
                     </div>
                 </div>
                 <div className="flex gap-2 pt-4 px-4">
-                    <div>
-                        <button
-                            type="submit"
-                            className="btn-submit"
-                            disabled={pending}
-                        >
-                            {pending ? (
-                                <>
-                                    <span className="pr-2 inline-block">
-                                        <icon.Spinner className="animate-spin" />
-                                    </span>
-                                    Updating user
-                                </>
-                            ) : (
-                                <>Update user</>
-                            )}
-                        </button>
+                    <div className="grow flex gap-2">
+                        <div>
+                            <button
+                                type="submit"
+                                className="btn-submit"
+                                disabled={pending}
+                            >
+                                {pending ? (
+                                    <>
+                                        <span className="pr-2 inline-block">
+                                            <icon.Spinner className="animate-spin" />
+                                        </span>
+                                        Updating user
+                                    </>
+                                ) : (
+                                    <>Update user</>
+                                )}
+                            </button>
+                        </div>
+                        <div>
+                            <button
+                                type="button"
+                                id="submit"
+                                onMouseDown={cancel}
+                                className="btn-cancel"
+                            >
+                                Cancel
+                            </button>
+                        </div>
                     </div>
-                    <div>
-                        <button
-                            type="button"
-                            id="submit"
-                            onMouseDown={cancel}
-                            className="btn-submit"
-                        >
-                            Cancel
-                        </button>
+                    <div className="py-2">
+                        <PasswordReset user={user} />
                     </div>
                 </div>
             </form>
-            <div className="pt-4">
-                <PasswordReset user={user} />
-            </div>
         </div>
     );
 }
@@ -354,19 +367,14 @@ function PasswordReset({ user }: PasswordResetProps) {
             `Reset ${user.Name}'s <${user.Email}> password?`,
         );
         if (!confirm) {
+            setPending(false);
             return;
         }
 
         await user_service
             .passwordReset(user.Id)
-            .then(async (resp: Response) => {
-                setPending(false);
-                if (resp.ok) {
-                    return;
-                }
-
-                const err = (await resp.json()) as Error;
-                if (err.code === APP_ERR_EMAIL_NOT_SENT) {
+            .catch((err: AppError) => {
+                if (err.cause === APP_ERR_EMAIL_NOT_SENT) {
                     setMessage(
                         `Could not send user email. Alert them their new password is ${err.payload}`,
                     );
@@ -374,6 +382,9 @@ function PasswordReset({ user }: PasswordResetProps) {
                     console.debug(err);
                     setMessage("Could not reset password");
                 }
+            })
+            .finally(() => {
+                setPending(false);
             });
     }
 
@@ -382,7 +393,7 @@ function PasswordReset({ user }: PasswordResetProps) {
             <button
                 id="password-reset"
                 type="button"
-                className="btn-submit"
+                className="btn-danger"
                 onMouseDown={confirm_reset}
                 disabled={pending}
             >

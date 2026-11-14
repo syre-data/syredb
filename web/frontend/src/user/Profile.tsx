@@ -1,53 +1,89 @@
 import { Context } from "@/AppStateContext";
-import { MouseButton } from "@/common";
+import { QUERY_KEY_DB_PERMISSIONS } from "@/common";
+import { Loading, StandardError } from "@/components";
+import { MainNav, PageUserProfile } from "@/components/Nav";
 import Icon from "@/icon";
+import appService from "@/service/app.service";
 import userService from "@/service/user.service";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
 import { StatusCodes } from "http-status-codes";
-import { useContext, useState, type MouseEvent, type SubmitEvent } from "react";
-import { useNavigate } from "react-router";
+import {
+    Suspense,
+    useContext,
+    useState,
+    type ComponentProps,
+    type SubmitEvent,
+} from "react";
+import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
+import { toast } from "sonner";
+import { DbPermissionBadges } from "./components";
 
 export default function () {
-    const navigate = useNavigate();
+    return (
+        <div className="flex">
+            <MainNav
+                current={PageUserProfile}
+                className="sticky top-0 h-screen py-2"
+            />
+            <ErrorBoundary FallbackComponent={ProfileError}>
+                <Suspense fallback={<Loading />}>
+                    <UserProfile className="grow" />
+                </Suspense>
+            </ErrorBoundary>
+        </div>
+    );
+}
+
+function ProfileError({ error, resetErrorBoundary }: FallbackProps) {
+    return (
+        <StandardError
+            resetErrorBoundary={resetErrorBoundary}
+            error={error as Error}
+            title={"Could not load database permissions"}
+        />
+    );
+}
+
+function UserProfile(props: ComponentProps<"main">) {
     const ctx = useContext(Context);
     const user = ctx.user;
 
-    function close(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button !== MouseButton.Primary) {
-            return;
+    const { data: dbPermissions } = useSuspenseQuery({
+        queryKey: [QUERY_KEY_DB_PERMISSIONS],
+        queryFn: appService.getDbPermissions,
+    });
+
+    const permissions = user.DbPermissions.map((perm) => {
+        const info = dbPermissions.find((p) => p.Id === perm);
+        if (!info) {
+            throw new Error(`invalid database permission ${perm}`);
         }
 
-        navigate(-1);
-    }
+        return info;
+    });
 
     return (
-        <div>
+        <main {...props}>
             <div className="px-4 pt-2 flex justify-between">
                 <div>
                     <h2 className="text-lg">{user.Name}</h2>
-                    <div>{user.Email}</div>
-                </div>
-                <div>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        onMouseDown={close}
-                    >
-                        <Icon.Close />
-                    </button>
+                    <div className="text-secondary">{user.Email}</div>
                 </div>
             </div>
-            <div className="px-4 pt-4">
-                <h3>Permissions</h3>
-                <ul>
-                    {user.DbPermissions.map((perm) => {
-                        return <li key={perm}>{perm}</li>;
-                    })}
-                </ul>
+            <div className="py-4">
+                <div className="px-4 flex gap-2 items-center text-lg">
+                    <Icon.Shield />
+                    <h2>Database permissions</h2>
+                </div>
+                <DbPermissionBadges
+                    permissions={permissions}
+                    className="px-4 pt-2 flex gap-2"
+                />
             </div>
-            <div className="px-4 pt-4">
-                <div>
-                    <h3>Change password</h3>
+            <div className="px-4 pt-2">
+                <div className="pt-4 border-t border-gray-600">
+                    <h2 className="text-lg">Change password</h2>
                     <div>
                         <small>
                             <strong className="pr-2">
@@ -61,14 +97,13 @@ export default function () {
                     <PasswordUpdate />
                 </div>
             </div>
-        </div>
+        </main>
     );
 }
 
 function PasswordUpdate() {
     const [invalidNew, setInvalidNew] = useState(false);
     const [pending, setPending] = useState(false);
-    const [success, setSuccess] = useState(false);
     const [updateErr, setUpdateErr] = useState("");
 
     function isValid(password: string): boolean {
@@ -137,16 +172,19 @@ function PasswordUpdate() {
         const current = data.get("password-current")!.toString();
         const password = data.get("password-new")!.toString();
         setPending(true);
-        await userService.passwordUpdate(current, password).then((resp) => {
-            if (resp.status === StatusCodes.OK) {
-                setSuccess(true);
-            } else if (resp.status === StatusCodes.UNAUTHORIZED) {
-                currentInput.ariaInvalid = "true";
-                setUpdateErr("Current password is invalid");
-            } else {
-                //TODO: Report error
-            }
-        });
+        await userService
+            .passwordUpdate(current, password)
+            .then((_) => {
+                toast.success("Password updated");
+            })
+            .catch((resp) => {
+                if (resp.status === StatusCodes.UNAUTHORIZED) {
+                    currentInput.ariaInvalid = "true";
+                    setUpdateErr("Current password is invalid");
+                } else {
+                    toast.error("Could not update password");
+                }
+            });
         setPending(false);
     }
 
@@ -161,7 +199,7 @@ function PasswordUpdate() {
                             name="password-current"
                             type="password"
                             placeholder="Current password"
-                            className="input-basic"
+                            className="input-basic w-full"
                         />
                     </label>
                 </div>
@@ -173,7 +211,7 @@ function PasswordUpdate() {
                             name="password-new"
                             type="password"
                             placeholder="New password"
-                            className="input-basic"
+                            className="input-basic w-full"
                         />
                     </label>
                     <div
@@ -202,7 +240,7 @@ function PasswordUpdate() {
                             name="password-reapeat"
                             type="password"
                             placeholder="Repeat new password"
-                            className="input-basic"
+                            className="input-basic w-full"
                         />
                     </label>
                 </div>
@@ -213,7 +251,6 @@ function PasswordUpdate() {
                 </button>
             </div>
             <div>
-                <div>{success ? "Password updated" : null}</div>
                 <div>{updateErr === "" ? null : updateErr}</div>
             </div>
         </form>

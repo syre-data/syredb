@@ -5,23 +5,32 @@ import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import * as common from "@/common";
 import dataService from "@/service/data.service";
 import classNames from "classnames";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import Icon from "@/icon";
 import {
     DbPermissionDataSchemaCreate,
     DbPermissionDataSchemaModify,
-    type AppError,
+    DbPermissionOwner,
     type DataSchema,
 } from "@/types";
 import { Context } from "@/AppStateContext";
+import { MainNav, PageDataSchemas } from "@/components/Nav";
 
 export default function () {
     return (
-        <ErrorBoundary FallbackComponent={DataSchemaError}>
-            <Suspense fallback={<Loading />}>
-                <DataSchemas />
-            </Suspense>
-        </ErrorBoundary>
+        <div className="flex">
+            <MainNav
+                current={PageDataSchemas}
+                className="sticky top-0 h-screen py-2"
+            />
+            <main className="grow">
+                <ErrorBoundary FallbackComponent={DataSchemaError}>
+                    <Suspense fallback={<Loading />}>
+                        <DataSchemas />
+                    </Suspense>
+                </ErrorBoundary>
+            </main>
+        </div>
     );
 }
 
@@ -36,32 +45,30 @@ function DataSchemaError({ error, resetErrorBoundary }: FallbackProps) {
 }
 
 function DataSchemas() {
-    const { data: data_schemas } = useSuspenseQuery({
+    const { data: dataSchemas } = useSuspenseQuery({
         queryKey: [common.QUERY_KEY_DATA_SCHEMA],
         queryFn: dataService.dataSchemasGetAll,
     });
 
-    const navigate = useNavigate();
     const ctx = useContext(Context);
     const user = ctx.user;
 
-    function close(e: MouseEvent<HTMLButtonElement>) {
-        if (e.button != common.MouseButton.Primary) {
-            return;
-        }
-
-        console.log("back");
-        navigate(-1);
-    }
-
-    const canCreateSchema = common.hasDbPermission(
-        DbPermissionDataSchemaCreate,
+    const isDbOwner = common.hasDbPermission(
+        DbPermissionOwner,
         user.DbPermissions,
     );
-    const canModifySchema = common.hasDbPermission(
-        DbPermissionDataSchemaModify,
-        user.DbPermissions,
-    );
+    const canCreateSchema =
+        isDbOwner ||
+        common.hasDbPermission(
+            DbPermissionDataSchemaCreate,
+            user.DbPermissions,
+        );
+    const canModifySchemas =
+        isDbOwner ||
+        common.hasDbPermission(
+            DbPermissionDataSchemaModify,
+            user.DbPermissions,
+        );
     return (
         <div>
             <div className="pt-2 px-4 flex justify-between">
@@ -81,22 +88,15 @@ function DataSchemas() {
                         ) : null}
                     </div>
                 </div>
-                <div>
-                    <button
-                        type="button"
-                        className="btn-cmd"
-                        title="Close"
-                        onMouseDown={close}
-                    >
-                        <Icon.Close />
-                    </button>
-                </div>
             </div>
             <div>
-                {data_schemas.length === 0 ? (
+                {dataSchemas.length === 0 ? (
                     <DataSchemasEmpty />
                 ) : (
-                    <DataSchemasContent data_schemas={data_schemas} />
+                    <DataSchemasContent
+                        canModifySchemas={canModifySchemas}
+                        dataSchemas={dataSchemas}
+                    />
                 )}
             </div>
         </div>
@@ -118,15 +118,20 @@ function DataSchemasEmpty() {
 }
 
 interface DataSchemasContentProps {
-    data_schemas: DataSchema[];
+    dataSchemas: DataSchema[];
+    canModifySchemas: boolean;
 }
-function DataSchemasContent({ data_schemas }: DataSchemasContentProps) {
+function DataSchemasContent({
+    dataSchemas,
+    canModifySchemas,
+}: DataSchemasContentProps) {
     return (
         <table className="table-std">
             <tbody>
-                {data_schemas.map((schema, index) => (
+                {dataSchemas.map((schema, index) => (
                     <DataSchemaItem
                         key={schema.Id.toString()}
+                        canModifySchemas={canModifySchemas}
                         index={index}
                         schema={schema}
                     />
@@ -139,8 +144,13 @@ function DataSchemasContent({ data_schemas }: DataSchemasContentProps) {
 interface DataSchemaItemProps {
     index: number;
     schema: DataSchema;
+    canModifySchemas: boolean;
 }
-function DataSchemaItem({ index, schema }: DataSchemaItemProps) {
+function DataSchemaItem({
+    index,
+    schema,
+    canModifySchemas,
+}: DataSchemaItemProps) {
     const [expanded, setExpanded] = useState(false);
 
     function toggle_expand(e: MouseEvent<HTMLTableCellElement>) {
@@ -174,7 +184,7 @@ function DataSchemaItem({ index, schema }: DataSchemaItemProps) {
                         <button
                             type="button"
                             className={classNames({
-                                "btn-cmd transition-[rotate]": true,
+                                "transition-[rotate]": true,
                                 "-rotate-90": !expanded,
                             })}
                         >
@@ -203,15 +213,17 @@ function DataSchemaItem({ index, schema }: DataSchemaItemProps) {
                         "border-b-0!": expanded,
                     })}
                 >
-                    <Link to={`/data-schema/${schema.Id}`}>
-                        <button
-                            type="button"
-                            className="btn-cmd"
-                            title="Edit data schema"
-                        >
-                            <Icon.Eye />
-                        </button>
-                    </Link>
+                    {canModifySchemas ? (
+                        <Link to={`/data-schema/${schema.Id}`}>
+                            <button
+                                type="button"
+                                className="btn-cmd"
+                                title="Edit data schema"
+                            >
+                                <Icon.Eye />
+                            </button>
+                        </Link>
+                    ) : null}
                 </td>
             </tr>
             <tr
