@@ -284,6 +284,56 @@ func (h *DataHandler) DataTypeUpdate(c *echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
+func (h *DataHandler) DataTypeResources(c *echo.Context) error {
+	user_id := c.Get(UserIdKey).(uuid.UUID)
+	data_type_id, err := uuid.Parse(c.QueryParam("id"))
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Info("could not parse data type id")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_UUID,
+			Message:   "Invalid data type id query",
+			Payload:   nil,
+		})
+	}
+	data_limit, err := strconv.Atoi(c.QueryParam("data-limit"))
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+		).Info("could not parse data limit")
+		return c.JSON(http.StatusUnprocessableEntity, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_INVALID_ITEM,
+			Message:   "Invalid data limit query",
+			Payload:   nil,
+		})
+	}
+
+	resources, valid, err := h.data_service.DataTypeResources(data_type_id, user_id, data_limit)
+	if err != nil {
+		c.Logger().With(
+			"error", err,
+			"user", user_id,
+			"data type", data_type_id,
+		).Error("could not get data type resources")
+		return c.JSON(http.StatusInternalServerError, AppError{
+			RequestId: requestId(c),
+			Code:      APP_ERR_DB_QUERY,
+			Message:   "Could not get data type resources",
+			Payload:   nil,
+		})
+	}
+	if !valid {
+		return c.NoContent(http.StatusNotFound)
+	}
+
+	return c.JSON(http.StatusOK, resources)
+}
+
 func (h *DataHandler) DataTypesGetAll(c *echo.Context) error {
 	user_id := c.Get(UserIdKey).(uuid.UUID)
 	schemas, err := h.data_service.DataTypesAll()
@@ -3539,7 +3589,7 @@ func (h *DataHandler) DataNotesCreate(c *echo.Context) error {
 }
 
 type RecentDataResources struct {
-	Data               []service.DataWithOriginAndCretor
+	Data               []service.DataWithCreatorAndOrigin
 	Origins            []service.DataOriginRx
 	DataTypes          []service.DataType
 	Users              []service.User
@@ -3646,10 +3696,10 @@ func (h *DataHandler) DataGetRecent(c *echo.Context) error {
 		})
 	}
 
-	data := make([]service.DataWithOriginAndCretor, len(rdata))
+	data := make([]service.DataWithCreatorAndOrigin, len(rdata))
 	data_ids := make([]uuid.UUID, len(rdata))
 	for idx, r := range rdata {
-		data[idx] = service.DataWithOriginAndCretor{
+		data[idx] = service.DataWithCreatorAndOrigin{
 			Data: service.DataRx{
 				Id:          r.Id,
 				Type:        r.Type,

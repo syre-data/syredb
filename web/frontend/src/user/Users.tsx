@@ -1,8 +1,7 @@
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import icon from "../icon";
 import { Suspense, useOptimistic, useState } from "react";
-import type { Dispatch, MouseEvent, SetStateAction } from "react";
-import { MouseButton } from "../common";
+import type { Dispatch, SetStateAction } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import type { FallbackProps } from "react-error-boundary";
 import user_service from "@/service/user.service";
@@ -23,7 +22,7 @@ export default function Users() {
             <main className="grow">
                 <div className="flex gap-2 text-xl pt-2">
                     <div className="grow flex gap-2 px-4">
-                        <h2>Users</h2>
+                        <h1 className="title">Users</h1>
                         <div>
                             <Link
                                 to="/user/create"

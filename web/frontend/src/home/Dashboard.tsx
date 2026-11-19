@@ -23,7 +23,7 @@ export default function () {
                 current={PageDashboard}
                 className="sticky top-0 h-screen py-2"
             />
-            <main className="grow flex flex-col gap-4 bg-gray-100 dark:bg-gray-900">
+            <main className="grow py-2 flex flex-col gap-4 bg-gray-100 dark:bg-gray-900">
                 <UserProjects />
                 <OrphanedData />
                 <RecentData />

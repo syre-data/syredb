@@ -91,6 +91,29 @@ function dataTypeGet(
     });
 }
 
+function dataTypeResources(
+    data_type: uuid.UUIDTypes,
+    dataLimit: number,
+): Promise<types.DataTypeResources> {
+    if (dataLimit < 0 || !Number.isInteger(dataLimit)) {
+        throw new Error("invalid data limit");
+    }
+
+    const params = new URLSearchParams();
+    params.append("id", data_type.toString());
+    params.append("data-limit", dataLimit.toString());
+    return fetch(`/api/data-type/resources?${params}`, {
+        credentials: "same-origin",
+    }).then(async (res) => {
+        if (!res.ok) {
+            const data = (await res.json()) as types.AppError;
+            throw new AppError(res.status, data);
+        }
+
+        return await res.json();
+    });
+}
+
 function dataTypeUpdate(update: types.DataTypeUpdate): Promise<null> {
     return fetch(`/api/data-type`, {
         credentials: "same-origin",
@@ -683,6 +706,7 @@ export default {
     dataTypeCreateInternal,
     dataTypeCreateExternal,
     dataTypeGet,
+    dataTypeResources,
     dataTypeUpdate,
     dataSchemaCreate,
     dataSchemaUpdate,

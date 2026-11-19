@@ -60,10 +60,10 @@ export interface DataWithOrigin {
   Data: DataRx;
   Origin: uuid.UUIDTypes;
 }
-export interface DataWithOriginAndCretor {
+export interface DataWithCreatorAndOrigin {
   Data: DataRx;
-  Origin: uuid.UUIDTypes;
   Creator: uuid.UUIDTypes;
+  Origin: uuid.UUIDTypes;
 }
 export interface PropertyQuantityValue {
   Magnitude: number /* float64 */;
@@ -124,6 +124,21 @@ export interface DataCreatorUser {
 }
 export interface DataCreatorTransform {
   Id: uuid.UUIDTypes;
+}
+export interface DataCreatorUserRx {
+  Data: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+  Origin: uuid.UUIDTypes;
+}
+export interface DataCreatorTransformRx {
+  Data: uuid.UUIDTypes;
+  Creator: uuid.UUIDTypes;
+}
+export interface DataTypeResources {
+  DataCount: number /* int */;
+  RecentData: DataWithCreatorAndOrigin[];
+  Users: User[];
+  Transforms: DataTypeTransformRx[];
 }
 export interface DataTypeSourceCreate {
   Cardinality: DataSourceCardinality;

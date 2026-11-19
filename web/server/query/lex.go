@@ -22,7 +22,8 @@
 // ## TODO
 // + `field` filter
 // + `name` filter
-// + `created` filter
+// + `created` date filter
+// + `user` filter
 // + `OR` groups
 // + `project` filter
 // + parse property_query in a typed fashion

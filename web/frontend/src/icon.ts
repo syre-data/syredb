@@ -37,7 +37,6 @@ import {
     MdEdit,
     MdOutlineCategory,
     MdOutlineScience,
-    MdOutlineSpa,
     MdOutlineSpaceDashboard,
 } from "react-icons/md";
 import { TbColumns3 } from "react-icons/tb";
@@ -46,7 +45,7 @@ import {
     IoEyeOffOutline,
     IoCalendarClearOutline,
 } from "react-icons/io5";
-import { BsFile, BsFiles, BsArrowReturnRight, BsFolder2 } from "react-icons/bs";
+import { BsFiles, BsArrowReturnRight, BsFolder2 } from "react-icons/bs";
 import { LuSquareFunction } from "react-icons/lu";
 import { RxText } from "react-icons/rx";
 import { PiNotebookLight, PiTagSimple } from "react-icons/pi";

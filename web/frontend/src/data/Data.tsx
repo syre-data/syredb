@@ -385,7 +385,7 @@ function Notes({ notes, users, ...props }: NotesProps) {
                 </div>
             ) : (
                 <div>
-                    <ol>
+                    <ol className="flex flex-col gap-4">
                         {notes.map((note) => {
                             const creator = users.find(
                                 (user) => user.Id === note.Creator,

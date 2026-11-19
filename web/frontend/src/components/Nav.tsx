@@ -35,13 +35,13 @@ export function MainNav({ current, className, ...props }: MainNavProps) {
         >
             <ol className="grow flex flex-col gap-4 divide-y divide-gray-600">
                 <li className="pb-4">
-                    <MainNavItem
-                        title="Dashboard"
-                        icon={<Icon.Home />}
-                        url="/"
-                        highlighted={current === PageDashboard}
-                    />
                     <ol>
+                        <MainNavItem
+                            title="Dashboard"
+                            icon={<Icon.Home />}
+                            url="/"
+                            highlighted={current === PageDashboard}
+                        />
                         <MainNavItem
                             title="Profile"
                             icon={<Icon.User />}

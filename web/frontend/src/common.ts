@@ -9,6 +9,7 @@ export const QUERY_KEY_DATA_SCHEMA = "data_schema";
 export const QUERY_KEY_DATA_SCHEMA_RESOURCES = "data_schema_resources";
 export const QUERY_KEY_DATA_TYPES = "data_types";
 export const QUERY_KEY_DATA_TYPE = "data_type";
+export const QUERY_KEY_DATA_TYPE_RESOURCES = "data_type_resources";
 export const QUERY_KEY_DATA_TYPE_TRANSFORMS = "data_type_transforms";
 export const QUERY_KEY_USER_PROJECTS = "user_projects";
 export const QUERY_KEY_PROJECT_RESOURCES = "project_resources";
@@ -137,8 +138,18 @@ export function uuidToString(id: UUIDTypes): string {
     }
 }
 
+export function uuidV7ToTimestamp(uuid: UUIDTypes) {
+    if (typeof uuid === "string") {
+        const hex = uuid.replaceAll("-", "").slice(0, 12);
+        const timestampMs = parseInt(hex, 16);
+        return new Date(timestampMs);
+    }
+
+    throw new Error("Not yet implemented");
+}
+
 export function timestampToString(date: Date | string): string {
-    if (typeof date == "string") {
+    if (typeof date === "string") {
         date = new Date(date);
     }
 

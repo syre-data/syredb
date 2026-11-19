@@ -60,10 +60,10 @@ type DataWithOrigin struct {
 	Origin uuid.UUID
 }
 
-type DataWithOriginAndCretor struct {
+type DataWithCreatorAndOrigin struct {
 	Data    DataRx
-	Origin  uuid.UUID
 	Creator uuid.UUID
+	Origin  uuid.UUID
 }
 
 func ParseSaveDataHierarchy(value string) (SaveDataHierarchy, error) {
@@ -200,6 +200,25 @@ type DataCreatorTransform struct {
 }
 
 func (t DataCreatorTransform) Type() DataCreatorType {
+	return DataCreatorTypeTransform
+}
+
+type DataCreatorUserRx struct {
+	Data    uuid.UUID `db:"_data"`
+	Creator uuid.UUID `db:"_creator"`
+	Origin  uuid.UUID `db:"_origin"`
+}
+
+func (t DataCreatorUserRx) Type() DataCreatorType {
+	return DataCreatorTypeUser
+}
+
+type DataCreatorTransformRx struct {
+	Data    uuid.UUID `db:"_data"`
+	Creator uuid.UUID `db:"_creator"`
+}
+
+func (t DataCreatorTransformRx) Type() DataCreatorType {
 	return DataCreatorTypeTransform
 }
 
@@ -547,6 +566,178 @@ func (s *DataService) dataTypeRxInfo(data_type DataTypeRx) (DataType, bool, erro
 		panic("invalid data_type.Storage")
 	}
 
+}
+
+type DataTypeResources struct {
+	DataCount  int
+	RecentData []DataWithCreatorAndOrigin
+	Users      []User
+	Transforms []DataTypeTransformRx
+}
+
+// Get a data type's resources.
+// user_id is used to filter out data.
+// If data_limit < 0, get all data.
+//
+// First return value is the data type, if valid.
+// Second return value is whether the data type is valid. i.e. Was the data type found.
+// Third return value is any error.
+func (s *DataService) DataTypeResources(id uuid.UUID, user_id uuid.UUID, data_limit int) (DataTypeResources, bool, error) {
+	var type_exists bool
+	validate_type_query := "SELECT EXISTS(SELECT 1 FROM data_type_ WHERE _id=$1)"
+	err := s.db.Conn.QueryRow(s.ctx, validate_type_query, id).Scan(&type_exists)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DataTypeResources{}, false, nil
+	}
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"id", id,
+		).Error("could not validate data type")
+		return DataTypeResources{}, false, err
+	}
+
+	var data_count int
+	data_count_query := "SELECT COUNT(*) FROM data_ WHERE _type=$1"
+	err = s.db.Conn.QueryRow(s.ctx, data_count_query, id).Scan(&data_count)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"id", id,
+		).Error("could not get data count")
+		return DataTypeResources{}, false, err
+	}
+
+	recent_data_rx, err := s.dataTypeRecentData(id, user_id, data_limit)
+	if err != nil {
+		return DataTypeResources{}, false, err
+	}
+
+	created_by_user := []uuid.UUID{}
+	created_by_transform := []uuid.UUID{}
+	for _, datum := range recent_data_rx {
+		switch datum.CreatorType {
+		case DataCreatorTypeTransform:
+			created_by_transform = append(created_by_transform, datum.Id)
+		case DataCreatorTypeUser:
+			created_by_user = append(created_by_user, datum.Id)
+		default:
+			panic(fmt.Sprintf("unexpected service.DataCreatorType: %#v", datum.CreatorType))
+		}
+	}
+
+	query_users := "SELECT _data, _creator, _origin FROM data_creator_user_ WHERE _data=ANY($1)"
+	rows, _ := s.db.Conn.Query(s.ctx, query_users, created_by_user)
+	creator_users, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataCreatorUserRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data", created_by_user,
+		).Error("could not get user creators")
+		return DataTypeResources{}, false, err
+	}
+
+	user_ids := make([]uuid.UUID, len(creator_users))
+	for idx, creator := range creator_users {
+		user_ids[idx] = creator.Creator
+	}
+	users, err := s.user_service.UsersById(user_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"user ids", creator_users,
+		).Error("could not get users")
+		return DataTypeResources{}, false, err
+	}
+
+	query_transforms := "SELECT _data, _creator FROM data_creator_transform_ WHERE _data=ANY($1)"
+	rows, _ = s.db.Conn.Query(s.ctx, query_transforms, created_by_transform)
+	creator_transforms, err := pgx.CollectRows(rows, pgx.RowTo[DataCreatorTransformRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"transforms", created_by_transform,
+		).Error("could not get transform creators")
+		return DataTypeResources{}, false, err
+	}
+
+	transform_ids := make([]uuid.UUID, len(creator_transforms))
+	for idx, creator := range creator_transforms {
+		user_ids[idx] = creator.Creator
+	}
+	transforms, err := s.DataTypeTransformRxByIds(transform_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"transforms", creator_transforms,
+		).Error("could not get transforms")
+		return DataTypeResources{}, false, err
+	}
+
+	recent_data := make([]DataWithCreatorAndOrigin, len(recent_data_rx))
+	for idx, datum := range recent_data_rx {
+		var creator uuid.UUID
+		origin := uuid.Nil
+		switch datum.CreatorType {
+		case DataCreatorTypeTransform:
+			idx_created_by := slices.IndexFunc(creator_transforms, func(transform DataCreatorTransformRx) bool {
+				return transform.Data == datum.Id
+			})
+			creator = creator_transforms[idx_created_by].Creator
+		case DataCreatorTypeUser:
+			idx_created_by := slices.IndexFunc(creator_users, func(transform DataCreatorUserRx) bool {
+				return transform.Data == datum.Id
+			})
+			creator = creator_users[idx_created_by].Creator
+			origin = creator_users[idx_created_by].Origin
+		default:
+			panic(fmt.Sprintf("unexpected service.DataCreatorType: %#v", datum.CreatorType))
+		}
+		recent_data[idx] = DataWithCreatorAndOrigin{
+			Data:    datum,
+			Creator: creator,
+			Origin:  origin,
+		}
+	}
+
+	resources := DataTypeResources{
+		DataCount:  data_count,
+		RecentData: recent_data,
+		Users:      users,
+		Transforms: transforms,
+	}
+	return resources, true, nil
+}
+
+// Get a data type's resources.
+// user_id is used to filter out data.
+// If data_limit < 0, get all data.
+func (s *DataService) dataTypeRecentData(id uuid.UUID, user_id uuid.UUID, data_limit int) ([]DataRx, error) {
+	query :=
+		`SELECT d._id, d._type, d._creator_type, d.timestamp, d.visibility
+		FROM data_ AS d 
+		JOIN data_user_permission_ AS p ON p._data=d._id 
+		WHERE d._type=$1 AND (d.visibility=$2 OR p._user=$3)
+		ORDER BY d._id DESC`
+	args := []any{id, VisibilityPublic, user_id}
+	if data_limit > -1 {
+		query += " LIMIT $4"
+		args = append(args, data_limit)
+	}
+
+	rows, _ := s.db.Conn.Query(s.ctx, query, args...)
+	data, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data type", id,
+			"user", user_id,
+			"data limit", data_limit,
+		).Error("could not get data type recent data")
+		return nil, err
+	}
+
+	return data, nil
 }
 
 type DataTypeSourceCreate struct {
@@ -3238,6 +3429,22 @@ func (s *DataService) DataTypeTransformsGetAll() ([]DataTypeTransform, error) {
 	return transforms, nil
 }
 
+func (s *DataService) DataTypeTransformRxByIds(transforms []uuid.UUID) ([]DataTypeTransformRx, error) {
+	transform_query :=
+		`SELECT _id, _creator, _source, _destination, cmd, label, description
+		FROM data_type_transform_ WHERE _id=ANY($1)`
+	rows, _ := s.db.Conn.Query(s.ctx, transform_query, transforms)
+	transform_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[DataTypeTransformRx])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+		).Error("could not get data type transforms")
+		return nil, err
+	}
+
+	return transform_rxs, nil
+}
+
 type DataTypeTransformCreate struct {
 	Creator     uuid.UUID
 	Source      uuid.UUID
@@ -4586,8 +4793,7 @@ func (t DataCreatorUserInfo) Type() DataCreatorType {
 	return DataCreatorTypeUser
 }
 
-// # Returns
-// `DataCreatorTransformInfo` or `DataCreatorUserInfo`.
+// Returns `DataCreatorTransformInfo` or `DataCreatorUserInfo`.
 func (s *DataService) DataCreator(data uuid.UUID) (DataCreator, error) {
 	var creator_type DataCreatorType
 	query := "SELECT _creator_type FROM data_ WHERE _id=$1"

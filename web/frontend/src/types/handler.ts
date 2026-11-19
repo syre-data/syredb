@@ -99,7 +99,7 @@ export interface DataNotesCreate {
   Notes: any /* service.DataNoteCreate */[];
 }
 export interface RecentDataResources {
-  Data: any /* service.DataWithOriginAndCretor */[];
+  Data: any /* service.DataWithCreatorAndOrigin */[];
   Origins: any /* service.DataOriginRx */[];
   DataTypes: any /* service.DataType */[];
   Users: any /* service.User */[];

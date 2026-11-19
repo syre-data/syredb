@@ -323,6 +323,7 @@ func register_routes(
 	api.POST("/data-type", data.DataTypeCreate)
 	api.GET("/data-type", data.DataTypeGet)
 	api.PUT("/data-type", data.DataTypeUpdate)
+	api.GET("/data-type/resources", data.DataTypeResources)
 	api.GET("/data-type-transforms", data.DataTypeTransformsGetAll)
 	api.POST("/data-type-transform", data.DataTypeTransformCreate)
 	api.GET("/project", project.GetProjectWithUserPermission)
