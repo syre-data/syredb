@@ -337,6 +337,13 @@ const (
 	PropertyTypeTimestamp PropertyType = "timestamp"
 )
 
+type PropertyRx struct {
+	Data  uuid.UUID    `db:"_data"`
+	Key   string       `db:"_key"`
+	Type  PropertyType `db:"_type"`
+	Value any          `db:"value"` // TODO: Match value with type
+}
+
 type Property struct {
 	Key   string       `db:"_key"`
 	Type  PropertyType `db:"_type"`
@@ -390,11 +397,13 @@ type ProjectResources struct {
 	Data               []ProjectData
 	DataTypes          []DataType
 	DataSchemas        []DataSchema
+	DataOrigins        []DataOriginRx
 	DataRelations      map[uuid.UUID][]uuid.UUID
 	DataGroups         []ProjectDataGroup
 	DataGroupRelations []DataGroupRelation
 	ProjectNoteCount   uint
 	ProjectPermissions []ProjectPermission
+	Users              []User
 }
 
 func (s *ProjectService) GetProjectResources(
@@ -402,11 +411,11 @@ func (s *ProjectService) GetProjectResources(
 	project_id uuid.UUID,
 ) (ProjectResources, error) {
 	var project_resources ProjectResources
-	project_query :=
+	query_project :=
 		"SELECT _id, _creator, label, description, visibility FROM project_ WHERE _id=$1"
 	err := s.db.Conn.QueryRow(
 		s.ctx,
-		project_query,
+		query_project,
 		project_id,
 	).Scan(
 		&project_resources.Project.Id,
@@ -434,8 +443,8 @@ func (s *ProjectService) GetProjectResources(
 		return ProjectResources{}, err
 	}
 
-	project_tags_query := "SELECT _tag FROM project_tag_ WHERE _project=$1"
-	rows, _ := s.db.Conn.Query(s.ctx, project_tags_query, project_id)
+	query_project_tags := "SELECT _tag FROM project_tag_ WHERE _project=$1"
+	rows, _ := s.db.Conn.Query(s.ctx, query_project_tags, project_id)
 	project_resources.Tags, err = pgx.CollectRows(
 		rows,
 		pgx.RowTo[string],
@@ -443,32 +452,32 @@ func (s *ProjectService) GetProjectResources(
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"query", project_tags_query,
+			"query", query_project_tags,
 			"project", project_id,
 		).Error("could not get project tags")
 	}
 
-	project_note_count_query := "SELECT COUNT(*) FROM project_note_ WHERE _project=$1"
+	query_project_note_count := "SELECT COUNT(*) FROM project_note_ WHERE _project=$1"
 	err = s.db.Conn.QueryRow(
 		s.ctx,
-		project_note_count_query,
+		query_project_note_count,
 		project_id,
 	).Scan(&project_resources.ProjectNoteCount)
 	if err != nil {
 		s.logger.With(
 			"error", err,
-			"query", project_note_count_query,
+			"query", query_project_note_count,
 			"project", project_id,
 		).Error("could not get project note count")
 	}
 
-	project_data_membership_query :=
+	query_project_data_membership :=
 		`SELECT _project, _data, _creator, label
 		FROM project_data_membership_ 
 		WHERE _project=$1`
 	rows, _ = s.db.Conn.Query(
 		s.ctx,
-		project_data_membership_query,
+		query_project_data_membership,
 		project_id,
 	)
 	project_data, err := pgx.CollectRows(
@@ -523,8 +532,18 @@ func (s *ProjectService) GetProjectResources(
 		return ProjectResources{}, err
 	}
 
-	data_schema_ids := []uuid.UUID{}
-	// TODO: Get relevent data schemas
+	query_data_type_schema_ids :=
+		`SELECT _schema FROM data_type_schema_
+		WHERE _data_type=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, query_data_type_schema_ids, data_type_ids)
+	data_schema_ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data types", data_type_ids,
+		).Error("could not get data type schemas")
+		return ProjectResources{}, err
+	}
 	project_resources.DataSchemas, err = s.data_service.DataSchemasById(data_schema_ids)
 	if err != nil {
 		s.logger.With(
@@ -533,6 +552,42 @@ func (s *ProjectService) GetProjectResources(
 		).Error("could not get data schemas")
 		return ProjectResources{}, err
 	}
+
+	user_creator_ids := []uuid.UUID{}
+	data_origin_ids := []uuid.UUID{}
+	for _, info := range data_info {
+		if info.Creator.Type() != DataCreatorTypeUser {
+			continue
+		}
+		creator, ok := info.Creator.(DataCreatorUser)
+		if !ok {
+			panic("invalid data creator")
+		}
+
+		user_creator_ids = append(user_creator_ids, creator.Id)
+		data_origin_ids = append(data_origin_ids, creator.Origin)
+	}
+
+	origins, err := s.data_service.DataOriginsByIds(data_origin_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"data origins", data_origin_ids,
+		).Error("could not get data origins")
+		return ProjectResources{}, err
+	}
+	project_resources.DataOrigins = origins
+
+	user_ids := user_creator_ids
+	users, err := s.user_service.UsersById(user_ids)
+	if err != nil {
+		s.logger.With(
+			"error", err,
+			"users", users,
+		).Error("could not get users")
+		return ProjectResources{}, err
+	}
+	project_resources.Users = users
 
 	project_resources.DataRelations, err = s.data_service.DataTree(data_ids)
 	if err != nil {
@@ -565,8 +620,8 @@ func (s *ProjectService) getProjectResourcesDataInfo(
 	for idx, data_id := range data_ids {
 		info[idx].Id = data_id
 	}
-	info_query := "SELECT _id, _type, _creator_type, timestamp FROM data_ WHERE _id=ANY($1)"
-	rows, err := s.db.Conn.Query(s.ctx, info_query, data_ids)
+	query_info := "SELECT _id, _type, _creator_type, timestamp FROM data_ WHERE _id=ANY($1)"
+	rows, err := s.db.Conn.Query(s.ctx, query_info, data_ids)
 	if err != nil {
 		s.logger.With("error", err).Error("could not query data")
 		return nil, err
@@ -603,14 +658,15 @@ func (s *ProjectService) getProjectResourcesDataInfo(
 		}
 	}
 
-	creator_user_query :=
-		`SELECT _data, _creator FROM data_creator_user_ 
+	query_creator_user :=
+		`SELECT _data, _creator, _origin FROM data_creator_user_ 
 		WHERE _data=ANY($1)`
-	rows, _ = s.db.Conn.Query(s.ctx, creator_user_query, creator_user_ids)
+	rows, _ = s.db.Conn.Query(s.ctx, query_creator_user, creator_user_ids)
 	for rows.Next() {
 		var data_id uuid.UUID
 		var creator_id uuid.UUID
-		err := rows.Scan(&data_id, &creator_id)
+		var origin_id uuid.UUID
+		err := rows.Scan(&data_id, &creator_id, &origin_id)
 		if err != nil {
 			s.logger.With("error", err).Error("could not get data creator")
 			return nil, err
@@ -624,12 +680,12 @@ func (s *ProjectService) getProjectResourcesDataInfo(
 			panic("could not find data")
 		}
 
-		info[data_info_idx].Creator = DataCreatorUser{Id: creator_id}
+		info[data_info_idx].Creator = DataCreatorUser{Id: creator_id, Origin: origin_id}
 	}
 
-	creator_transform_query :=
+	query_creator_transform :=
 		`SELECT _data, _creator FROM data_creator_transform_ WHERE _data=ANY($1)`
-	rows, _ = s.db.Conn.Query(s.ctx, creator_transform_query, creator_transform_ids)
+	rows, _ = s.db.Conn.Query(s.ctx, query_creator_transform, creator_transform_ids)
 	for rows.Next() {
 		var data_id uuid.UUID
 		var creator_id uuid.UUID
@@ -650,11 +706,11 @@ func (s *ProjectService) getProjectResourcesDataInfo(
 		info[data_info_idx].Creator = DataCreatorTransform{Id: creator_id}
 	}
 
-	tags_query :=
+	query_tags :=
 		`SELECT _data, _tag FROM project_data_tag_
 		WHERE _project=$1 AND _data=ANY($2)
 		GROUP BY _data`
-	rows, _ = s.db.Conn.Query(s.ctx, tags_query, project_id, data_ids)
+	rows, _ = s.db.Conn.Query(s.ctx, query_tags, project_id, data_ids)
 	for rows.Next() {
 		var data_id uuid.UUID
 		var tags []string
@@ -675,33 +731,42 @@ func (s *ProjectService) getProjectResourcesDataInfo(
 		info[data_info_idx].Tags = tags
 	}
 
-	properties_query :=
-		`SELECT _data, _key, _type, value FROM project_data_property_
-		WHERE _project=$1 AND _data=ANY($2) GROUP BY _data`
-	rows, _ = s.db.Conn.Query(s.ctx, properties_query, project_id, data_ids)
-	for rows.Next() {
-		var data_id uuid.UUID
-		var properties []Property
-		err := rows.Scan(&data_id, &properties)
-		if err != nil {
-			s.logger.With(
-				"error", err,
-				"query", properties_query,
-				"data", data_ids,
-			).Error("could not get data properties")
-			return nil, err
+	data_properties := make(map[uuid.UUID][]Property)
+	query_data_properties :=
+		`SELECT _data, _key, _type, value FROM data_property_
+	WHERE _data=ANY($1)`
+	rows, _ = s.db.Conn.Query(s.ctx, query_data_properties, data_ids)
+	data_property_rxs, err := pgx.CollectRows(rows, pgx.RowToStructByName[PropertyRx])
+	for _, rx := range data_property_rxs {
+		prop := Property{
+			Key:   rx.Key,
+			Type:  rx.Type,
+			Value: rx.Value,
 		}
-
+		data_props, ok := data_properties[rx.Data]
+		if ok {
+			data_props = append(data_props, prop)
+		} else {
+			data_properties[rx.Data] = []Property{prop}
+		}
+	}
+	for data, props := range data_properties {
 		data_info_idx := slices.IndexFunc(info, func(data_info ProjectDataInfo) bool {
-			return data_info.Id == data_id
+			return data_info.Id == data
 		})
 		if data_info_idx < 0 {
-			s.logger.With("data", data_id).Error("could not find data")
+			s.logger.With("data", data).Error("could not find data")
 			panic("could not find data")
 		}
 
-		info[data_info_idx].Properties = properties
+		info[data_info_idx].Properties = props
 	}
+
+	query_project_properties :=
+		`SELECT _data, _key, _type, value FROM project_data_property_
+		WHERE _project=$1 AND _data=ANY($2)`
+	rows, _ = s.db.Conn.Query(s.ctx, query_project_properties, project_id, data_ids)
+	// TODO
 
 	note_count_query :=
 		`SELECT _data, COUNT(*) FROM project_data_note_ 

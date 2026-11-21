@@ -15,6 +15,7 @@ import { Loading, StandardError } from "@/components";
 import { toast } from "sonner";
 import { AppError } from "@/errors";
 import { MainNav, PageDashboard } from "@/components/Nav";
+import Icon from "../icon";
 
 export default function () {
     return (
@@ -278,8 +279,19 @@ function RecentData() {
     return (
         <div className="px-4">
             <div className="card">
-                <div className="pt-2">
+                <div className="group pt-2 flex items-baseline gap-2">
                     <h3 className="px-4 pb-2 text-lg font-bold">Recent data</h3>
+                    <div className="invisible group-hover:visible">
+                        <Link
+                            to="/data"
+                            title="Browse data"
+                            className="text-sm flex gap-1 items-center px-2 py-1 \
+                            rounded-full border hover:bg-gray-200 dark:hover:bg-gray-700"
+                        >
+                            <Icon.MagnifyingGlass />
+                            Browse all data
+                        </Link>
+                    </div>
                 </div>
                 <div className="pb-2">
                     <ErrorBoundary FallbackComponent={RecentDataError}>
@@ -323,17 +335,19 @@ interface RecentDataListProps {
 }
 function RecentDataList({ data: resources }: RecentDataListProps) {
     return (
-        <table className="table-compact w-full [&_th]:last:w-full [&_td]:last:w-full [&_td]:text-nowrap [&_th]:first:pl-4 [&_td]:first:pl-4">
+        <table
+            className="table-compact w-full \
+            [&_th]:last:w-full [&_td]:last:w-full [&_td]:text-nowrap \
+            [&_th]:first:pl-4 [&_td]:first:pl-4"
+        >
             <thead>
-                <tr>
-                    <th className="bg-gray-200 dark:bg-gray-700 rounded-tl-lg">
-                        Type
-                    </th>
-                    <th className="bg-gray-200 dark:bg-gray-700">Origin</th>
-                    <th className="bg-gray-200 dark:bg-gray-700">Timestamp</th>
-                    <th className="bg-gray-200 dark:bg-gray-700">Creator</th>
-                    <th className="bg-gray-200 dark:bg-gray-700">Projects</th>
-                    <th className="bg-gray-200 dark:bg-gray-700 rounded-tr-lg"></th>
+                <tr className="[&_th]:bg-gray-200 dark:[&_th]:bg-gray-700">
+                    <th className="rounded-tl-lg">Type</th>
+                    <th>Origin</th>
+                    <th>Timestamp</th>
+                    <th>Creator</th>
+                    <th>Projects</th>
+                    <th className="rounded-tr-lg"></th>
                 </tr>
             </thead>
             <tbody>
@@ -361,7 +375,7 @@ function RecentDataList({ data: resources }: RecentDataListProps) {
 
                     return (
                         <RecentDataListItem
-                            key={datum.Id}
+                            key={common.uuidToString(datum.Data.Id)}
                             data={datum.Data}
                             creator={creator}
                             dataType={dtype}

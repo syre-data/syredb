@@ -26,6 +26,7 @@ import DataOrigins from "../data_origin/DataOrigins";
 import DataOriginEdit from "../data_origin/DataOriginEdit";
 import DataOriginCreate from "../data_origin/DataOriginCreate";
 import Logout from "./Logout";
+import DataBrowser from "@/data/DataBrowser";
 
 export default function Home() {
     return (
@@ -81,6 +82,7 @@ export default function Home() {
                     <Route path="settings" element={<ProjectSettings />} />
                     <Route path="data/create" element={<ProjectDataCreate />} />
                 </Route>
+                <Route path="/data" element={<DataBrowser />} />
                 <Route path="data/:data_id" element={<Data />} />
                 <Route path="data/:data_id/edit" element={<DataEdit />} />
                 <Route path="*" element={<NotFound />} />

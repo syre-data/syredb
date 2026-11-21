@@ -10,13 +10,14 @@ import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
 import {
+    DataCreatorTypeUser,
     DataSchemaCardinalityMultiple,
     DataSchemaCardinalitySingle,
     DataSourceCardinalityMultiple,
     DataSourceCardinalitySingle,
     DataStorageExternal,
     DataStorageInternal,
-    type AppError,
+    type DataOriginRx,
     type DataSource,
     type DataStorage,
     type DataType,
@@ -25,24 +26,22 @@ import {
     type ProjectData,
     type SchemaFieldValues,
     type SourceFileInfo,
+    type User,
 } from "@/types";
+import Users from "@/user/Users";
 import { useDismiss, useFloating, useInteractions } from "@floating-ui/react";
 import { useForm } from "@tanstack/react-form";
-import {
-    QueryClient,
-    useQuery,
-    useQueryClient,
-    useSuspenseQuery,
-} from "@tanstack/react-query";
+import { noop, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import classNames from "classnames";
-import type { types } from "node:util";
 import React, {
     Suspense,
     useState,
+    type ComponentProps,
     type MouseEvent,
     type Ref,
     type SubmitEvent,
 } from "react";
+import { createRoot } from "react-dom/client";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { data } from "react-router";
 import { Link, redirect, useParams } from "react-router";
@@ -104,6 +103,8 @@ function Project({ projectId }: ProjectProps) {
                 data={resources.Data}
                 relations={resources.DataRelations}
                 types={resources.DataTypes}
+                origins={resources.DataOrigins}
+                users={resources.Users}
             />
         </div>
     );
@@ -114,8 +115,17 @@ interface ProjectDataProps {
     data: ProjectData[];
     relations: { [key: string]: uuid.UUIDTypes[] };
     types: DataType[];
+    origins: DataOriginRx[];
+    users: User[];
 }
-function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
+function ProjectData({
+    projectId,
+    data,
+    relations,
+    types,
+    origins,
+    users,
+}: ProjectDataProps) {
     const params = new URLSearchParams();
     params.append("project", uuidToString(projectId));
     const download = `/resource/project/data?${params}`;
@@ -175,6 +185,8 @@ function ProjectData({ projectId, data, relations, types }: ProjectDataProps) {
                     data={data}
                     relations={relations}
                     types={types}
+                    origins={origins}
+                    users={users}
                     filter={dataFilter}
                 />
             )}
@@ -203,9 +215,10 @@ function DataQuery({ projectId, setDataFilter, className }: DataQueryProps) {
     const form = useForm({
         defaultValues: { query: "" },
         onSubmit: async ({ value }) => {
-            const res = await dataService.search(projectId, value.query.trim());
-
-            const results = await res.json();
+            const results = await dataService.search(
+                projectId,
+                value.query.trim(),
+            );
             setDataFilter(results);
         },
     });
@@ -261,6 +274,8 @@ interface ProjectDataListViewProps {
     data: ProjectData[];
     relations: { [key: string]: uuid.UUIDTypes[] };
     types: DataType[];
+    origins: DataOriginRx[];
+    users: User[];
     filter: uuid.UUIDTypes<Uint8Array<ArrayBufferLike>>[] | null;
 }
 function ProjectDataListView({
@@ -268,6 +283,8 @@ function ProjectDataListView({
     data,
     relations,
     types,
+    origins,
+    users,
     filter,
 }: ProjectDataListViewProps) {
     if (!filter) {
@@ -277,6 +294,8 @@ function ProjectDataListView({
                 data={data}
                 relations={relations}
                 types={types}
+                origins={origins}
+                users={users}
             />
         );
     } else if (filter.length == 0) {
@@ -294,6 +313,8 @@ function ProjectDataListView({
                     data={filteredData}
                     relations={relations}
                     types={types}
+                    origins={origins}
+                    users={users}
                 />
             </div>
         );
@@ -309,12 +330,16 @@ interface ProjectDataListProps {
     data: ProjectData[];
     relations: { [key: string]: uuid.UUIDTypes[] };
     types: DataType[];
+    origins: DataOriginRx[];
+    users: User[];
 }
 function ProjectDataList({
     projectId,
     data,
     relations,
     types,
+    origins,
+    users,
 }: ProjectDataListProps) {
     let parents = new Map();
     for (const parent in relations) {
@@ -324,10 +349,27 @@ function ProjectDataList({
         }
     }
 
+    // TODO: Add bulk download by selecting individual data
     return (
-        <table className="table-std">
+        <table
+            className="table-compact w-full \
+            [&_th]:last:w-full [&_td]:last:w-full [&_td]:text-nowrap \
+            [&_th]:first:pl-4 [&_td]:first:pl-4"
+        >
+            <thead>
+                <tr className="[&_th]:bg-gray-200 dark:[&_th]:bg-gray-700">
+                    <th>Type</th>
+                    <th>Label</th>
+                    <th>Creator</th>
+                    <th>Origin</th>
+                    <th>Timestamp</th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                </tr>
+            </thead>
             <tbody>
-                {data.map((datum, idx) => {
+                {data.map((datum) => {
                     const parent_id = parents.get(datum.Id);
                     let parent: ProjectData | undefined = undefined;
                     let parent_label = undefined;
@@ -357,15 +399,28 @@ function ProjectDataList({
                         console.error(`could not get data type ${datum.Type}`);
                     }
 
+                    let origin, userCreator;
+                    if (datum.Creator.Origin) {
+                        origin = origins.find(
+                            (origin) => origin.Id === datum.Creator.Origin,
+                        );
+                        userCreator = users.find(
+                            (user) => user.Id === datum.Creator.Id,
+                        );
+                    }
+
                     return (
                         <ProjectDataItem
                             key={datum.Id.toString()}
-                            index={idx}
                             projectId={projectId}
                             data={datum}
                             type={type}
                             parent={parent}
                             parentLabel={parent_label}
+                            origin={origin}
+                            userCreator={userCreator}
+                            className="even:bg-gray-200 dark:even:bg-gray-700 \
+                                hover:bg-primary-400 dark:hover:bg-primary-700"
                         />
                     );
                 })}
@@ -374,21 +429,25 @@ function ProjectDataList({
     );
 }
 
-interface ProjectDataItemProps {
-    index: number;
+interface ProjectDataItemProps extends ComponentProps<"tr"> {
     projectId: uuid.UUIDTypes;
     data: ProjectData;
     type: DataType;
-    parent: ProjectData | undefined;
-    parentLabel: string | undefined;
+    parent?: ProjectData;
+    parentLabel?: string;
+    origin?: DataOriginRx;
+    userCreator?: User;
 }
 function ProjectDataItem({
-    index,
     projectId,
     data,
     type,
     parent,
     parentLabel,
+    origin,
+    userCreator,
+    className,
+    ...props
 }: ProjectDataItemProps) {
     const queryClient = useQueryClient();
     const [previewOpen, setPreviewOpen] = useState(false);
@@ -428,9 +487,10 @@ function ProjectDataItem({
     }
 
     async function fetch_preview() {
-        queryClient.prefetchQuery({
+        queryClient.query({
             queryKey: [QUERY_KEY_DATA_PREVIEW, data.Id],
-            queryFn: async () => await dataService.dataPreview(data.Id),
+            queryFn: async () =>
+                await dataService.dataPreview(data.Id).catch(noop),
         });
     }
 
@@ -463,27 +523,49 @@ function ProjectDataItem({
             console.error("invalid data storage");
     }
 
-    const params = new URLSearchParams();
-    params.append("id", data.Id.toString());
-    params.append("project", uuidToString(projectId));
-    const download = `/resource/data?${params}`;
+    const download_params = new URLSearchParams();
+    download_params.append("id", data.Id.toString());
+    download_params.append("project", uuidToString(projectId));
+    const download_path = `/resource/data?${download_params}`;
+
     return (
-        <tr id={`data-${data.Id}`} data-id={data.Id} className="group">
-            <td className="text-nowrap  font-semibold w-0">{type.Label}</td>
-            <td className="text-nowrap w-0 group/label">
+        <tr
+            id={`data-${data.Id}`}
+            data-id={data.Id}
+            className={`group ${className}`}
+            {...props}
+        >
+            <td className="text-nowrap w-0 font-semibold select-all">
+                {type.Label}
+            </td>
+            <td className="text-nowrap w-0">
                 {data.Label ? (
-                    <>
-                        <span className="pr-2 font-semibold">{data.Label}</span>
-                        <span className="text-gray-500 invisible group-hover/label:visible">
-                            ({timestampToString(new Date(data.Timestamp))})
-                        </span>
-                    </>
+                    <span className="font-semibold select-all">
+                        {data.Label}
+                    </span>
                 ) : (
-                    <span className="font-semibold">
-                        {timestampToString(new Date(data.Timestamp))}
+                    <span className="text-secondary dark:hover:text-gray-800">
+                        (no label)
                     </span>
                 )}
             </td>
+            <td>
+                {userCreator ? (
+                    <div className="flex items-center">
+                        <span className="select-all">{userCreator.Name}</span>
+                        <a
+                            href={`mailto:${userCreator.Email}`}
+                            target="_blank"
+                            title={userCreator.Email}
+                            className="invisible group-hover:visible pl-2"
+                        >
+                            <Icon.Mail />
+                        </a>
+                    </div>
+                ) : null}
+            </td>
+            <td className="select-all">{origin ? origin.Label : null}</td>
+            <td>{timestampToString(new Date(data.Timestamp))}</td>
             <td className="w-0">
                 {parentLabel ? (
                     <span
@@ -509,7 +591,8 @@ function ProjectDataItem({
                         <Link to={`/data/${data.Id}?project=${projectId}`}>
                             <button
                                 type="button"
-                                className="btn-cmd"
+                                className="p-0.5 rounded-sm transition-colors cursor-pointer \
+                                bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-800"
                                 title="View data"
                             >
                                 <Icon.Eye />
@@ -519,7 +602,8 @@ function ProjectDataItem({
                     <div>
                         <button
                             type="button"
-                            className="btn-cmd"
+                            className="p-0.5 rounded-sm transition-colors cursor-pointer \
+                            bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-800"
                             title="Preview values"
                             onFocus={fetch_preview}
                             onMouseEnter={fetch_preview}
@@ -529,8 +613,12 @@ function ProjectDataItem({
                         </button>
                     </div>
                     <div>
-                        <a href={download} title="Download">
-                            <button type="button" className="btn-cmd">
+                        <a href={download_path} title="Download">
+                            <button
+                                type="button"
+                                className="p-0.5 rounded-sm transition-colors cursor-pointer \
+                                bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-800"
+                            >
                                 <Icon.Download />
                             </button>
                         </a>

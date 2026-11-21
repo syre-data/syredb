@@ -5,6 +5,7 @@ package query
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 )
@@ -70,7 +71,7 @@ func BuildProjectQuery(user uuid.UUID, project uuid.UUID, exprs []Expr) QueryPar
 func (q *QueryParams) AddExpr(expr Expr, project uuid.UUID) {
 	switch expr.Kind {
 	case EXPR_FULL_TEXT:
-		panic("TODO")
+		q.exprFullTextToSql(expr.Expr.(string))
 	case EXPR_NOT:
 		panic("TODO")
 	case EXPR_PROPERTY:
@@ -86,6 +87,60 @@ func (q *QueryParams) AddExpr(expr Expr, project uuid.UUID) {
 	default:
 		panic(fmt.Sprintf("unexpected ExprKind: %#v", expr.Kind))
 	}
+}
+
+func (q *QueryParams) exprFullTextToSql(expr string) {
+	// `d._id` is id of current data
+	op_like := "ILIKE"
+	for _, r := range expr {
+		if unicode.IsUpper(r) {
+			op_like = "LIKE"
+			break
+		}
+	}
+
+	q.Args = append(q.Args, expr+"%")
+	idx_arg_wildcard_trailing := len(q.Args)
+	q.Args = append(q.Args, "%"+expr+"%")
+	idx_arg_wildcard_surrounded := len(q.Args)
+	subexprs := make([]string, 3)
+	subexprs[0] = fmt.Sprintf( // property keys
+		`EXISTS (
+			SELECT 1 FROM data_property_ 
+			WHERE _data=d._id AND _key %s $%d
+		)`,
+		op_like,
+		idx_arg_wildcard_trailing,
+	)
+	subexprs[1] = fmt.Sprintf( // data type
+		`EXISTS (
+			SELECT 1 FROM data_ JOIN data_type_ 
+			ON data_._type=data_type_._id
+			WHERE data_._id=d._id AND data_type_.label %s $%d
+		)`,
+		op_like,
+		idx_arg_wildcard_trailing,
+	)
+	subexprs[2] = fmt.Sprintf( // creator - user
+		`EXISTS (
+			SELECT 1 FROM data_ 
+			JOIN data_creator_user_ c ON data_._id=c._data
+			JOIN user_ u ON c._creator=u._id
+			JOIN data_origin_ o ON c._origin=o._id
+			WHERE data_._id=d._id AND (
+				u.email %[1]s $%[2]d
+				OR u.name %[1]s $%[3]d
+				OR o.label %[1]s $%[2]d
+			)
+		)`,
+		op_like,
+		idx_arg_wildcard_trailing,
+		idx_arg_wildcard_surrounded,
+	)
+
+	q.Sql.WriteString("(")
+	q.Sql.WriteString(strings.Join(subexprs, " OR "))
+	q.Sql.WriteString(")")
 }
 
 func (q *QueryParams) exprPropertyToSql(expr ExprProperty) {

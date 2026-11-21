@@ -477,6 +477,12 @@ export const PropertyTypeFloat = "float";
 export const PropertyTypeQuantity = "quantity";
 export const PropertyTypeTimestamp = "timestamp";
 export type PropertyType = typeof PropertyTypeString | typeof PropertyTypeBool | typeof PropertyTypeUint | typeof PropertyTypeInt | typeof PropertyTypeFloat | typeof PropertyTypeQuantity | typeof PropertyTypeTimestamp;
+export interface PropertyRx {
+  Data: uuid.UUIDTypes;
+  Key: string;
+  Type: PropertyType;
+  Value: any; // TODO: Match value with type
+}
 export interface Property {
   Key: string;
   Type: PropertyType;
@@ -524,11 +530,13 @@ export interface ProjectResources {
   Data: ProjectData[];
   DataTypes: DataType[];
   DataSchemas: DataSchema[];
+  DataOrigins: DataOriginRx[];
   DataRelations: { [key: uuid.UUIDTypes]: uuid.UUIDTypes[]};
   DataGroups: ProjectDataGroup[];
   DataGroupRelations: DataGroupRelation[];
   ProjectNoteCount: number /* uint */;
   ProjectPermissions: ProjectPermission[];
+  Users: User[];
 }
 export interface ProjectDataInfo {
   Id: uuid.UUIDTypes;

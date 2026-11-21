@@ -137,6 +137,11 @@
     @apply w-full;
 }
 
+.table-std th,
+.table-std td {
+    @apply text-left px-4;
+}
+
 .table-std tbody td,
 .table-std tbody th {
     @apply px-4 py-2 align-top border-b border-b-secondary-100 dark:border-b-secondary-700;

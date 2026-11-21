@@ -3176,7 +3176,7 @@ func (s *DataService) DataProperties(id uuid.UUID) ([]Property, error) {
 	return properties, nil
 }
 
-// Get properties for the given datat by key.
+// Get properties for the given data by key.
 func (s *DataService) DataPropertiesByKeys(data uuid.UUID, keys []string) ([]Property, error) {
 	if len(keys) == 0 {
 		return []Property{}, nil
