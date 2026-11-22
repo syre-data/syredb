@@ -5,12 +5,12 @@ import {
     timestampToString,
     uuidToString,
 } from "@/common";
-import { Loading, StandardError, SuspenseError } from "@/components";
+import { Loading, StandardError } from "@/components";
+import { valueToString } from "@/components/Property";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
 import {
-    DataCreatorTypeUser,
     DataSchemaCardinalityMultiple,
     DataSchemaCardinalitySingle,
     DataSourceCardinalityMultiple,
@@ -24,11 +24,11 @@ import {
     type DataValuesPreviewInternal,
     type DataValuesPreviewInternalMultiple,
     type ProjectData,
+    type PropertyType,
     type SchemaFieldValues,
     type SourceFileInfo,
     type User,
 } from "@/types";
-import Users from "@/user/Users";
 import { useDismiss, useFloating, useInteractions } from "@floating-ui/react";
 import { useForm } from "@tanstack/react-form";
 import { noop, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
@@ -41,7 +41,6 @@ import React, {
     type Ref,
     type SubmitEvent,
 } from "react";
-import { createRoot } from "react-dom/client";
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { data } from "react-router";
 import { Link, redirect, useParams } from "react-router";
@@ -98,6 +97,13 @@ function Project({ projectId }: ProjectProps) {
                     </div>
                 </div>
             </div>
+            <div className="px-4 text-secondary">
+                {resources.Project.Description}
+            </div>
+            <HeaderCards
+                dataCount={resources.Data.length}
+                className="pt-4 px-4"
+            />
             <ProjectData
                 projectId={projectId}
                 data={resources.Data}
@@ -105,12 +111,29 @@ function Project({ projectId }: ProjectProps) {
                 types={resources.DataTypes}
                 origins={resources.DataOrigins}
                 users={resources.Users}
+                className="pt-4"
             />
         </div>
     );
 }
 
-interface ProjectDataProps {
+interface HeaderCardsProps extends ComponentProps<"div"> {
+    dataCount: number;
+}
+function HeaderCards({ dataCount, className, ...props }: HeaderCardsProps) {
+    return (
+        <div className={`flex gap-4 ${className}`} {...props}>
+            <div className="card">
+                <div className="px-4 pt-2">Data count</div>
+                <div className="px-4 pb-2 text-right text-lg font-bold">
+                    {dataCount}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+interface ProjectDataProps extends ComponentProps<"div"> {
     projectId: uuid.UUIDTypes;
     data: ProjectData[];
     relations: { [key: string]: uuid.UUIDTypes[] };
@@ -125,6 +148,7 @@ function ProjectData({
     types,
     origins,
     users,
+    ...props
 }: ProjectDataProps) {
     const params = new URLSearchParams();
     params.append("project", uuidToString(projectId));
@@ -133,7 +157,7 @@ function ProjectData({
     const [dataFilter, setDataFilter] = useState<null | uuid.UUIDTypes[]>(null);
 
     return (
-        <div>
+        <div {...props}>
             <div className="px-4 flex gap-2 items-center group">
                 <h2 className="text-xl">Data</h2>
                 <div className="flex gap-2">
@@ -178,17 +202,19 @@ function ProjectData({
                 />
             </div>
             {data.length === 0 ? (
-                <ProjectDataEmpty />
+                <ProjectDataEmpty className="pt-4 px-4" />
             ) : (
-                <ProjectDataListView
-                    projectId={projectId}
-                    data={data}
-                    relations={relations}
-                    types={types}
-                    origins={origins}
-                    users={users}
-                    filter={dataFilter}
-                />
+                <div className="pt-4">
+                    <ProjectDataTableView
+                        projectId={projectId}
+                        data={data}
+                        relations={relations}
+                        types={types}
+                        origins={origins}
+                        users={users}
+                        filter={dataFilter}
+                    />
+                </div>
             )}
         </div>
     );
@@ -258,9 +284,9 @@ function DataQuery({ projectId, setDataFilter, className }: DataQueryProps) {
     );
 }
 
-function ProjectDataEmpty() {
+function ProjectDataEmpty(props: ComponentProps<"div">) {
     return (
-        <div className="px-4">
+        <div {...props}>
             <p>No data yet.</p>
             <p>
                 Click the <Icon.Plus className="inline" /> above to create some.
@@ -269,7 +295,7 @@ function ProjectDataEmpty() {
     );
 }
 
-interface ProjectDataListViewProps {
+interface ProjectDataTableViewProps {
     projectId: uuid.UUIDTypes;
     data: ProjectData[];
     relations: { [key: string]: uuid.UUIDTypes[] };
@@ -278,7 +304,7 @@ interface ProjectDataListViewProps {
     users: User[];
     filter: uuid.UUIDTypes<Uint8Array<ArrayBufferLike>>[] | null;
 }
-function ProjectDataListView({
+function ProjectDataTableView({
     projectId,
     data,
     relations,
@@ -286,10 +312,10 @@ function ProjectDataListView({
     origins,
     users,
     filter,
-}: ProjectDataListViewProps) {
+}: ProjectDataTableViewProps) {
     if (!filter) {
         return (
-            <ProjectDataList
+            <ProjectDataTable
                 projectId={projectId}
                 data={data}
                 relations={relations}
@@ -308,7 +334,7 @@ function ProjectDataListView({
                 <div className="text-sm px-4 pb-2">
                     Filtered {filteredData.length} out of {data.length} data
                 </div>
-                <ProjectDataList
+                <ProjectDataTable
                     projectId={projectId}
                     data={filteredData}
                     relations={relations}
@@ -325,7 +351,12 @@ function ProjectDataFilterEmpty() {
     return <div className="pt-2 px-4 text-lg">No data match your query</div>;
 }
 
-interface ProjectDataListProps {
+interface PropertyInfo {
+    _id: string;
+    key: string;
+    kind: PropertyType;
+}
+interface ProjectDataTableProps {
     projectId: uuid.UUIDTypes;
     data: ProjectData[];
     relations: { [key: string]: uuid.UUIDTypes[] };
@@ -333,14 +364,103 @@ interface ProjectDataListProps {
     origins: DataOriginRx[];
     users: User[];
 }
-function ProjectDataList({
+
+function ProjectDataTable({ data, ...props }: ProjectDataTableProps) {
+    const propertiesAll = data.flatMap((datum) =>
+        datum.Properties
+            ? datum.Properties.map((property) => {
+                  return {
+                      _id: `${property.Key}.${property.Type}`,
+                      key: property.Key,
+                      kind: property.Type,
+                  };
+              })
+            : [],
+    );
+    const propertyInfo = [
+        ...new Map(
+            propertiesAll.map((property) => [property._id, property]),
+        ).values(),
+    ];
+    propertyInfo.sort((a, b) => {
+        if (a._id < b._id) {
+            return -1;
+        }
+        if (b._id < a._id) {
+            return 1;
+        }
+        throw new Error("property set was not unique");
+    });
+
+    const [propertiesDisplay, setPropertiesDisplay] = useState(
+        new Map(propertyInfo.map((property) => [property._id, true])),
+    );
+
+    return (
+        <div>
+            <ProjectDataTablePropertySelector
+                propertyInfo={propertyInfo}
+                setPropertiesDisplay={setPropertiesDisplay}
+                className="px-4 pb-2"
+            />
+            <ProjectDataTableInner
+                data={data}
+                propertyInfo={propertyInfo}
+                propertiesDisplay={propertiesDisplay}
+                {...props}
+            />
+        </div>
+    );
+}
+
+interface ProjectDataTablePropertySelectorProps extends ComponentProps<"div"> {
+    propertyInfo: PropertyInfo[];
+    setPropertiesDisplay: React.Dispatch<
+        React.SetStateAction<Map<string, boolean>>
+    >;
+}
+function ProjectDataTablePropertySelector({
+    propertyInfo,
+    ...props
+}: ProjectDataTablePropertySelectorProps) {
+    return (
+        <div {...props}>
+            Properties
+            <form className="flex gap-2">
+                {propertyInfo.map((property) => {
+                    return (
+                        <div key={property._id}>
+                            <label className="flex gap-1">
+                                <input type="checkbox" />
+                                <div>
+                                    <span>{property.key}</span>
+                                    <span className="pl-1 text-secondary">
+                                        ({property.kind})
+                                    </span>
+                                </div>
+                            </label>
+                        </div>
+                    );
+                })}
+            </form>
+        </div>
+    );
+}
+
+interface ProjectDataTableInnerProps extends ProjectDataTableProps {
+    propertyInfo: PropertyInfo[];
+    propertiesDisplay: Map<string, boolean>;
+}
+function ProjectDataTableInner({
     projectId,
     data,
     relations,
     types,
     origins,
     users,
-}: ProjectDataListProps) {
+    propertyInfo,
+    propertiesDisplay,
+}: ProjectDataTableInnerProps) {
     let parents = new Map();
     for (const parent in relations) {
         const children = relations[parent]!;
@@ -356,13 +476,40 @@ function ProjectDataList({
             [&_th]:last:w-full [&_td]:last:w-full [&_td]:text-nowrap \
             [&_th]:first:pl-4 [&_td]:first:pl-4"
         >
-            <thead>
-                <tr className="[&_th]:bg-gray-200 dark:[&_th]:bg-gray-700">
+            <thead className="[&_th]:bg-gray-200 dark:[&_th]:bg-gray-700">
+                <tr>
                     <th>Type</th>
                     <th>Label</th>
                     <th>Creator</th>
                     <th>Origin</th>
                     <th>Timestamp</th>
+                    <th colSpan={propertyInfo.length}>Properties</th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                </tr>
+                <tr>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    {propertyInfo.map((property) => (
+                        <th key={property._id}>{property.key}</th>
+                    ))}
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                </tr>
+                <tr className="[&_th]:font-normal text-secondary text-sm">
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    <th></th>
+                    {propertyInfo.map((property) => (
+                        <th key={property._id}>({property.kind})</th>
+                    ))}
                     <th></th>
                     <th></th>
                     <th></th>
@@ -419,6 +566,7 @@ function ProjectDataList({
                             parentLabel={parent_label}
                             origin={origin}
                             userCreator={userCreator}
+                            propertyInfo={propertyInfo}
                             className="even:bg-gray-200 dark:even:bg-gray-700 \
                                 hover:bg-primary-400 dark:hover:bg-primary-700"
                         />
@@ -437,6 +585,7 @@ interface ProjectDataItemProps extends ComponentProps<"tr"> {
     parentLabel?: string;
     origin?: DataOriginRx;
     userCreator?: User;
+    propertyInfo: PropertyInfo[];
 }
 function ProjectDataItem({
     projectId,
@@ -446,6 +595,7 @@ function ProjectDataItem({
     parentLabel,
     origin,
     userCreator,
+    propertyInfo,
     className,
     ...props
 }: ProjectDataItemProps) {
@@ -462,7 +612,7 @@ function ProjectDataItem({
         dismissPreview,
     ]);
 
-    function highlight_parent(e: MouseEvent<HTMLElement>, active: boolean) {
+    function highlight_parent(_: MouseEvent<HTMLElement>, active: boolean) {
         const HIGHLIGHT_CLASS = ["bg-gray-200", "dark:bg-gray-800"];
 
         const parent_elm = document.getElementById(`data-${parent?.Id}`)!;
@@ -566,6 +716,21 @@ function ProjectDataItem({
             </td>
             <td className="select-all">{origin ? origin.Label : null}</td>
             <td>{timestampToString(new Date(data.Timestamp))}</td>
+            {propertyInfo.map((property) => {
+                let content = "";
+                if (data.Properties) {
+                    const prop = data.Properties.find(
+                        (prop) =>
+                            prop.Key === property.key &&
+                            prop.Type === property.kind,
+                    );
+                    if (prop) {
+                        content = valueToString(prop);
+                    }
+                }
+
+                return <td key={property._id}>{content}</td>;
+            })}
             <td className="w-0">
                 {parentLabel ? (
                     <span
@@ -677,12 +842,11 @@ function DataPreview({
 
 function DataPreviewError({ error, resetErrorBoundary }: FallbackProps) {
     return (
-        <SuspenseError
+        <StandardError
             resetErrorBoundary={resetErrorBoundary}
-            className="text-center pt-4"
-        >
-            <div>Could not load data preview</div>
-        </SuspenseError>
+            error={error as Error}
+            title="Could not load data preview"
+        />
     );
 }
 

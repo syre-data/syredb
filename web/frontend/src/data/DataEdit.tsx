@@ -14,7 +14,7 @@ import {
     stringToPropertyValue,
     type_string_to_variant,
     value_is_compatible_with_type,
-    value_to_string,
+    valueToString,
 } from "@/components/Property";
 import { VisibilityFormToggle, VisibilityBadge } from "@/components/Visibility";
 import Icon from "@/icon";
@@ -839,7 +839,7 @@ function DataPropertyRemovedItem({
             </th>
             <td className="px-2 py-1 text-secondary">{property.Type}</td>
             <td className="px-2 py-1 text-secondary">
-                {value_to_string(property)}
+                {valueToString(property)}
             </td>
             <td className="pl-2 py-1">
                 <div className=" invisible group-hover/row:visible">

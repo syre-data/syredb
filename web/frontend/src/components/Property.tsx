@@ -143,7 +143,7 @@ export function stringToPropertyValue(
     }
 }
 
-export function value_to_string(property: types.Property): string {
+export function valueToString(property: types.Property): string {
     var value: any;
     switch (property.Type) {
         case types.PropertyTypeBool:

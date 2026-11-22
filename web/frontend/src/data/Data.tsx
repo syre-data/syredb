@@ -8,7 +8,7 @@ import {
 } from "@/common";
 import { Loading, StandardError } from "@/components";
 import { Note as NoteView } from "@/components/Note";
-import { value_to_string } from "@/components/Property";
+import { valueToString } from "@/components/Property";
 import { VisibilityBadge } from "@/components/Visibility";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
@@ -356,7 +356,7 @@ function Properties({ properties, ...props }: PropertiesProps) {
                                         </div>
                                     </td>
                                     <td className="px-4 py-1 select-all rounded-r-lg bg-gray-100 dark:bg-gray-700">
-                                        {value_to_string(property)}
+                                        {valueToString(property)}
                                     </td>
                                 </tr>
                             ))}
