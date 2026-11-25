@@ -2767,9 +2767,9 @@ func castValueToGoType(dtype ValueType, value any) any {
 	case ValueTypeFloat:
 		return value.(float64)
 	case ValueTypeInt:
-		return int64(value.(float64))
+		return value.(int64)
 	case ValueTypeUint:
-		return int64(value.(float64))
+		return value.(int64)
 	case ValueTypeString:
 		return value.(string)
 	case ValueTypeTimestamp:

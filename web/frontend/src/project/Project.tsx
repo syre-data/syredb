@@ -6,7 +6,7 @@ import {
     uuidToString,
 } from "@/common";
 import { Loading, StandardError } from "@/components";
-import { valueToString } from "@/components/Property";
+import { typeIsNumeric, valueToString } from "@/components/Property";
 import Icon from "@/icon";
 import dataService from "@/service/data.service";
 import projectService from "@/service/project.service";
@@ -17,6 +17,7 @@ import {
     DataSourceCardinalitySingle,
     DataStorageExternal,
     DataStorageInternal,
+    type DataCreator,
     type DataOriginRx,
     type DataSource,
     type DataStorage,
@@ -24,7 +25,6 @@ import {
     type DataValuesPreviewInternal,
     type DataValuesPreviewInternalMultiple,
     type ProjectData,
-    type PropertyType,
     type SchemaFieldValues,
     type SourceFileInfo,
     type User,
@@ -32,9 +32,21 @@ import {
 import { useDismiss, useFloating, useInteractions } from "@floating-ui/react";
 import { useForm } from "@tanstack/react-form";
 import { noop, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import {
+    createColumnHelper,
+    flexRender,
+    columnVisibilityFeature,
+    tableFeatures,
+    useTable,
+    type ColumnDef,
+    type Row,
+    type Table,
+    type CellContext,
+} from "@tanstack/react-table";
 import classNames from "classnames";
 import React, {
     Suspense,
+    useMemo,
     useState,
     type ComponentProps,
     type MouseEvent,
@@ -102,6 +114,7 @@ function Project({ projectId }: ProjectProps) {
             </div>
             <HeaderCards
                 dataCount={resources.Data.length}
+                userCount={resources.Users.length}
                 className="pt-4 px-4"
             />
             <ProjectData
@@ -111,7 +124,7 @@ function Project({ projectId }: ProjectProps) {
                 types={resources.DataTypes}
                 origins={resources.DataOrigins}
                 users={resources.Users}
-                className="pt-4"
+                className="pt-8"
             />
         </div>
     );
@@ -119,14 +132,32 @@ function Project({ projectId }: ProjectProps) {
 
 interface HeaderCardsProps extends ComponentProps<"div"> {
     dataCount: number;
+    userCount: number;
 }
-function HeaderCards({ dataCount, className, ...props }: HeaderCardsProps) {
+function HeaderCards({
+    dataCount,
+    userCount,
+    className,
+    ...props
+}: HeaderCardsProps) {
     return (
         <div className={`flex gap-4 ${className}`} {...props}>
             <div className="card">
                 <div className="px-4 pt-2">Data count</div>
-                <div className="px-4 pb-2 text-right text-lg font-bold">
-                    {dataCount}
+                <div className="flex items-center justify-end px-4 pb-2 text-right text-lg font-bold">
+                    <div className="pr-2">
+                        <Icon.Files />
+                    </div>
+                    <div>{dataCount}</div>
+                </div>
+            </div>
+            <div className="card">
+                <div className="px-4 pt-2">Collaborators</div>
+                <div className="flex items-center justify-end px-4 pb-2 text-right text-lg font-bold">
+                    <div className="pr-2">
+                        <Icon.Users />
+                    </div>
+                    <div>{userCount}</div>
                 </div>
             </div>
         </div>
@@ -148,6 +179,7 @@ function ProjectData({
     types,
     origins,
     users,
+    className,
     ...props
 }: ProjectDataProps) {
     const params = new URLSearchParams();
@@ -157,8 +189,8 @@ function ProjectData({
     const [dataFilter, setDataFilter] = useState<null | uuid.UUIDTypes[]>(null);
 
     return (
-        <div {...props}>
-            <div className="px-4 flex gap-2 items-center group">
+        <div className={`group/table-wrapper ${className}`} {...props}>
+            <div className="px-4 flex gap-2 items-center">
                 <h2 className="text-xl">Data</h2>
                 <div className="flex gap-2">
                     <div>
@@ -196,7 +228,7 @@ function ProjectData({
                     projectId={projectId}
                     setDataFilter={setDataFilter}
                     className={classNames({
-                        "invisible group-hover:visible in-focus-within:visible": true,
+                        "invisible group-hover/table-wrapper:visible in-focus-within:visible": true,
                         visible: dataFilter,
                     })}
                 />
@@ -295,7 +327,7 @@ function ProjectDataEmpty(props: ComponentProps<"div">) {
     );
 }
 
-interface ProjectDataTableViewProps {
+interface ProjectDataTableViewProps extends ComponentProps<"div"> {
     projectId: uuid.UUIDTypes;
     data: ProjectData[];
     relations: { [key: string]: uuid.UUIDTypes[] };
@@ -312,6 +344,7 @@ function ProjectDataTableView({
     origins,
     users,
     filter,
+    ...props
 }: ProjectDataTableViewProps) {
     if (!filter) {
         return (
@@ -322,15 +355,15 @@ function ProjectDataTableView({
                 types={types}
                 origins={origins}
                 users={users}
+                {...props}
             />
         );
     } else if (filter.length == 0) {
         return <ProjectDataFilterEmpty />;
     } else {
         const filteredData = data.filter((data) => filter.includes(data.Id));
-
         return (
-            <div>
+            <div {...props}>
                 <div className="text-sm px-4 pb-2">
                     Filtered {filteredData.length} out of {data.length} data
                 </div>
@@ -351,12 +384,7 @@ function ProjectDataFilterEmpty() {
     return <div className="pt-2 px-4 text-lg">No data match your query</div>;
 }
 
-interface PropertyInfo {
-    _id: string;
-    key: string;
-    kind: PropertyType;
-}
-interface ProjectDataTableProps {
+interface ProjectDataTableProps extends ComponentProps<"div"> {
     projectId: uuid.UUIDTypes;
     data: ProjectData[];
     relations: { [key: string]: uuid.UUIDTypes[] };
@@ -365,7 +393,19 @@ interface ProjectDataTableProps {
     users: User[];
 }
 
-function ProjectDataTable({ data, ...props }: ProjectDataTableProps) {
+const dataTableFeatures = tableFeatures({
+    columnVisibilityFeature,
+});
+
+function ProjectDataTable({
+    projectId,
+    data,
+    relations,
+    types,
+    origins,
+    users,
+    ...props
+}: ProjectDataTableProps) {
     const propertiesAll = data.flatMap((datum) =>
         datum.Properties
             ? datum.Properties.map((property) => {
@@ -392,76 +432,151 @@ function ProjectDataTable({ data, ...props }: ProjectDataTableProps) {
         throw new Error("property set was not unique");
     });
 
-    const [propertiesDisplay, setPropertiesDisplay] = useState(
-        new Map(propertyInfo.map((property) => [property._id, true])),
-    );
+    const colHelper = createColumnHelper<
+        typeof dataTableFeatures,
+        ProjectData
+    >();
+    const colDataType = colHelper.accessor("Type", {
+        header: "Type",
+        cell: ({ getValue, table }) => {
+            const typeId = getValue();
+            const dataTypes = table.options.meta!.dataTypes as DataType[];
+            const dtype = dataTypes.find((dtype) => dtype.Id === typeId);
+            if (!dtype) {
+                throw new Error("invalid data type");
+            }
 
-    return (
-        <div>
-            <ProjectDataTablePropertySelector
-                propertyInfo={propertyInfo}
-                setPropertiesDisplay={setPropertiesDisplay}
-                className="px-4 pb-2"
-            />
-            <ProjectDataTableInner
-                data={data}
-                propertyInfo={propertyInfo}
-                propertiesDisplay={propertiesDisplay}
-                {...props}
-            />
-        </div>
-    );
-}
+            return dtype.Label;
+        },
+    });
+    const colLabel = colHelper.accessor("Label", {
+        header: "Label",
+    });
+    const colCreator = colHelper.accessor("Creator", {
+        header: "Creator",
+        cell: ({ getValue, table }) => {
+            const creator = getValue() as DataCreator;
+            const createdByUser = !!creator.Origin;
+            if (createdByUser) {
+                const user: User = table.options.meta!.users.find(
+                    (user: User) => creator.Id === user.Id,
+                );
+                if (!user) {
+                    throw new Error("invalid user creator");
+                }
 
-interface ProjectDataTablePropertySelectorProps extends ComponentProps<"div"> {
-    propertyInfo: PropertyInfo[];
-    setPropertiesDisplay: React.Dispatch<
-        React.SetStateAction<Map<string, boolean>>
-    >;
-}
-function ProjectDataTablePropertySelector({
-    propertyInfo,
-    ...props
-}: ProjectDataTablePropertySelectorProps) {
-    return (
-        <div {...props}>
-            Properties
-            <form className="flex gap-2">
-                {propertyInfo.map((property) => {
+                if (user.Name) {
                     return (
-                        <div key={property._id}>
-                            <label className="flex gap-1">
-                                <input type="checkbox" />
+                        <div className="flex gap-2 items-center">
+                            <span>{user.Name}</span>
+                            <span>
+                                <a
+                                    href={`mailto:${user.Email}`}
+                                    target="_blank"
+                                    title={user.Email}
+                                    className="invisible group-hover:visible"
+                                >
+                                    <Icon.Mail />
+                                </a>
+                            </span>
+                        </div>
+                    );
+                } else {
+                    return user.Email;
+                }
+            } else {
+                throw new Error("TODO: created by transform");
+            }
+        },
+    });
+    const colOrigin = colHelper.accessor("Creator.Origin", {
+        header: "Origin",
+        cell: ({ getValue, table }) => {
+            const originId = getValue();
+            if (!originId) {
+                return "";
+            }
+
+            const origins: DataOriginRx[] = table.options.meta!.origins;
+            const origin = origins.find((origin) => origin.Id === originId);
+            return origin?.Label;
+        },
+    });
+    const colTimestamp = colHelper.accessor("Timestamp", {
+        header: "Timestamp",
+        cell: (cell) => timestampToString(cell.getValue()),
+    });
+    const colProperties = colHelper.group({
+        id: "properties",
+        header: "Properties",
+        columns: colHelper.columns(
+            propertyInfo.map((property) => {
+                return colHelper.accessor(
+                    (data) => {
+                        return data.Properties?.find(
+                            (prop) =>
+                                prop.Key === property.key &&
+                                prop.Type === property.kind,
+                        );
+                    },
+                    {
+                        id: `property.${property.key}.${property.kind}`,
+                        cell: (cell) => {
+                            const property = cell.getValue();
+                            if (!property) {
+                                return (
+                                    <span className="inline-block w-full text-secondary text-center">
+                                        -
+                                    </span>
+                                );
+                            }
+                            const value = valueToString(property);
+                            if (typeIsNumeric(property.Type)) {
+                                return <span>{value}</span>;
+                            } else {
+                                return <span>{value}</span>;
+                            }
+                        },
+                        header: () => {
+                            return (
                                 <div>
                                     <span>{property.key}</span>
-                                    <span className="pl-1 text-secondary">
+                                    <span className="text-secondary text-sm font-normal pl-1">
                                         ({property.kind})
                                     </span>
                                 </div>
-                            </label>
-                        </div>
-                    );
-                })}
-            </form>
-        </div>
+                            );
+                        },
+                        meta: {
+                            property,
+                        },
+                    },
+                );
+            }),
+        ),
+    });
+    const colActions = colHelper.display({
+        id: "actions",
+        cell: (cell) => <DataRowActions cell={cell} />,
+        enableHiding: false,
+    });
+    const columns = useMemo<
+        Array<ColumnDef<typeof dataTableFeatures, ProjectData>>
+    >(
+        () =>
+            colHelper.columns([
+                colDataType,
+                colLabel,
+                colCreator,
+                colOrigin,
+                colTimestamp,
+                colProperties,
+                colActions,
+            ]),
+        [],
     );
-}
 
-interface ProjectDataTableInnerProps extends ProjectDataTableProps {
-    propertyInfo: PropertyInfo[];
-    propertiesDisplay: Map<string, boolean>;
-}
-function ProjectDataTableInner({
-    projectId,
-    data,
-    relations,
-    types,
-    origins,
-    users,
-    propertyInfo,
-    propertiesDisplay,
-}: ProjectDataTableInnerProps) {
-    let parents = new Map();
+    const parents = new Map();
     for (const parent in relations) {
         const children = relations[parent]!;
         for (const child of children) {
@@ -469,7 +584,241 @@ function ProjectDataTableInner({
         }
     }
 
-    // TODO: Add bulk download by selecting individual data
+    const table = useTable({
+        key: "project-data-table",
+        features: dataTableFeatures,
+        columns,
+        data,
+        getRowId: (data) => uuidToString(data.Id),
+        meta: {
+            projectId: projectId,
+            dataTypes: types,
+            users,
+            origins,
+            parents,
+        },
+    });
+
+    return (
+        <div {...props}>
+            <ProjectDataTableColumnSelector
+                table={table}
+                className="px-4 pb-2"
+            />
+            <div className="w-full overflow-x-scroll">
+                <ProjectDataTableInner table={table} />
+            </div>
+        </div>
+    );
+}
+
+interface DataRowActionsProps {
+    cell: CellContext<typeof dataTableFeatures, ProjectData>;
+}
+function DataRowActions({ cell }: DataRowActionsProps) {
+    const projectId = cell.table.options.meta!.projectId;
+    const dataId = cell.row.original.Id;
+    const dataType: DataType | undefined =
+        cell.table.options.meta!.dataTypes.find(
+            (dtype) => dtype.Id === cell.row.original.Type,
+        );
+    if (!dataType) {
+        throw new Error("invalid data type");
+    }
+
+    const queryClient = useQueryClient();
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const { refs, floatingStyles, context } = useFloating({
+        placement: "right-start",
+
+        open: previewOpen,
+        onOpenChange: setPreviewOpen,
+    });
+    const dismissPreview = useDismiss(context);
+    const { getReferenceProps, getFloatingProps } = useInteractions([
+        dismissPreview,
+    ]);
+
+    function highlight_parent(_: MouseEvent<HTMLElement>, active: boolean) {
+        const HIGHLIGHT_CLASS = ["bg-gray-200", "dark:bg-gray-800"];
+
+        const parent_elm = document.getElementById(`data-${parent?.Id}`)!;
+        if (active) {
+            for (const st of HIGHLIGHT_CLASS) {
+                parent_elm.classList.add(st);
+            }
+        } else {
+            for (const st of HIGHLIGHT_CLASS) {
+                parent_elm.classList.remove(st);
+            }
+        }
+    }
+
+    function goto_parent(e: MouseEvent<HTMLElement>) {
+        if (e.button !== MouseButton.Primary) {
+            return;
+        }
+
+        const parent_elm = document.getElementById(`data-${parent?.Id}`)!;
+        parent_elm.scrollIntoView();
+    }
+
+    async function fetch_preview() {
+        queryClient.query({
+            queryKey: [QUERY_KEY_DATA_PREVIEW, dataId],
+            queryFn: async () =>
+                await dataService.dataPreview(dataId).catch(noop),
+        });
+    }
+
+    function open_preview(e: MouseEvent<HTMLButtonElement>) {
+        if (e.button !== MouseButton.Primary) {
+            return;
+        }
+
+        setPreviewOpen(true);
+    }
+
+    const download_params = new URLSearchParams();
+    download_params.append("id", dataId.toString());
+    download_params.append("project", uuidToString(projectId));
+    const download_path = `/resource/data?${download_params}`;
+
+    return (
+        <div
+            className={classNames({
+                "flex gap-1": true,
+                "invisible group-hover:visible": !previewOpen,
+            })}
+        >
+            <div>
+                {/* TODO: Check permissions */}
+                <Link to={`/data/${dataId}?project=${projectId}`}>
+                    <button
+                        type="button"
+                        className="p-0.5 rounded-sm transition-colors cursor-pointer \
+                                bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-800"
+                        title="View data"
+                    >
+                        <Icon.Eye />
+                    </button>
+                </Link>
+            </div>
+            <div>
+                <button
+                    type="button"
+                    className="p-0.5 rounded-sm transition-colors cursor-pointer \
+                            bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-800"
+                    title="Preview values"
+                    onFocus={fetch_preview}
+                    onMouseEnter={fetch_preview}
+                    onMouseDown={open_preview}
+                >
+                    <Icon.MagnifyingGlass />
+                </button>
+            </div>
+            <div>
+                <a href={download_path} title="Download">
+                    <button
+                        type="button"
+                        className="p-0.5 rounded-sm transition-colors cursor-pointer \
+                                bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-800"
+                    >
+                        <Icon.Download />
+                    </button>
+                </a>
+            </div>
+            {previewOpen ? (
+                <div className="relative">
+                    <DataPreview
+                        ref={refs.setFloating}
+                        style={floatingStyles}
+                        floatingProps={getFloatingProps}
+                        data_id={dataId}
+                        storage={dataType.Storage}
+                        setPreviewOpen={setPreviewOpen}
+                    />
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+interface ProjectDataTablePropertySelectorProps extends ComponentProps<"div"> {
+    table: Table<typeof dataTableFeatures, ProjectData>;
+}
+function ProjectDataTableColumnSelector({
+    table,
+    ...props
+}: ProjectDataTablePropertySelectorProps) {
+    return (
+        <div {...props}>
+            <form>
+                <div className="flex gap-2">
+                    {table
+                        .getAllColumns()
+                        .filter((column) => column.id !== "properties")
+                        .map((column) => {
+                            if (!column.getCanHide()) {
+                                return null;
+                            }
+                            return (
+                                <div key={column.id}>
+                                    <label className="flex gap-1">
+                                        <input
+                                            type="checkbox"
+                                            checked={column.getIsVisible()}
+                                            onChange={column.getToggleVisibilityHandler()}
+                                        />
+                                        <div>
+                                            <span>{column.id}</span>
+                                            <span className="pl-1 text-secondary">
+                                                {/* ({property.kind}) */}
+                                            </span>
+                                        </div>
+                                    </label>
+                                </div>
+                            );
+                        })}
+                </div>
+                <div className="flex gap-2">
+                    <span className="font-bold pr-2">Properties</span>
+                    <div className="flex gap-2">
+                        {table
+                            .getColumn("properties")!
+                            .columns.map((column) => {
+                                const property =
+                                    column.columnDef.meta!.property;
+                                return (
+                                    <div key={column.id}>
+                                        <label className="flex gap-1">
+                                            <input
+                                                type="checkbox"
+                                                checked={column.getIsVisible()}
+                                                disabled={!column.getCanHide()}
+                                                onChange={column.getToggleVisibilityHandler()}
+                                            />
+                                            <div>
+                                                <span>{property.key}</span>
+                                                <span className="pl-1 text-secondary">
+                                                    ({property.kind})
+                                                </span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                );
+                            })}
+                    </div>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+interface ProjectDataTableInnerProps {
+    table: Table<typeof dataTableFeatures, ProjectData>;
+}
+function ProjectDataTableInner({ table }: ProjectDataTableInnerProps) {
     return (
         <table
             className="table-compact w-full \
@@ -477,98 +826,34 @@ function ProjectDataTableInner({
             [&_th]:first:pl-4 [&_td]:first:pl-4"
         >
             <thead className="[&_th]:bg-gray-200 dark:[&_th]:bg-gray-700">
-                <tr>
-                    <th>Type</th>
-                    <th>Label</th>
-                    <th>Creator</th>
-                    <th>Origin</th>
-                    <th>Timestamp</th>
-                    <th colSpan={propertyInfo.length}>Properties</th>
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                </tr>
-                <tr>
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                    {propertyInfo.map((property) => (
-                        <th key={property._id}>{property.key}</th>
-                    ))}
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                </tr>
-                <tr className="[&_th]:font-normal text-secondary text-sm">
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                    {propertyInfo.map((property) => (
-                        <th key={property._id}>({property.kind})</th>
-                    ))}
-                    <th></th>
-                    <th></th>
-                    <th></th>
-                </tr>
+                {table.getHeaderGroups().map((headerGroup) => {
+                    return (
+                        <tr key={headerGroup.id}>
+                            {headerGroup.headers.map((header) => {
+                                return (
+                                    <th
+                                        key={header.id}
+                                        colSpan={header.colSpan}
+                                    >
+                                        {header.isPlaceholder ? null : (
+                                            <table.FlexRender header={header} />
+                                        )}
+                                    </th>
+                                );
+                            })}
+                        </tr>
+                    );
+                })}
             </thead>
             <tbody>
-                {data.map((datum) => {
-                    const parent_id = parents.get(datum.Id);
-                    let parent: ProjectData | undefined = undefined;
-                    let parent_label = undefined;
-                    if (parent_id) {
-                        const parent_idx = data.findIndex(
-                            (datum) => datum.Id === parent_id,
-                        )!;
-                        parent = data[parent_idx]!;
-                        if (parent.Label) {
-                            const matching_label = data.findIndex(
-                                (datum) =>
-                                    datum.Label === parent.Label &&
-                                    datum.Id !== parent.Id,
-                            );
-                            if (matching_label < 0) {
-                                parent_label = parent.Label;
-                            } else {
-                                parent_label = `${parent.Label} (${parent_idx})`;
-                            }
-                        } else {
-                            parent_label = parent_idx.toString();
-                        }
-                    }
-
-                    const type = types.find((type) => type.Id === datum.Type);
-                    if (!type) {
-                        console.error(`could not get data type ${datum.Type}`);
-                    }
-
-                    let origin, userCreator;
-                    if (datum.Creator.Origin) {
-                        origin = origins.find(
-                            (origin) => origin.Id === datum.Creator.Origin,
-                        );
-                        userCreator = users.find(
-                            (user) => user.Id === datum.Creator.Id,
-                        );
-                    }
-
+                {table.getRowModel().rows.map((row) => {
+                    const parent = table.options.meta!.parents[row.original.Id];
                     return (
-                        <ProjectDataItem
-                            key={datum.Id.toString()}
-                            projectId={projectId}
-                            data={datum}
-                            type={type}
+                        <ProjectDataRow
+                            key={row.id}
+                            row={row}
                             parent={parent}
-                            parentLabel={parent_label}
-                            origin={origin}
-                            userCreator={userCreator}
-                            propertyInfo={propertyInfo}
-                            className="even:bg-gray-200 dark:even:bg-gray-700 \
-                                hover:bg-primary-400 dark:hover:bg-primary-700"
+                            className="group"
                         />
                     );
                 })}
@@ -577,28 +862,18 @@ function ProjectDataTableInner({
     );
 }
 
-interface ProjectDataItemProps extends ComponentProps<"tr"> {
-    projectId: uuid.UUIDTypes;
-    data: ProjectData;
-    type: DataType;
+interface ProjectDataRowProps extends ComponentProps<"tr"> {
+    row: Row<typeof dataTableFeatures, ProjectData>;
     parent?: ProjectData;
-    parentLabel?: string;
-    origin?: DataOriginRx;
-    userCreator?: User;
-    propertyInfo: PropertyInfo[];
 }
-function ProjectDataItem({
-    projectId,
-    data,
-    type,
+function ProjectDataRow({
+    row,
     parent,
-    parentLabel,
-    origin,
-    userCreator,
-    propertyInfo,
     className,
     ...props
-}: ProjectDataItemProps) {
+}: ProjectDataRowProps) {
+    const meta = row.table.options.meta!;
+    const data = row.original;
     const queryClient = useQueryClient();
     const [previewOpen, setPreviewOpen] = useState(false);
     const { refs, floatingStyles, context } = useFloating({
@@ -652,156 +927,28 @@ function ProjectDataItem({
         setPreviewOpen(true);
     }
 
-    const date = new Date(data.Timestamp);
-    const y = date.getUTCFullYear();
-    const mo = date.getMonth() + 1;
-    const d = date.getDate();
-    const h = date.getHours();
-    const m = date.getMinutes();
-    const s = date.getSeconds();
-    const timestamp = `${y}-${mo}-${d}T${h}-${m}-${s}`;
-    let filename = data.Label ?? `data-${timestamp}`;
-    switch (type.Storage) {
-        case DataStorageExternal:
-            // TODO: If source is a single file, use that extension.
-            filename += ".zip";
-            break;
-        case DataStorageInternal:
-            filename += ".csv";
-            break;
-        default:
-            console.error("invalid data storage");
-    }
-
     const download_params = new URLSearchParams();
     download_params.append("id", data.Id.toString());
-    download_params.append("project", uuidToString(projectId));
+    download_params.append("project", uuidToString(meta.projectId));
     const download_path = `/resource/data?${download_params}`;
 
     return (
         <tr
             id={`data-${data.Id}`}
             data-id={data.Id}
-            className={`group ${className}`}
+            className={`group hover:bg-primary-600 ${className}`}
             {...props}
         >
-            <td className="text-nowrap w-0 font-semibold select-all">
-                {type.Label}
-            </td>
-            <td className="text-nowrap w-0">
-                {data.Label ? (
-                    <span className="font-semibold select-all">
-                        {data.Label}
-                    </span>
-                ) : (
-                    <span className="text-secondary dark:hover:text-gray-800">
-                        (no label)
-                    </span>
-                )}
-            </td>
-            <td>
-                {userCreator ? (
-                    <div className="flex items-center">
-                        <span className="select-all">{userCreator.Name}</span>
-                        <a
-                            href={`mailto:${userCreator.Email}`}
-                            target="_blank"
-                            title={userCreator.Email}
-                            className="invisible group-hover:visible pl-2"
-                        >
-                            <Icon.Mail />
-                        </a>
-                    </div>
-                ) : null}
-            </td>
-            <td className="select-all">{origin ? origin.Label : null}</td>
-            <td>{timestampToString(new Date(data.Timestamp))}</td>
-            {propertyInfo.map((property) => {
-                let content = "";
-                if (data.Properties) {
-                    const prop = data.Properties.find(
-                        (prop) =>
-                            prop.Key === property.key &&
-                            prop.Type === property.kind,
-                    );
-                    if (prop) {
-                        content = valueToString(prop);
-                    }
-                }
-
-                return <td key={property._id}>{content}</td>;
+            {row.getVisibleCells().map((cell) => {
+                return (
+                    <td key={cell.id} className="select-all">
+                        {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                        )}
+                    </td>
+                );
             })}
-            <td className="w-0">
-                {parentLabel ? (
-                    <span
-                        className="text-nowrap text-gray-500 cursor-pointer"
-                        onMouseEnter={(e) => highlight_parent(e, true)}
-                        onMouseLeave={(e) => highlight_parent(e, false)}
-                        onMouseDown={goto_parent}
-                        title="Parent data"
-                    >
-                        (<Icon.ArrowReturn className="inline" /> {parentLabel})
-                    </span>
-                ) : null}
-            </td>
-            <td className="w-0" ref={refs.setReference} {...getReferenceProps}>
-                <div
-                    className={classNames({
-                        "flex gap-1": true,
-                        "invisible group-hover:visible": !previewOpen,
-                    })}
-                >
-                    <div>
-                        {/* TODO: Check permissions */}
-                        <Link to={`/data/${data.Id}?project=${projectId}`}>
-                            <button
-                                type="button"
-                                className="p-0.5 rounded-sm transition-colors cursor-pointer \
-                                bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-800"
-                                title="View data"
-                            >
-                                <Icon.Eye />
-                            </button>
-                        </Link>
-                    </div>
-                    <div>
-                        <button
-                            type="button"
-                            className="p-0.5 rounded-sm transition-colors cursor-pointer \
-                            bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-800"
-                            title="Preview values"
-                            onFocus={fetch_preview}
-                            onMouseEnter={fetch_preview}
-                            onMouseDown={open_preview}
-                        >
-                            <Icon.MagnifyingGlass />
-                        </button>
-                    </div>
-                    <div>
-                        <a href={download_path} title="Download">
-                            <button
-                                type="button"
-                                className="p-0.5 rounded-sm transition-colors cursor-pointer \
-                                bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-800"
-                            >
-                                <Icon.Download />
-                            </button>
-                        </a>
-                    </div>
-                </div>
-            </td>
-            <td>
-                {previewOpen ? (
-                    <DataPreview
-                        ref={refs.setFloating}
-                        style={floatingStyles}
-                        floatingProps={getFloatingProps}
-                        data_id={data.Id}
-                        storage={type.Storage}
-                        setPreviewOpen={setPreviewOpen}
-                    />
-                ) : null}
-            </td>
         </tr>
     );
 }

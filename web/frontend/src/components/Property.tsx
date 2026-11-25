@@ -178,6 +178,24 @@ export function valueToString(property: types.Property): string {
     }
 }
 
+export function typeIsNumeric(kind: types.PropertyType): boolean {
+    switch (kind) {
+        case types.PropertyTypeFloat:
+        case types.PropertyTypeInt:
+        case types.PropertyTypeUint:
+            return true;
+
+        case types.PropertyTypeQuantity:
+        case types.PropertyTypeBool:
+        case types.PropertyTypeTimestamp:
+        case types.PropertyTypeString:
+            return false;
+
+        default:
+            throw new Error("invalid property type");
+    }
+}
+
 class IncompatiblePropertyValueError extends Error {
     #message: string | undefined;
     #expected: types.PropertyType;

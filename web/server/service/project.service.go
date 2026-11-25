@@ -745,7 +745,7 @@ func (s *ProjectService) getProjectResourcesDataInfo(
 		}
 		data_props, ok := data_properties[rx.Data]
 		if ok {
-			data_props = append(data_props, prop)
+			data_properties[rx.Data] = append(data_props, prop)
 		} else {
 			data_properties[rx.Data] = []Property{prop}
 		}

@@ -689,7 +689,7 @@ func (h *DataHandler) downloadDataValuesInternalFilename(
 		return fmt.Sprintf("%s.csv", data_id)
 	}
 
-	if project_valid && membership_valid {
+	if project_valid && membership_valid && membership.Label != nil {
 		return fmt.Sprintf(
 			"%s.%s.csv",
 			sanitizeStringForFilename(project.Label),
